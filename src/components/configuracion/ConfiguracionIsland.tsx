@@ -10,20 +10,22 @@ import { useLiveQuery } from '../../lib/hooks';
 import { fmtDateTime } from '../../lib/format';
 import { Button, NumberInput, Field, Badge } from '../ui';
 
-type SyncState = 'idle' | 'active' | 'error' | 'offline';
+type SyncState = 'idle' | 'active' | 'error' | 'offline' | 'unauthorized';
 
 const SYNC_LABEL: Record<SyncState, string> = {
-  idle:    'Sincronizado',
-  active:  'Sincronizando…',
-  error:   'Error de sincronización',
-  offline: 'Sin conexión — trabajando local',
+  idle:         'Sincronizado',
+  active:       'Sincronizando…',
+  error:        'Error de sincronización',
+  offline:      'Sin conexión — trabajando local',
+  unauthorized: 'Sesión expirada — inicia sesión de nuevo',
 };
 
 const SYNC_TONE: Record<SyncState, 'ok' | 'warn' | 'danger' | 'neutral'> = {
-  idle:    'ok',
-  active:  'neutral',
-  error:   'danger',
-  offline: 'warn',
+  idle:         'ok',
+  active:       'neutral',
+  error:        'danger',
+  offline:      'warn',
+  unauthorized: 'danger',
 };
 
 export default function ConfiguracionIsland() {
