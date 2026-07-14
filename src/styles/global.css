@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+@theme {
+  /* Palette */
+  --color-greige: #E8E4DC;
+  --color-cloth: #F6F4EF;
+  --color-ink: #221F1A;
+  --color-dye: #B5175C;
+  --color-vat: #3A4A6B;
+  --color-thread: #8A8371;
+  --color-ok: #3E6B3A;
+  --color-warn: #B97718;
+  --color-danger: #A32E2E;
+
+  /* Typography */
+  --font-sans: "Archivo Variable", "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-greige);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background-color: var(--color-dye);
+    color: var(--color-cloth);
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-dye);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Styled scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-greige);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-thread);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink);
+  }
+
+  /* Mono numerals: ensure tables and money are always tabular */
+  .font-mono, [class*="tabular"] {
+    font-feature-settings: "tnum" 1;
+  }
+}
+
+@layer utilities {
+  /* Stitch divider — basting-stitch section separator */
+  .stitch {
+    border-top: 1px dashed var(--color-thread);
+  }
+
+  .stitch-b {
+    border-bottom: 1px dashed var(--color-thread);
+  }
+
+  .stitch-all {
+    border: 1px dashed var(--color-thread);
+  }
+
+  /* Page title: expanded industrial signage style */
+  .title-display {
+    font-family: var(--font-sans);
+    font-weight: 800;
+    font-stretch: 125%;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    font-size: clamp(1.5rem, 4vw, 2.5rem);
+  }
+
+  /* Tabular mono for all numeric/money contexts */
+  .tabular-mono {
+    font-family: var(--font-mono);
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* Suppress motion for users who prefer it */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-pulse {
+      animation: none !important;
+    }
+  }
+}

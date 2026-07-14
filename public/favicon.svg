@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="5" fill="#221F1A"/>
+  <!-- Generic loom/weave mark: warp verticals crossed by a weft bar, in dye -->
+  <path d="M8 8 V24 M12 8 V24 M16 8 V24 M20 8 V24 M24 8 V24" fill="none" stroke="#B5175C" stroke-width="1.6"/>
+  <rect x="6" y="14.4" width="20" height="3.2" fill="#B5175C"/>
+</svg>

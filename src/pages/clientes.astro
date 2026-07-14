@@ -1,0 +1,8 @@
+---
+import Layout from '../layouts/Layout.astro';
+import ClientsPage from '../components/clientes/ClientsPage';
+---
+
+<Layout title="Clientes" active="/clientes">
+  <ClientsPage client:only="react" />
+</Layout>

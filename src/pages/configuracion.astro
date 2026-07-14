@@ -1,0 +1,8 @@
+---
+import Layout from '../layouts/Layout.astro';
+import ConfiguracionIsland from '../components/configuracion/ConfiguracionIsland.tsx';
+---
+
+<Layout title="Configuración" active="/configuracion">
+  <ConfiguracionIsland client:only="react" />
+</Layout>

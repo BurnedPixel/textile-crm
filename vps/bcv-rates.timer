@@ -1,0 +1,11 @@
+[Unit]
+Description=Run bcv-rates daily at 07:00 Caracas
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 America/Caracas
+Persistent=true
+RandomizedDelaySec=120
+Unit=bcv-rates.service
+
+[Install]
+WantedBy=timers.target

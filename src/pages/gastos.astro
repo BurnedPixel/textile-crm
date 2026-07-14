@@ -1,0 +1,8 @@
+---
+import Layout from '../layouts/Layout.astro';
+import GastosIsland from '../components/gastos/GastosIsland.tsx';
+---
+
+<Layout title="Gastos" active="/gastos">
+  <GastosIsland client:only="react" />
+</Layout>

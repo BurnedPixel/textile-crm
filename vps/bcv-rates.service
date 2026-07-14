@@ -1,0 +1,9 @@
+[Unit]
+Description=BCV daily exchange rates -> CouchDB
+Wants=network-online.target
+After=network-online.target couchdb.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/bcv-rates.env
+ExecStart=/usr/bin/python3 /usr/local/bin/bcv-rates.py

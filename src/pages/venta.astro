@@ -1,0 +1,8 @@
+---
+import Layout from '../layouts/Layout.astro';
+import SaleTerminal from '../components/venta/SaleTerminal.tsx';
+---
+
+<Layout title="Venta" active="/venta">
+  <SaleTerminal client:only="react" />
+</Layout>

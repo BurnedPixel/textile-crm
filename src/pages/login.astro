@@ -1,0 +1,105 @@
+---
+// Standalone login page — no rail, no auth gate.
+import '../styles/global.css';
+import LoginForm from '../components/auth/LoginForm.tsx';
+import { BRAND } from '../../brand.mjs';
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Acceso — {BRAND.name}</title>
+  </head>
+  <body
+    style={`
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--color-greige);
+      padding: 24px;
+    `}
+  >
+    <div
+      style={`
+        width: 100%;
+        max-width: 380px;
+        display: flex;
+        flex-direction: column;
+        gap: 32px;
+      `}
+    >
+      {/* Wordmark */}
+      <header style="text-align: center;">
+        <div
+          style={`
+            font-family: var(--font-sans);
+            font-weight: 800;
+            font-stretch: 125%;
+            text-transform: uppercase;
+            letter-spacing: -0.02em;
+            font-size: clamp(1.75rem, 8vw, 2.25rem);
+            line-height: 1;
+            color: var(--color-ink);
+          `}
+        >
+          {BRAND.wordmark[0]}
+        </div>
+        <div
+          style={`
+            font-family: var(--font-sans);
+            font-weight: 800;
+            font-stretch: 125%;
+            text-transform: uppercase;
+            letter-spacing: -0.02em;
+            font-size: clamp(1.75rem, 8vw, 2.25rem);
+            line-height: 1;
+            color: var(--color-dye);
+          `}
+        >
+          {BRAND.wordmark[1]}
+        </div>
+      </header>
+
+      {/* Card */}
+      <div
+        style={`
+          background-color: var(--color-cloth);
+          border: 1px dashed var(--color-thread);
+          border-radius: 10px;
+          padding: 32px;
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+        `}
+      >
+        <LoginForm client:only="react" />
+      </div>
+
+      {/* Footer */}
+      <p
+        style={`
+          text-align: center;
+          font-family: var(--font-sans);
+          font-size: 12px;
+          color: var(--color-thread);
+          margin: 0;
+          line-height: 1.5;
+        `}
+      >
+        Acceso restringido. Solicita tu usuario al administrador.
+      </p>
+    </div>
+
+    {/* PWA registration */}
+    <script>
+      try {
+        // @ts-ignore
+        import('virtual:pwa-register').then((m: any) => m.registerSW?.({ immediate: true }));
+      } catch {}
+    </script>
+  </body>
+</html>
