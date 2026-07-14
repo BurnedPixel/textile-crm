@@ -339,6 +339,21 @@ export default function SaleTerminal() {
   // on div listboxes — focus imperatively, see React focus note below).
   useEffect(() => { colorRef.current?.focus(); }, []);
 
+  // Preselect facets when arriving from the dashboard (/venta?color=…&nm=…&fabric=…).
+  // Values are the batch's display strings; if they no longer match a stocked
+  // batch, the selections simply don't resolve and the seller picks normally.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const color = p.get('color');
+    const nm = p.get('nm');
+    const fabric = p.get('fabric');
+    if (color && nm && fabric) {
+      setSelColor(color);
+      setSelNm(nm);
+      setSelFabric(fabric);
+    }
+  }, []);
+
   // Facet option universe = distinct values across all stocked batches.
   const colors = [...new Set(stocked.map((e) => e.batch.color))].sort();
   const nms = [...new Set(stocked.map((e) => e.batch.nm))].sort();
