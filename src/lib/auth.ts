@@ -73,9 +73,14 @@ export async function getSession(): Promise<SessionUser | null> {
       headers: { Accept: 'application/json' },
     });
   } catch {
+    // Network failure → offline. Keep the cached user so the app keeps working.
     return cachedUser();
   }
-  if (!res.ok) return cachedUser();
+  // 401 = server reachable but the session is gone (expired/logged out) → NOT
+  // offline. Report anonymous so the caller can route to /login; never fall back
+  // to the stale cache here, or an expired session looks valid forever.
+  if (res.status === 401) return null;
+  if (!res.ok) return cachedUser(); // transient 5xx — don't force logout
 
   const body = (await res.json()) as { userCtx?: { name: string | null; roles: string[] } };
   const ctx = body.userCtx;

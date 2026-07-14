@@ -2,13 +2,15 @@
 // Imports auth/db via contract; never SSR'd.
 import { useEffect, useState, useCallback } from 'react';
 
-type SyncState = 'idle' | 'active' | 'error' | 'offline';
+type SyncState = 'idle' | 'active' | 'error' | 'offline' | 'unauthorized';
+type SessionUser = import('../lib/types').SessionUser;
 
 // Deferred imports — db.ts and auth.ts are browser-only modules written in parallel.
 // We import dynamically so Astro never tries to SSR them.
 let _onSyncState: ((cb: (s: SyncState) => void) => () => void) | null = null;
 let _startSync: (() => () => void) | null = null;
-let _cachedUser: (() => import('../lib/types').SessionUser | null) | null = null;
+let _cachedUser: (() => SessionUser | null) | null = null;
+let _getSession: (() => Promise<SessionUser | null>) | null = null;
 let _logout: (() => Promise<void>) | null = null;
 
 async function loadModules() {
@@ -19,14 +21,16 @@ async function loadModules() {
   _onSyncState = dbMod.onSyncState;
   _startSync = dbMod.startSync;
   _cachedUser = authMod.cachedUser;
+  _getSession = authMod.getSession;
   _logout = authMod.logout;
 }
 
 const stateConfig: Record<SyncState, { dot: string; label: string; color: string }> = {
-  idle:    { dot: '#3E6B3A', label: 'Sincronizado',    color: '#3E6B3A' },
-  active:  { dot: '#3A4A6B', label: 'Sincronizando…',  color: '#3A4A6B' },
-  error:   { dot: '#B97718', label: 'Sin conexión',    color: '#B97718' },
-  offline: { dot: '#B97718', label: 'Trabajo local',   color: '#B97718' },
+  idle:         { dot: '#3E6B3A', label: 'Sincronizado',    color: '#3E6B3A' },
+  active:       { dot: '#3A4A6B', label: 'Sincronizando…',  color: '#3A4A6B' },
+  error:        { dot: '#B97718', label: 'Sin conexión',    color: '#B97718' },
+  offline:      { dot: '#B97718', label: 'Trabajo local',   color: '#B97718' },
+  unauthorized: { dot: '#A32E2E', label: 'Sesión expirada', color: '#A32E2E' },
 };
 
 export default function SyncStatus() {
@@ -36,20 +40,34 @@ export default function SyncStatus() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    loadModules().then(() => {
+    let cancelled = false;
+    loadModules().then(async () => {
+      if (cancelled) return;
       setReady(true);
       const user = _cachedUser?.();
       setUserName(user?.name ?? null);
+      if (!user) return;
+      // Validate the session before syncing. getSession() returns null ONLY when
+      // the server is reachable AND the session is gone (expired) — on a network
+      // error it returns the cached user, so offline never forces a logout.
+      const session = await _getSession?.();
+      if (cancelled) return;
+      if (session === null) { void _logout?.(); return; } // expired → /login
       // login() starts sync, but its page is torn down by the post-login redirect.
       // This island loads on every authenticated page, so it's the durable place
       // to (re)start sync. startSync() is idempotent — safe on every load.
-      if (user) _startSync?.();
+      _startSync?.();
     });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     if (!ready || !_onSyncState) return;
-    const unsub = _onSyncState(setSyncState);
+    const unsub = _onSyncState((s) => {
+      setSyncState(s);
+      // Session expired while the app was open (a live sync got a 401) → /login.
+      if (s === 'unauthorized') void _logout?.();
+    });
     return unsub;
   }, [ready]);
 

@@ -24,7 +24,7 @@ export const cartDb: PouchDB.Database = new PouchDB(`${BRAND.dbName}-cart`);
 // ---- Sync ----
 
 let syncHandle: PouchDB.Replication.Sync<object> | null = null;
-type SyncState = 'idle' | 'active' | 'error' | 'offline';
+type SyncState = 'idle' | 'active' | 'error' | 'offline' | 'unauthorized';
 const syncStateListeners = new Set<(s: SyncState) => void>();
 // 'offline' until a sync actually reaches the server — never claim "synced" untried.
 let lastSyncState: SyncState = 'offline';
@@ -40,6 +40,12 @@ function emitSyncState(s: SyncState): void {
  * skip_setup:true — the server database already exists (couch/setup.sh); clients
  * must not try to create it.
  */
+/** A replication error caused by an expired/invalid session (CouchDB 401). */
+function isAuthError(err: unknown): boolean {
+  const e = err as { status?: number; name?: string } | null;
+  return e?.status === 401 || e?.name === 'unauthorized';
+}
+
 export function startSync(): () => void {
   if (syncHandle) return stopSync;
 
@@ -50,8 +56,10 @@ export function startSync(): () => void {
     .on('active', () => emitSyncState('active'))
     .on('change', () => emitSyncState('active'))
     .on('paused', (err?: unknown) => emitSyncState(err ? 'offline' : 'idle'))
-    .on('denied', () => emitSyncState('error'))
+    .on('denied', (err: unknown) => emitSyncState(isAuthError(err) ? 'unauthorized' : 'error'))
     .on('error', (err: unknown) => {
+      // 401 = session expired → let the UI route to /login (see SyncStatus).
+      if (isAuthError(err)) { emitSyncState('unauthorized'); return; }
       // Network/fetch failures = offline (recoverable); everything else = error.
       const msg = String((err as { message?: string })?.message ?? err);
       emitSyncState(/fetch|network|Failed to fetch/i.test(msg) ? 'offline' : 'error');
