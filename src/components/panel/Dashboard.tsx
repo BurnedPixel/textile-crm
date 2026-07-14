@@ -150,6 +150,12 @@ function StatCard({ label, primary, secondary }: { label: string; primary: strin
 
 // ─── INVENTORY TABLE ──────────────────────────────────────────────────────────
 
+/** /venta with the batch's facets preselected (SaleTerminal reads these on mount). */
+function ventaUrl(batch: BatchDoc): string {
+  const p = new URLSearchParams({ color: batch.color, nm: batch.nm, fabric: batch.fabricType });
+  return `/venta?${p}`;
+}
+
 interface InventoryTableProps {
   stocked: Array<{ batch: BatchDoc; products: ProductDoc[] }>;
 }
@@ -193,7 +199,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
           return next;
         });
       } else if (e.key === 'Enter' && cursor >= 0 && filtered[cursor]) {
-        window.location.href = '/venta';
+        window.location.href = ventaUrl(filtered[cursor].batch);
       } else if (e.key === 'Escape') {
         setFilter('');
       }
@@ -297,7 +303,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
               <tr
                 key={batch._id}
                 ref={(el) => { rowRefs.current[idx] = el; }}
-                onClick={() => { window.location.href = '/venta'; }}
+                onClick={() => { window.location.href = ventaUrl(batch); }}
                 style={{
                   cursor: 'pointer',
                   background:
