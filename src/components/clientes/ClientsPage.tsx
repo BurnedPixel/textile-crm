@@ -308,13 +308,7 @@ function DetailPanel({ client, onEdit }: DetailPanelProps) {
           </div>
         </div>
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '12px',
-          }}
-        >
+        <div className="form-grid-2">
           {client.phoneNumber && (
             <InfoRow label="Teléfono" value={client.phoneNumber} />
           )}
@@ -674,15 +668,7 @@ export default function ClientsPage() {
       <PageHeader onNew={openNew} />
 
       {/* Master-detail split */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '340px 1px 1fr',
-          gap: '0',
-          flex: 1,
-          minHeight: 0,
-        }}
-      >
+      <div className="clients-split">
         {/* LEFT — list */}
         <div
           style={{

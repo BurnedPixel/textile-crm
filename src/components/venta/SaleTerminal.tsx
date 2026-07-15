@@ -928,10 +928,10 @@ export default function SaleTerminal() {
 
   // ── TERMINAL VIEW ─────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', gap: '0', minHeight: 'calc(100vh - 4rem)', alignItems: 'flex-start' }}>
+    <div className="venta-split">
 
       {/* ── LEFT: cascading selector ── */}
-      <div style={{ flex: '0 0 380px', display: 'flex', flexDirection: 'column', gap: '20px', paddingRight: '28px' }}>
+      <div className="venta-facets">
 
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
           <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '18px', fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
@@ -1010,10 +1010,10 @@ export default function SaleTerminal() {
       </div>
 
       {/* ── STITCH DIVIDER ── */}
-      <div style={dividerStyle} />
+      <div className="venta-divider" style={dividerStyle} />
 
       {/* ── RIGHT: cart ── */}
-      <div style={{ flex: 1, minWidth: 0, paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="venta-cart">
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-thread)', margin: 0 }}>

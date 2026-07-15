@@ -105,4 +105,39 @@
       animation: none !important;
     }
   }
+
+  /* ── Responsive layout shells ──────────────────────────────────────────
+     Components style inline; media queries can't reach inline styles, so
+     the few containers that must reshape on small screens live here. */
+
+  /* /venta: facet column + cart side by side → stacked */
+  .venta-split { display: flex; min-height: calc(100vh - 4rem); align-items: flex-start; }
+  .venta-facets { flex: 0 0 380px; min-width: 0; display: flex; flex-direction: column; gap: 20px; padding-right: 28px; }
+  .venta-cart { flex: 1 1 0; min-width: 0; padding-left: 28px; display: flex; flex-direction: column; gap: 16px; }
+
+  /* /clientes: master-detail split → stacked */
+  .clients-split { display: grid; grid-template-columns: 340px 1px 1fr; flex: 1; min-height: 0; }
+
+  /* Form field grids → single column */
+  .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+
+  /* Wide row grids (ingreso rolls/movements): scroll sideways on phones */
+  .hscroll { overflow-x: auto; }
+
+  /* Sync widget: vertical in the desktop rail, horizontal in the bottom bar */
+  .sync-status { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 4px; width: 64px; }
+
+  @media (max-width: 767px) {
+    .venta-split { flex-direction: column; }
+    .venta-facets { flex: none; width: 100%; padding-right: 0; }
+    .venta-cart { padding-left: 0; width: 100%; }
+    .venta-divider { display: none; }
+    .clients-split { grid-template-columns: 1fr; }
+    .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; }
+    .hscroll-inner { min-width: 560px; }
+    .sync-status { flex-direction: row; width: auto; gap: 6px; padding: 4px 2px; }
+    /* iOS zooms the page on focusing inputs under 16px */
+    input, select, textarea { font-size: 16px !important; }
+  }
 }
