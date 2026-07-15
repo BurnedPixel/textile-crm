@@ -142,7 +142,7 @@ export default function GastosIsland() {
             Nuevo gasto
           </h2>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="form-grid-2" style={{ marginBottom: '1rem' }}>
             <Field label="Fecha">
               <Input
                 type="date"
@@ -173,7 +173,7 @@ export default function GastosIsland() {
             </Field>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="form-grid-2" style={{ marginBottom: '1rem' }}>
             <Field label="Método de pago">
               <Select value={method} onChange={(e) => setMethod(e.target.value as 'CASH' | 'TRANSFER')} required>
                 {ENTRY_METHODS.map((m) => (

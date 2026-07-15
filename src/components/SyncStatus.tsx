@@ -84,16 +84,7 @@ export default function SyncStatus() {
     : '?';
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '8px 4px',
-        width: '64px',
-      }}
-    >
+    <div className="sync-status">
       {/* Sync dot + label */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
         <span

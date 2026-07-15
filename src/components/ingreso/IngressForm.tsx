@@ -454,7 +454,7 @@ export default function IngressForm() {
         <section style={sectionStyle}>
           <h2 style={sectionTitle}>Identificación del lote</h2>
 
-          <div style={gridRow3}>
+          <div className="form-grid-3">
             {/* COLOR */}
             <Field label="Color">
               <Combobox
@@ -520,7 +520,7 @@ export default function IngressForm() {
         {cascadeComplete && matchedBatch === null && (
           <section style={sectionStyle}>
             <h2 style={sectionTitle}>Tipo de producto (lote nuevo)</h2>
-            <div style={gridRow2}>
+            <div className="form-grid-2">
               <Field label="Tipo">
                 <Select value={productType} onChange={(e) => setProductType(e.target.value as ProductType)}>
                   <option value="ROLL">Rollo (Kg)</option>
@@ -543,7 +543,7 @@ export default function IngressForm() {
         {cascadeComplete && effectiveProductType === 'ROLL' && matchedBatch !== undefined && (
           <section style={sectionStyle}>
             <h2 style={sectionTitle}>Precios y condición</h2>
-            <div style={gridRow3}>
+            <div className="form-grid-3">
               <Field label="Costo · $/kg">
                 <NumberInput
                   value={batchDefaults.purchaseValueUsd}
@@ -598,7 +598,8 @@ export default function IngressForm() {
               <Button variant="ghost" size="md" type="button" onClick={addRollRow}>+ Rollo</Button>
             </div>
 
-            {/* Column headers */}
+            {/* Column headers + rows scroll sideways together on phones */}
+            <div className="hscroll"><div className="hscroll-inner">
             <div style={rollHeaderGrid}>
               <span style={colLabel}>Pieza</span>
               <span style={colLabel}>Peso (Kg)</span>
@@ -678,6 +679,7 @@ export default function IngressForm() {
                 </div>
               ))}
             </div>
+            </div></div>
 
             <p style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-thread)', margin: '8px 0 0' }}>
               <Kbd>↹</Kbd> / <Kbd>↵</Kbd> siguiente rollo · costo/precio/condición se heredan de arriba y se ajustan con el ratón
@@ -689,7 +691,7 @@ export default function IngressForm() {
         {cascadeComplete && (effectiveProductType === 'COMBO' || effectiveProductType === 'PIECE') && matchedBatch !== undefined && (
           <section style={sectionStyle}>
             <h2 style={sectionTitle}>Unidades</h2>
-            <div style={gridRow3}>
+            <div className="form-grid-3">
               <Field label="Cantidad">
                 <NumberInput
                   value={units}
@@ -772,7 +774,7 @@ export default function IngressForm() {
         {movements.length === 0 ? (
           <EmptyState title="Sin movimientos registrados aún" />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <div className="hscroll"><div className="hscroll-inner" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {movements.map((m) => (
               <div key={m._id} style={movementRow}>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--color-thread)', whiteSpace: 'nowrap' }}>
@@ -796,7 +798,7 @@ export default function IngressForm() {
                 </span>
               </div>
             ))}
-          </div>
+          </div></div>
         )}
       </section>
     </div>
@@ -822,18 +824,6 @@ const sectionTitle: React.CSSProperties = {
   color: 'var(--color-thread)',
   marginBottom: 16,
   marginTop: 0,
-};
-
-const gridRow3: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr 1fr',
-  gap: 16,
-};
-
-const gridRow2: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap: 16,
 };
 
 // Roll grid: piece-id | weight (wider) | cost (narrow) | price (narrow) | condition | delete
