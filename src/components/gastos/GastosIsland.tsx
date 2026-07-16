@@ -131,13 +131,13 @@ export default function GastosIsland() {
         </h1>
         <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-thread)', marginTop: '4px' }}>
           Registra y consulta los gastos operativos de la fábrica.{' '}
-          <Kbd>g o</Kbd> para ir a Configuración.
+          <span className="kbd-hints"><Kbd>g o</Kbd> para ir a Configuración.</span>
         </p>
       </div>
 
       {/* Form card */}
       <form onSubmit={handleSubmit}>
-        <div style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', padding: '1.5rem', marginBottom: '2rem' }}>
+        <div className="card" style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', padding: '1.5rem', marginBottom: '2rem' }}>
           <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-thread)', margin: '0 0 1.25rem' }}>
             Nuevo gasto
           </h2>
@@ -232,7 +232,7 @@ export default function GastosIsland() {
             </div>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div className="form-actions" style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <Button type="submit" variant="primary" disabled={submitting}>
               {submitting ? 'Registrando…' : 'Registrar gasto'}
             </Button>
@@ -241,7 +241,7 @@ export default function GastosIsland() {
       </form>
 
       {/* Divider */}
-      <hr style={{ border: 'none', borderTop: '1px dashed var(--color-thread)', marginBottom: '1.5rem' }} />
+      <hr className="exp-divider" style={{ border: 'none', borderTop: '1px dashed var(--color-thread)', marginBottom: '1.5rem' }} />
 
       {/* Month filter */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.25rem' }}>
@@ -304,7 +304,7 @@ export default function GastosIsland() {
 
           {/* Footer totals */}
           <div style={{ borderTop: '1px solid var(--color-thread)', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>
+            <span className="exp-note" style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>
               Bs calculados a la tasa histórica de cada gasto
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

@@ -147,37 +147,41 @@
     .venta-divider { display: none; }
     .clients-split { grid-template-columns: 1fr; }
     .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; }
+    /* Short numeric fields pair two-up; saves ~90-100px vs single-column */
+    .form-grid-compact { grid-template-columns: 1fr 1fr; }
     .sync-status { flex-direction: row; width: auto; gap: 6px; padding: 4px 2px; }
     /* iOS zooms the page on focusing inputs under 16px */
     input, select, textarea { font-size: 16px !important; }
 
-    /* Roll rows reflow to two lines: piece+weight+delete / overrides */
+    /* Roll rows: one line only — weight is the only input phone needs */
     .roll-head { display: none; }
     .roll-row {
-      grid-template-columns: 52px 1fr 1fr 40px;
-      grid-template-areas: "id w w del" "c p cond cond";
+      grid-template-columns: 52px 1fr 40px;
+      grid-template-areas: "id w del";
       row-gap: 4px; padding: 8px 0;
       border-bottom: 1px dashed rgba(138,131,113,0.35);
     }
     .roll-row > :nth-child(1) { grid-area: id; }
     .roll-row > :nth-child(2) { grid-area: w; }
-    .roll-row > :nth-child(3) { grid-area: c; }
-    .roll-row > :nth-child(4) { grid-area: p; }
-    .roll-row > :nth-child(5) { grid-area: cond; }
+    .roll-row > :nth-child(3) { display: none; } /* cost override */
+    .roll-row > :nth-child(4) { display: none; } /* price override */
+    .roll-row > :nth-child(5) { display: none; } /* condition override */
     .roll-row > :nth-child(6) { grid-area: del; }
 
-    /* Movements reflow to a stacked card */
+    /* Movements reflow to a stacked card — date gets full width, ref humanized */
     .movement-row {
-      grid-template-columns: 1fr auto auto;
-      grid-template-areas: "date badge qty" "ref ref ref" "reason reason reason";
+      grid-template-columns: 1fr auto;
+      grid-template-areas: "date badge" "ref qty" "reason reason";
       row-gap: 2px;
     }
-    .movement-row > * { min-width: 0; } /* let nowrap+ellipsis spans shrink into their area */
+    .movement-row > * { min-width: 0; }
     .movement-row > :nth-child(1) { grid-area: date; }
     .movement-row > :nth-child(2) { grid-area: badge; justify-self: end; }
-    .movement-row > :nth-child(3) { grid-area: ref; }
+    .movement-row > :nth-child(3) { grid-area: ref; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .movement-row > :nth-child(4) { grid-area: reason; }
-    .movement-row > :nth-child(5) { grid-area: qty; text-align: left; }
+    .movement-row > :nth-child(5) { grid-area: qty; text-align: right; }
+    /* Cap movement list; 8 cards is plenty on phone */
+    .movement-row:nth-child(n+9) { display: none; }
 
     /* Data tables (panel inventory, gastos history) reflow to stacked cards
        instead of scrolling sideways. Inline td styles need the !important. */
@@ -187,15 +191,17 @@
     .table-cards td { padding: 0 !important; white-space: normal !important; max-width: none !important; }
 
     .inv-table tr {
-      grid-template-columns: auto auto 1fr;
-      grid-template-areas: "sw nm tipo" "cat stock loc";
+      grid-template-columns: auto 1fr auto;
+      grid-template-areas: "sw nm tipo" "stock stock loc";
     }
     .inv-table td:nth-child(1) { grid-area: sw; }
     .inv-table td:nth-child(2) { grid-area: nm; }
-    .inv-table td:nth-child(3) { grid-area: tipo; }
-    .inv-table td:nth-child(4) { grid-area: cat; }
-    .inv-table td:nth-child(5) { grid-area: stock; }
+    .inv-table td:nth-child(3) { grid-area: tipo; text-align: right; }
+    .inv-table td:nth-child(4) { display: none; } /* Categoría badge — redundant: stock line already states type */
+    .inv-table td:nth-child(5) { grid-area: stock; white-space: nowrap !important; }
     .inv-table td:nth-child(6) { grid-area: loc; text-align: right; }
+    /* Stitch separators instead of zebra fills — same treatment as .roll-row */
+    .inv-table tbody tr { background: transparent !important; border-bottom: 1px dashed rgba(138,131,113,0.35); }
 
     .exp-table tr {
       grid-template-columns: auto 1fr auto;
@@ -208,7 +214,100 @@
     .exp-table td:nth-child(5) { grid-area: met; }
     .exp-table td:nth-child(6) { grid-area: monto; text-align: right; }
 
-    /* Panel side panel (ventas recientes + cobros pendientes): full width */
-    .side-panel { width: 100% !important; }
+    /* Panel side panel (ventas recientes + cobros pendientes): full width + stitch boundary */
+    .side-panel { width: 100% !important; border-top: 1px dashed var(--color-thread); padding-top: 16px; }
+
+    /* Stat card compaction — hook added above in Dashboard.tsx */
+    .stat-card { padding: 10px 14px !important; }
+    .stat-card > span:nth-child(2) { font-size: 18px !important; }
+
+    /* Panel header: drop extra margin-bottom (flex gap: 24px is the rhythm) */
+    .panel-header { margin-bottom: 0 !important; }
+
+    /* Batch 1: global rhythm pass */
+    /* Prevent buttons from wrapping mid-label (e.g. "Limpiar / todo", "+ / Rollo") */
+    button { white-space: nowrap; }
+
+    /* Reclaim padding reserved for the hidden '/' kbd overlay on search inputs */
+    input[data-hotkey-search] { padding-right: 12px !important; }
+
+    /* Card compaction — hooks (.card class) added in later batches */
+    .card { padding: 16px 14px !important; margin-bottom: 12px !important; }
+    .card > h2 { margin-bottom: 10px !important; }
+
+    /* EmptyState: shrink the 48px-tall placeholder chrome */
+    .empty-state { padding: 20px 16px !important; }
+
+    /* Bs secondary line: visually subordinated on phone (hook added in ui.tsx) */
+    .money-bs { font-size: 10px !important; }
+
+    /* Batch 3: /venta progressive disclosure + chrome declutter */
+
+    /* Collapse answered facet listbox; label row (sibling above) stays visible.
+       The id sits on the [role=listbox] div so :has([aria-selected=true]) hides
+       only the scroll area — the dye-colored value + × clear button remain. */
+    #lb-color:has([aria-selected="true"]),
+    #lb-nm:has([aria-selected="true"]),
+    #lb-fabric:has([aria-selected="true"]) { display: none; }
+
+    /* Shrink unanswered facets; 200px inline maxHeight can't be reached by a
+       media query so we override with !important here. 138px cuts the 4th row
+       at half height on purpose — a clipped row is the scroll affordance
+       (148px closed flush on a row boundary and read as a complete list). */
+    #lb-color, #lb-nm, #lb-fabric { max-height: 138px !important; }
+
+    /* Only the focused/active facet wears the dye border; others use thread. */
+    .venta-facets [role="listbox"]:not(:focus) { border-color: var(--color-thread) !important; }
+
+    /* Cart zone: the desktop .venta-divider is hidden on mobile with nothing
+       replacing it; add a stitch boundary to separate the two semantic zones. */
+    .venta-cart { margin-top: 24px; padding-top: 16px; border-top: 1px dashed var(--color-thread); }
+
+    /* Hide the disabled Cobrar CTA when the cart is empty — it renders as a
+       second full-width dye button at opacity .45 with no action possible.
+       It reappears the instant a line is added. */
+    .checkout-cta:disabled { display: none !important; }
+
+    /* Hide per-line Bs conversion; it duplicates the Total row's Bs ~90px lower.
+       The Total Money is NOT inside .cart-line so its Bs remains visible. */
+    .cart-line .money-bs { display: none; }
+
+    /* Batch 5: /clientes, /gastos, /configuracion + top-bar */
+
+    /* Kill the 1px desktop divider column — renders as a ~303x101 grey rectangle */
+    .clients-split > [aria-hidden="true"] { display: none; }
+    /* When creating/editing a client, hide the list pane — phone width can't host both */
+    .clients-split.form-open > div:first-child { display: none; }
+    /* "Selecciona un cliente" placeholder is irrelevant without a side panel */
+    .clients-empty-hint { display: none !important; }
+    /* Card head can wrap name + edit button on narrow width */
+    .client-card-head { flex-wrap: wrap; }
+    /* Left pane had 16px padding-right reserved for the desktop scroll gutter */
+    .clients-split > div:first-child { padding-right: 0 !important; }
+    /* Row entity badge + specialty chips repeat verbatim in the detail card below */
+    .clients-split [role="option"] > span { display: none !important; }
+    .clients-split [role="option"] > div > div:nth-child(3) { display: none !important; }
+    /* Uppercase micro-label header over a 1-2 row table is redundant */
+    .clients-split table thead { display: none; }
+
+    /* Gastos */
+    /* Footer caption fights the TOTAL DEL MES figure for visual focus */
+    .exp-note { display: none; }
+    /* Double dashed divider — card borders already delimit sections */
+    .exp-divider { display: none; }
+    /* Full-width primary CTA instead of 136px button with 156px dead space */
+    .form-actions button { width: 100%; }
+    /* Drop the unlabeled 8px magenta dot; merge its grid area into met */
+    .exp-table td:nth-child(4) { display: none; }
+    .exp-table tr { grid-template-areas: "fecha cat monto" "desc desc desc" "met met met"; }
+
+    /* Configuración */
+    /* Static boilerplate prose + sync card note (top bar already shows sync state) */
+    .config-note { display: none; }
+    /* Stack the rate input over the button on phone width */
+    .rate-form { flex-direction: column !important; align-items: stretch !important; }
+
+    /* Top bar: sync dot + label sit inline instead of stacked */
+    .sync-dot-label { flex-direction: row !important; gap: 5px !important; }
   }
 }

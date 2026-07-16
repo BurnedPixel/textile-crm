@@ -42,6 +42,11 @@ interface BatchDefaults {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
+// Strip doc-id prefix and join segments with spaces: "batch:negro:30:franela" → "negro 30 franela"
+function humanizeRef(ref: string): string {
+  return ref.replace(/^[^:]+:/, '').replace(/:/g, ' ');
+}
+
 function emptyRoll(pieceId: string, defaults: BatchDefaults): RollRow {
   return {
     pieceId,
@@ -451,7 +456,7 @@ export default function IngressForm() {
       <form onSubmit={handleSubmit} noValidate>
 
         {/* ─── CASCADE ──────────────────────────────────────────────────── */}
-        <section style={sectionStyle}>
+        <section style={sectionStyle} className="card">
           <h2 style={sectionTitle}>Identificación del lote</h2>
 
           <div className="form-grid-3">
@@ -518,7 +523,7 @@ export default function IngressForm() {
 
         {/* ─── PRODUCT TYPE + LOCATION (new batch only) ──────────────── */}
         {cascadeComplete && matchedBatch === null && (
-          <section style={sectionStyle}>
+          <section style={sectionStyle} className="card">
             <h2 style={sectionTitle}>Tipo de producto (lote nuevo)</h2>
             <div className="form-grid-2">
               <Field label="Tipo">
@@ -541,9 +546,9 @@ export default function IngressForm() {
 
         {/* ─── BATCH DEFAULTS (ROLL mode only) ──────────────────────── */}
         {cascadeComplete && effectiveProductType === 'ROLL' && matchedBatch !== undefined && (
-          <section style={sectionStyle}>
+          <section style={sectionStyle} className="card">
             <h2 style={sectionTitle}>Precios y condición</h2>
-            <div className="form-grid-3">
+            <div className="form-grid-3 form-grid-compact">
               <Field label="Costo · $/kg">
                 <NumberInput
                   value={batchDefaults.purchaseValueUsd}
@@ -590,7 +595,7 @@ export default function IngressForm() {
 
         {/* ─── ROLL ROWS ────────────────────────────────────────────── */}
         {cascadeComplete && effectiveProductType === 'ROLL' && matchedBatch !== undefined && (
-          <section style={sectionStyle}>
+          <section style={sectionStyle} className="card">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <h2 style={{ ...sectionTitle, marginBottom: 0 }}>
                 Rollos — {rolls.length} rollo{rolls.length !== 1 ? 's' : ''} · {fmtKg(totalKg)} total
@@ -687,9 +692,9 @@ export default function IngressForm() {
 
         {/* ─── COMBO / PIECE FORM ───────────────────────────────────── */}
         {cascadeComplete && (effectiveProductType === 'COMBO' || effectiveProductType === 'PIECE') && matchedBatch !== undefined && (
-          <section style={sectionStyle}>
+          <section style={sectionStyle} className="card">
             <h2 style={sectionTitle}>Unidades</h2>
-            <div className="form-grid-3">
+            <div className="form-grid-3 form-grid-compact">
               <Field label="Cantidad">
                 <NumberInput
                   value={units}
@@ -782,7 +787,7 @@ export default function IngressForm() {
                   {movementTypeLabel(m.movementType)}
                 </Badge>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--color-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {m.referenceId}
+                  {humanizeRef(m.referenceId)}
                 </span>
                 <span style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-thread)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {m.reason}

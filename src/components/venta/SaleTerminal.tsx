@@ -1225,6 +1225,7 @@ export default function SaleTerminal() {
         {/* Checkout button */}
         <Button
           size="lg"
+          className="checkout-cta"
           onClick={() => setView('payment')}
           disabled={(cart?.lines.length ?? 0) === 0}
           style={{ marginTop: '8px' }}
@@ -1478,6 +1479,7 @@ function CartLine({ line, rate, onUpdate, onRemove }: CartLineProps) {
 
   return (
     <div
+      className="cart-line"
       style={{
         padding: '12px 14px',
         border: '1px dashed var(--color-thread)',

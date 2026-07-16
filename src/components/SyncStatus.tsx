@@ -86,7 +86,7 @@ export default function SyncStatus() {
   return (
     <div className="sync-status">
       {/* Sync dot + label */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+      <div className="sync-dot-label" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
         <span
           aria-label={`Estado de sincronización: ${cfg.label}`}
           style={{

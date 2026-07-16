@@ -240,6 +240,7 @@ function DetailPanel({ client, onEdit }: DetailPanelProps) {
   if (!client) {
     return (
       <div
+        className="clients-empty-hint"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -270,6 +271,7 @@ function DetailPanel({ client, onEdit }: DetailPanelProps) {
         }}
       >
         <div
+          className="client-card-head"
           style={{
             display: 'flex',
             alignItems: 'flex-start',
@@ -668,7 +670,7 @@ export default function ClientsPage() {
       <PageHeader onNew={openNew} />
 
       {/* Master-detail split */}
-      <div className="clients-split">
+      <div className={`clients-split${showForm ? ' form-open' : ''}`}>
         {/* LEFT — list */}
         <div
           style={{

@@ -103,7 +103,7 @@ export default function ConfiguracionIsland() {
       </div>
 
       {/* ── Card 1: BCV rate ── */}
-      <div style={card}>
+      <div className="card" style={card}>
         <h2 style={cardTitle}>Tasa BCV del día</h2>
 
         {config ? (
@@ -129,7 +129,7 @@ export default function ConfiguracionIsland() {
           </p>
         )}
 
-        <form onSubmit={handleSaveRate} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+        <form onSubmit={handleSaveRate} className="rate-form" style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
           <div style={{ flex: 1 }}>
             <Field label="Nueva tasa (Bs/USD)">
               <NumberInput
@@ -158,13 +158,13 @@ export default function ConfiguracionIsland() {
           </div>
         )}
 
-        <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)', marginTop: '1rem', marginBottom: 0 }}>
+        <p className="config-note" style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)', marginTop: '1rem', marginBottom: 0 }}>
           La tasa se fija en cada venta y gasto al crearlos; los registros históricos nunca cambian.
         </p>
       </div>
 
       {/* ── Card 2: Session ── */}
-      <div style={card}>
+      <div className="card" style={card}>
         <h2 style={cardTitle}>Sesión</h2>
 
         {user ? (
@@ -191,7 +191,7 @@ export default function ConfiguracionIsland() {
       </div>
 
       {/* ── Card 3: Sync ── */}
-      <div style={card}>
+      <div className="card" style={card}>
         <h2 style={cardTitle}>Sincronización</h2>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
@@ -200,7 +200,7 @@ export default function ConfiguracionIsland() {
           </Badge>
         </div>
 
-        <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)', margin: 0 }}>
+        <p className="config-note" style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)', margin: 0 }}>
           Los datos se guardan en este equipo y se sincronizan automáticamente cuando hay conexión.
         </p>
       </div>

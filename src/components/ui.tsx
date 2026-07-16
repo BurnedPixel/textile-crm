@@ -335,6 +335,7 @@ export function Money({ usd, rate }: MoneyProps) {
       </span>
       {rate !== undefined && (
         <span
+          className="money-bs"
           style={{
             fontFamily: 'var(--font-mono)',
             fontSize: '11px',
@@ -398,6 +399,7 @@ interface EmptyStateProps {
 export function EmptyState({ title, action }: EmptyStateProps) {
   return (
     <div
+      className="empty-state"
       style={{
         display: 'flex',
         flexDirection: 'column',
