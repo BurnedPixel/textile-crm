@@ -13,6 +13,7 @@ import {
   Kbd,
   EmptyState,
   Button,
+  normStr,
 } from '../ui';
 import type { SaleDoc, ClientDoc, BatchDoc, ProductDoc, SystemConfigDoc } from '../../lib/types';
 
@@ -166,14 +167,15 @@ function InventoryTable({ stocked }: InventoryTableProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
 
+  // Accent-insensitive: "pique" finds "Piqué", "azúl" finds "Azul".
   const filtered = filter.trim()
     ? stocked.filter(({ batch }) => {
-        const q = filter.toLowerCase();
+        const q = normStr(filter);
         return (
-          batch.color.toLowerCase().includes(q) ||
-          batch.nm.toLowerCase().includes(q) ||
-          batch.fabricType.toLowerCase().includes(q) ||
-          batch.location?.toLowerCase().includes(q)
+          normStr(batch.color).includes(q) ||
+          normStr(batch.nm).includes(q) ||
+          normStr(batch.fabricType).includes(q) ||
+          (batch.location ? normStr(batch.location).includes(q) : false)
         );
       })
     : stocked;
@@ -266,9 +268,10 @@ function InventoryTable({ stocked }: InventoryTableProps) {
         </span>
       </div>
 
-      {/* Table */}
-      <div style={{ overflowX: 'auto' }}>
+      {/* Table — reflows to stacked cards on phones (.table-cards) */}
+      <div>
         <table
+          className="table-cards inv-table"
           style={{
             width: '100%',
             borderCollapse: 'collapse',
@@ -371,6 +374,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
 
       {filtered.length > 0 && (
         <p
+          className="kbd-hints"
           style={{
             fontFamily: 'var(--font-sans)',
             fontSize: '11px',
@@ -416,6 +420,7 @@ function SidePanel({ recentSales, pendingSales, clientMap, config }: SideProps) 
 
   return (
     <aside
+      className="side-panel"
       style={{
         width: '280px',
         flexShrink: 0,
@@ -607,7 +612,11 @@ function SidePanel({ recentSales, pendingSales, clientMap, config }: SideProps) 
 
 function Header({ config }: { config: SystemConfigDoc | null }) {
   const todayLabel = new Intl.DateTimeFormat('es-VE', { dateStyle: 'full' }).format(new Date());
-  const rateStale = config ? config.lastUpdate.slice(0, 10) !== isoToday() : false;
+  // Age-based, not same-calendar-day: the rate is written at 07:00 Caracas and
+  // clients run in any timezone (UTC-day equality false-alarmed every Caracas
+  // evening and all weekend — BCV publishes nothing Sat/Sun, so ≥3 days ≈ a
+  // genuinely missed refresh, not a weekend).
+  const rateStale = config ? daysSince(config.lastUpdate) >= 3 : false;
 
   return (
     <div

@@ -439,7 +439,7 @@ export default function IngressForm() {
           <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: 22, fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
             Ingreso de stock
           </h1>
-          <p style={{ fontFamily: 'var(--font-sans)', fontSize: 13, color: 'var(--color-thread)', margin: '4px 0 0' }}>
+          <p className="kbd-hints" style={{ fontFamily: 'var(--font-sans)', fontSize: 13, color: 'var(--color-thread)', margin: '4px 0 0' }}>
             Presiona <Kbd>/</Kbd> para enfocar Color · <Kbd>Enter</Kbd> avanza al siguiente campo
           </p>
         </div>
@@ -598,9 +598,8 @@ export default function IngressForm() {
               <Button variant="ghost" size="md" type="button" onClick={addRollRow}>+ Rollo</Button>
             </div>
 
-            {/* Column headers + rows scroll sideways together on phones */}
-            <div className="hscroll"><div className="hscroll-inner">
-            <div style={rollHeaderGrid}>
+            {/* Column headers (hidden on phones — rows reflow to two lines) */}
+            <div className="roll-head">
               <span style={colLabel}>Pieza</span>
               <span style={colLabel}>Peso (Kg)</span>
               <span style={{ ...colLabel, color: 'var(--color-thread)', opacity: 0.7 }}>Costo $</span>
@@ -611,7 +610,7 @@ export default function IngressForm() {
 
             <div ref={rollsContainerRef}>
               {rolls.map((roll, idx) => (
-                <div key={idx} data-roll-row style={rollRowGrid}>
+                <div key={idx} data-roll-row className="roll-row">
                   {/* Piece ID — display only, auto-assigned */}
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--color-thread)', padding: '0 4px', alignSelf: 'center' }}>
                     {roll.pieceId}
@@ -679,9 +678,8 @@ export default function IngressForm() {
                 </div>
               ))}
             </div>
-            </div></div>
 
-            <p style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-thread)', margin: '8px 0 0' }}>
+            <p className="kbd-hints" style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-thread)', margin: '8px 0 0' }}>
               <Kbd>↹</Kbd> / <Kbd>↵</Kbd> siguiente rollo · costo/precio/condición se heredan de arriba y se ajustan con el ratón
             </p>
           </section>
@@ -774,9 +772,9 @@ export default function IngressForm() {
         {movements.length === 0 ? (
           <EmptyState title="Sin movimientos registrados aún" />
         ) : (
-          <div className="hscroll"><div className="hscroll-inner" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {movements.map((m) => (
-              <div key={m._id} style={movementRow}>
+              <div key={m._id} className="movement-row" style={movementRow}>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--color-thread)', whiteSpace: 'nowrap' }}>
                   {fmtDateTime(m.date)}
                 </span>
@@ -798,7 +796,7 @@ export default function IngressForm() {
                 </span>
               </div>
             ))}
-          </div></div>
+          </div>
         )}
       </section>
     </div>
@@ -824,23 +822,6 @@ const sectionTitle: React.CSSProperties = {
   color: 'var(--color-thread)',
   marginBottom: 16,
   marginTop: 0,
-};
-
-// Roll grid: piece-id | weight (wider) | cost (narrow) | price (narrow) | condition | delete
-const rollHeaderGrid: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '52px 2fr 1fr 1fr 110px 40px',
-  gap: 8,
-  marginBottom: 6,
-  padding: '0 4px',
-};
-
-const rollRowGrid: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '52px 2fr 1fr 1fr 110px 40px',
-  gap: 8,
-  marginBottom: 6,
-  alignItems: 'center',
 };
 
 const colLabel: React.CSSProperties = {
@@ -915,11 +896,8 @@ const stitchDivider: React.CSSProperties = {
   opacity: 0.4,
 };
 
+// Grid shape lives in .movement-row (global.css) so phones can reflow it
 const movementRow: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '140px 76px 1fr 1fr 140px',
-  gap: 12,
-  alignItems: 'center',
   padding: '10px 14px',
   borderRadius: 6,
   backgroundColor: 'var(--color-cloth)',
