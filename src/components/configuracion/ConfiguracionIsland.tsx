@@ -37,9 +37,11 @@ export default function ConfiguracionIsland() {
 
   const { data: config } = useLiveQuery((db) => getConfig(db));
 
-  const today = new Date().toISOString().slice(0, 10);
-  const lastUpdateDate = config?.lastUpdate?.slice(0, 10);
-  const rateIsStale = config && lastUpdateDate !== today;
+  // Age-based, not same-calendar-day (see Dashboard): UTC-day equality
+  // false-alarmed every Caracas evening and all weekend.
+  const rateIsStale = config
+    ? Math.floor((Date.now() - new Date(config.lastUpdate).getTime()) / 86_400_000) >= 3
+    : false;
 
   async function handleSaveRate(e: React.FormEvent) {
     e.preventDefault();
@@ -114,7 +116,7 @@ export default function ConfiguracionIsland() {
                 Bs / USD
               </span>
               {rateIsStale && (
-                <Badge tone="warn">Tasa del día anterior</Badge>
+                <Badge tone="warn">Tasa desactualizada</Badge>
               )}
             </div>
             <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>

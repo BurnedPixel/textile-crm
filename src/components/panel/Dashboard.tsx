@@ -610,7 +610,11 @@ function SidePanel({ recentSales, pendingSales, clientMap, config }: SideProps) 
 
 function Header({ config }: { config: SystemConfigDoc | null }) {
   const todayLabel = new Intl.DateTimeFormat('es-VE', { dateStyle: 'full' }).format(new Date());
-  const rateStale = config ? config.lastUpdate.slice(0, 10) !== isoToday() : false;
+  // Age-based, not same-calendar-day: the rate is written at 07:00 Caracas and
+  // clients run in any timezone (UTC-day equality false-alarmed every Caracas
+  // evening and all weekend — BCV publishes nothing Sat/Sun, so ≥3 days ≈ a
+  // genuinely missed refresh, not a weekend).
+  const rateStale = config ? daysSince(config.lastUpdate) >= 3 : false;
 
   return (
     <div
