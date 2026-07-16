@@ -437,7 +437,7 @@ export function EmptyState({ title, action }: EmptyStateProps) {
 // Visually matches the venta client picker panel and facet Listbox option rows.
 
 /** Accent-insensitive, case-insensitive substring match — same logic as norm() in lib/types. */
-function normStr(s: string): string {
+export function normStr(s: string): string {
   return s
     .toLowerCase()
     .normalize('NFD')

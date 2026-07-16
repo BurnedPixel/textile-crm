@@ -13,6 +13,7 @@ import {
   Kbd,
   EmptyState,
   Button,
+  normStr,
 } from '../ui';
 import type { SaleDoc, ClientDoc, BatchDoc, ProductDoc, SystemConfigDoc } from '../../lib/types';
 
@@ -166,14 +167,15 @@ function InventoryTable({ stocked }: InventoryTableProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
 
+  // Accent-insensitive: "pique" finds "Piqué", "azúl" finds "Azul".
   const filtered = filter.trim()
     ? stocked.filter(({ batch }) => {
-        const q = filter.toLowerCase();
+        const q = normStr(filter);
         return (
-          batch.color.toLowerCase().includes(q) ||
-          batch.nm.toLowerCase().includes(q) ||
-          batch.fabricType.toLowerCase().includes(q) ||
-          batch.location?.toLowerCase().includes(q)
+          normStr(batch.color).includes(q) ||
+          normStr(batch.nm).includes(q) ||
+          normStr(batch.fabricType).includes(q) ||
+          (batch.location ? normStr(batch.location).includes(q) : false)
         );
       })
     : stocked;
