@@ -893,6 +893,7 @@ function PageHeader({ onNew }: { onNew: () => void }) {
             color: 'var(--color-thread)',
             margin: '2px 0 0',
           }}
+          className="kbd-hints"
         >
           <Kbd>/</Kbd> buscar &nbsp;·&nbsp; <Kbd>↑↓</Kbd> navegar &nbsp;·&nbsp; <Kbd>n</Kbd> nuevo cliente
         </p>

@@ -122,11 +122,23 @@
   .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
   .form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
 
-  /* Wide row grids (ingreso rolls/movements): scroll sideways on phones */
-  .hscroll { overflow-x: auto; }
+  /* Ingreso roll rows: piece | weight | cost | price | condition | delete */
+  .roll-head, .roll-row { display: grid; grid-template-columns: 52px 2fr 1fr 1fr 110px 40px; gap: 8px; margin-bottom: 6px; }
+  .roll-head { padding: 0 4px; }
+  .roll-row { align-items: center; }
 
-  /* Sync widget: vertical in the desktop rail, horizontal in the bottom bar */
+  /* Ingreso movements: date | badge | ref | reason | qty */
+  .movement-row { display: grid; grid-template-columns: 140px 76px 1fr 1fr 140px; gap: 12px; align-items: center; }
+
+  /* Sync widget: vertical in the desktop rail, horizontal in the top bar */
   .sync-status { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 4px; width: 64px; }
+
+  /* Keyboard shortcuts are a desktop affordance — hide every mention on touch
+     widths (phones AND tablets). Kbd renders a real <kbd>; hint strips opt in
+     via .kbd-hints. */
+  @media (max-width: 1023px) {
+    kbd, .kbd-hints { display: none !important; }
+  }
 
   @media (max-width: 767px) {
     .venta-split { flex-direction: column; }
@@ -135,9 +147,68 @@
     .venta-divider { display: none; }
     .clients-split { grid-template-columns: 1fr; }
     .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; }
-    .hscroll-inner { min-width: 560px; }
     .sync-status { flex-direction: row; width: auto; gap: 6px; padding: 4px 2px; }
     /* iOS zooms the page on focusing inputs under 16px */
     input, select, textarea { font-size: 16px !important; }
+
+    /* Roll rows reflow to two lines: piece+weight+delete / overrides */
+    .roll-head { display: none; }
+    .roll-row {
+      grid-template-columns: 52px 1fr 1fr 40px;
+      grid-template-areas: "id w w del" "c p cond cond";
+      row-gap: 4px; padding: 8px 0;
+      border-bottom: 1px dashed rgba(138,131,113,0.35);
+    }
+    .roll-row > :nth-child(1) { grid-area: id; }
+    .roll-row > :nth-child(2) { grid-area: w; }
+    .roll-row > :nth-child(3) { grid-area: c; }
+    .roll-row > :nth-child(4) { grid-area: p; }
+    .roll-row > :nth-child(5) { grid-area: cond; }
+    .roll-row > :nth-child(6) { grid-area: del; }
+
+    /* Movements reflow to a stacked card */
+    .movement-row {
+      grid-template-columns: 1fr auto auto;
+      grid-template-areas: "date badge qty" "ref ref ref" "reason reason reason";
+      row-gap: 2px;
+    }
+    .movement-row > * { min-width: 0; } /* let nowrap+ellipsis spans shrink into their area */
+    .movement-row > :nth-child(1) { grid-area: date; }
+    .movement-row > :nth-child(2) { grid-area: badge; justify-self: end; }
+    .movement-row > :nth-child(3) { grid-area: ref; }
+    .movement-row > :nth-child(4) { grid-area: reason; }
+    .movement-row > :nth-child(5) { grid-area: qty; text-align: left; }
+
+    /* Data tables (panel inventory, gastos history) reflow to stacked cards
+       instead of scrolling sideways. Inline td styles need the !important. */
+    .table-cards thead { display: none; }
+    .table-cards, .table-cards tbody { display: block; width: 100%; }
+    .table-cards tr { display: grid; align-items: center; column-gap: 10px; padding: 10px 12px; }
+    .table-cards td { padding: 0 !important; white-space: normal !important; max-width: none !important; }
+
+    .inv-table tr {
+      grid-template-columns: auto auto 1fr;
+      grid-template-areas: "sw nm tipo" "cat stock loc";
+    }
+    .inv-table td:nth-child(1) { grid-area: sw; }
+    .inv-table td:nth-child(2) { grid-area: nm; }
+    .inv-table td:nth-child(3) { grid-area: tipo; }
+    .inv-table td:nth-child(4) { grid-area: cat; }
+    .inv-table td:nth-child(5) { grid-area: stock; }
+    .inv-table td:nth-child(6) { grid-area: loc; text-align: right; }
+
+    .exp-table tr {
+      grid-template-columns: auto 1fr auto;
+      grid-template-areas: "fecha cat monto" "desc desc desc" "met met fijo";
+    }
+    .exp-table td:nth-child(1) { grid-area: fecha; }
+    .exp-table td:nth-child(2) { grid-area: cat; }
+    .exp-table td:nth-child(3) { grid-area: desc; }
+    .exp-table td:nth-child(4) { grid-area: fijo; text-align: right !important; }
+    .exp-table td:nth-child(5) { grid-area: met; }
+    .exp-table td:nth-child(6) { grid-area: monto; text-align: right; }
+
+    /* Panel side panel (ventas recientes + cobros pendientes): full width */
+    .side-panel { width: 100% !important; }
   }
 }

@@ -937,8 +937,7 @@ export default function SaleTerminal() {
           <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '18px', fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
             Nueva venta
           </h1>
-          <Kbd>/</Kbd>
-          <span style={hintStyle}>buscar</span>
+          <span className="kbd-hints"><Kbd>/</Kbd> <span style={hintStyle}>buscar</span></span>
         </div>
 
         {/* Three INDEPENDENT facets — any order. Availability narrows mutually. */}
@@ -981,7 +980,7 @@ export default function SaleTerminal() {
         />
 
         {/* Keyboard hint strip */}
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="kbd-hints" style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
           <Kbd>↹</Kbd><span style={hintStyle}>campo</span>
           <Kbd>↑↓</Kbd><span style={hintStyle}>navegar</span>
           <Kbd>↵</Kbd><span style={hintStyle}>elegir</span>
@@ -1402,7 +1401,7 @@ function BatchProductZone({
               );
             })}
           </div>
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <div className="kbd-hints" style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <Kbd>↑↓</Kbd><span style={hintStyle}>rollo</span>
             <Kbd>↵</Kbd><span style={hintStyle}>seleccionar</span>
           </div>
@@ -1456,7 +1455,7 @@ function BatchProductZone({
           <Button onClick={onAdd} size="lg">
             Agregar al carrito <Kbd>↵</Kbd>
           </Button>
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <div className="kbd-hints" style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <Kbd>Esc</Kbd><span style={hintStyle}>volver</span>
           </div>
         </>

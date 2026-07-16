@@ -266,9 +266,10 @@ function InventoryTable({ stocked }: InventoryTableProps) {
         </span>
       </div>
 
-      {/* Table */}
-      <div style={{ overflowX: 'auto' }}>
+      {/* Table — reflows to stacked cards on phones (.table-cards) */}
+      <div>
         <table
+          className="table-cards inv-table"
           style={{
             width: '100%',
             borderCollapse: 'collapse',
@@ -371,6 +372,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
 
       {filtered.length > 0 && (
         <p
+          className="kbd-hints"
           style={{
             fontFamily: 'var(--font-sans)',
             fontSize: '11px',
@@ -416,6 +418,7 @@ function SidePanel({ recentSales, pendingSales, clientMap, config }: SideProps) 
 
   return (
     <aside
+      className="side-panel"
       style={{
         width: '280px',
         flexShrink: 0,

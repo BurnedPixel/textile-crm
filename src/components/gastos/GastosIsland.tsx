@@ -261,7 +261,7 @@ export default function GastosIsland() {
         <EmptyState title="Sin gastos en este período" />
       ) : (
         <div style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table className="table-cards exp-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-thread)' }}>
                 {['Fecha', 'Categoría', 'Descripción', 'Fijo', 'Método', 'Monto'].map((h) => (

@@ -96,8 +96,42 @@ const icons: Record<string, string> = {
       {/* Spacer */}
       <div style="flex:1;" />
 
-      {/* SyncStatus island — bottom of rail */}
+      {/* SyncStatus island — bottom of rail (desktop) / top bar (phone) */}
       <SyncStatus client:only="react" />
+
+      {/* Hamburger menu — phone only (rail-links hidden there) */}
+      <details class="rail-menu">
+        <summary aria-label="Menú de navegación">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
+          </svg>
+        </summary>
+        <div class="menu-panel">
+          {navItems.map((item) => {
+            const isActive = active === item.href || (item.href !== '/' && Astro.url.pathname.startsWith(item.href));
+            return (
+              <a
+                href={item.href}
+                class="menu-link"
+                style={`
+                  color:${isActive ? 'var(--color-dye)' : 'var(--color-greige)'};
+                  background:${isActive ? 'rgba(181,23,92,0.12)' : 'transparent'};
+                `}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                <svg
+                  width="20" height="20" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" stroke-width="1.75"
+                  stroke-linecap="round" stroke-linejoin="round"
+                  aria-hidden="true"
+                  set:html={icons[item.icon]}
+                />
+                {item.label}
+              </a>
+            );
+          })}
+        </div>
+      </details>
     </nav>
 
     {/* MAIN CONTENT */}
@@ -144,20 +178,48 @@ const icons: Record<string, string> = {
         pointer-events: none;
       }
       .content { margin-left: 76px; flex: 1; min-width: 0; padding: 2rem 2.5rem; }
+      .rail-menu { display: none; }
+
+      /* Keyboard hints are desktop-only (tablets are touch-first too) */
+      @media (max-width: 1023px) {
+        .rail-hint { display: none; }
+      }
 
       @media (max-width: 767px) {
+        /* Rail becomes a fixed TOP bar: brand · spacer · sync · hamburger */
         .rail {
-          top: auto; right: 0; bottom: 0; left: 0; width: 100%;
-          flex-direction: row; align-items: stretch; justify-content: space-around;
-          padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); gap: 0;
-          border-right: none; border-top: 1px solid rgba(255,255,255,0.06);
-          overflow-x: auto;
+          top: 0; right: 0; bottom: auto; left: 0; width: 100%;
+          height: calc(56px + env(safe-area-inset-top));
+          flex-direction: row; align-items: center;
+          padding: env(safe-area-inset-top) 10px 0; gap: 8px;
+          border-right: none; border-bottom: 1px solid rgba(255,255,255,0.06);
         }
-        .rail-brand, .rail-hint, .rail-dots { display: none; }
-        .rail-label { font-size: 8.5px; letter-spacing: 0.02em; }
-        .rail-link { width: auto; min-width: 44px; flex: 1 1 0; padding: 6px 2px; overflow: hidden; }
-        .rail-active-bar { left: 15%; right: 15%; top: 0; bottom: auto; width: auto; height: 3px; border-radius: 0 0 2px 2px; }
-        .content { margin-left: 0; padding: 1rem 1rem 96px; }
+        .rail-brand { margin: 0; display: flex; align-items: center; }
+        .rail-link, .rail-dots { display: none; }
+        .content { margin-left: 0; padding: calc(56px + env(safe-area-inset-top) + 1rem) 1rem 1.5rem; }
+
+        .rail-menu { display: block; }
+        .rail-menu summary {
+          list-style: none; display: flex; align-items: center; justify-content: center;
+          width: 44px; height: 44px; border-radius: 6px; cursor: pointer;
+          color: var(--color-greige);
+        }
+        .rail-menu summary::-webkit-details-marker { display: none; }
+        .rail-menu[open] summary { background: rgba(181,23,92,0.15); color: var(--color-dye); }
+        .menu-panel {
+          position: fixed; top: calc(56px + env(safe-area-inset-top)); left: 0; right: 0;
+          background: var(--color-ink);
+          border-bottom: 1px solid rgba(255,255,255,0.1);
+          box-shadow: 0 16px 32px rgba(0,0,0,0.35);
+          padding: 6px 8px 10px;
+          display: flex; flex-direction: column; gap: 2px;
+        }
+        .menu-link {
+          display: flex; align-items: center; gap: 12px;
+          min-height: 48px; padding: 0 12px; border-radius: 6px; text-decoration: none;
+          font-family: var(--font-sans); font-size: 13px; font-weight: 600;
+          letter-spacing: 0.05em; text-transform: uppercase;
+        }
       }
     </style>
 
