@@ -96,6 +96,7 @@ async function fetchAll(): Promise<DashboardData> {
 function StatCard({ label, primary, secondary }: { label: string; primary: string; secondary?: string }) {
   return (
     <div
+      className="stat-card"
       style={{
         flex: '1 1 160px',
         minWidth: 0,
@@ -620,6 +621,7 @@ function Header({ config }: { config: SystemConfigDoc | null }) {
 
   return (
     <div
+      className="panel-header"
       style={{
         display: 'flex',
         alignItems: 'center',
