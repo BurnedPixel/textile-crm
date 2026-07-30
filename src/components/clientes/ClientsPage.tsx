@@ -7,7 +7,7 @@ import { useLiveQuery } from '../../lib/hooks';
 import { getClients, getSales, saveClient, usdPaid } from '../../lib/queries';
 import { getPayments, paymentsBySale, saleBalance } from '../../lib/payments';
 import type { ClientDoc, SaleDoc, PaymentDoc, EntityType } from '../../lib/types';
-import { fmtDate, fmtUsd } from '../../lib/format';
+import { fmtDate, fmtUsd, PAYMENT_LABEL, PAYMENT_TONE } from '../../lib/format';
 import {
   Button,
   Input,
@@ -24,18 +24,6 @@ import {
 const ENTITY_LABELS: Record<EntityType, string> = {
   PERSON: 'Persona natural',
   COMPANY: 'Empresa',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  PAID: 'Pagado',
-  PARTIAL: 'Parcial',
-  PENDING: 'Pendiente',
-};
-
-const STATUS_TONE: Record<string, 'ok' | 'warn' | 'danger'> = {
-  PAID: 'ok',
-  PARTIAL: 'warn',
-  PENDING: 'danger',
 };
 
 // ─── VALIDATION ──────────────────────────────────────────────────────────────
@@ -235,7 +223,7 @@ function ClientSales({ clientId }: { clientId: string }) {
                   <Money usd={sale.totalUsd} />
                 </td>
                 <td style={{ textAlign: 'right', padding: '8px 0' }}>
-                  <Badge tone={STATUS_TONE[status]}>{STATUS_LABELS[status]}</Badge>
+                  <Badge tone={PAYMENT_TONE[status]}>{PAYMENT_LABEL[status]}</Badge>
                 </td>
               </tr>
             );

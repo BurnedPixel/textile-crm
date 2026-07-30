@@ -8,7 +8,10 @@ import { getConfig, getStockedBatches, getSales, getClients } from '../../lib/qu
 import { usdPaid } from '../../lib/queries';
 import { getPayments, paymentsBySale, recordPayment, saleBalance } from '../../lib/payments';
 import { cachedUser } from '../../lib/auth';
-import { fmtUsd, fmtBs, fmtDate, fmtDateTime, toBs, round2 } from '../../lib/format';
+import {
+  fmtUsd, fmtBs, fmtDate, fmtDateTime, toBs, round2,
+  PAYMENT_LABEL, PAYMENT_TONE, PRODUCT_TYPE_LABEL,
+} from '../../lib/format';
 import {
   Badge,
   SwatchChip,
@@ -35,24 +38,6 @@ function isoToday(): string {
 function daysSince(isoDate: string): number {
   const then = new Date(isoDate).getTime();
   return Math.floor((Date.now() - then) / 86_400_000);
-}
-
-function paymentTone(status: string): 'ok' | 'warn' | 'danger' {
-  if (status === 'PAID') return 'ok';
-  if (status === 'PARTIAL') return 'warn';
-  return 'danger';
-}
-
-function paymentLabel(status: string): string {
-  if (status === 'PAID') return 'Pagada';
-  if (status === 'PARTIAL') return 'Parcial';
-  return 'Pendiente';
-}
-
-function productTypeBadge(pt: string): string {
-  if (pt === 'ROLL') return 'Rollo';
-  if (pt === 'COMBO') return 'Combo';
-  return 'Pieza';
 }
 
 // Payment state is DERIVED — sale.paymentStatus is only the checkout snapshot,
@@ -347,7 +332,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
                   {batch.fabricType}
                 </td>
                 <td style={{ padding: '10px 12px' }}>
-                  <Badge tone="neutral">{productTypeBadge(batch.productType)}</Badge>
+                  <Badge tone="neutral">{PRODUCT_TYPE_LABEL[batch.productType]}</Badge>
                 </td>
                 <td
                   style={{
@@ -431,6 +416,8 @@ function SidePanel({ recentSales, pendingSales, paymentsFor, clientMap, config, 
     return clientMap.get(clientId) ?? 'Cliente';
   }
 
+  const saleStatus = (sale: SaleDoc) => saleBalance(sale, paymentsFor.get(sale._id)).status;
+
   return (
     <aside
       className="side-panel"
@@ -503,9 +490,7 @@ function SidePanel({ recentSales, pendingSales, paymentsFor, clientMap, config, 
                   </span>
                   {/* Derived — a sale collected later is "Pagada" here even though
                       its own frozen paymentStatus still says PENDING. */}
-                  <Badge tone={paymentTone(saleBalance(sale, paymentsFor.get(sale._id)).status)}>
-                    {paymentLabel(saleBalance(sale, paymentsFor.get(sale._id)).status)}
-                  </Badge>
+                  <Badge tone={PAYMENT_TONE[saleStatus(sale)]}>{PAYMENT_LABEL[saleStatus(sale)]}</Badge>
                 </div>
                 <div
                   style={{

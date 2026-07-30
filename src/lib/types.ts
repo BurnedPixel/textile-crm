@@ -189,7 +189,12 @@ export interface InventoryMovementDoc extends Doc {
 
 /**
  * _id: rate:{YYYY-MM-DD, Caracas day}. Daily official BCV rates, written by the
- * VPS service (vps/bcv-rates.py) — the app only reads them. One doc per day.
+ * VPS service (vps/bcv-rates.py). One doc per day.
+ *
+ * NOTE: nothing in the app reads these yet — the service also refreshes
+ * `config:system.currentDailyRateBCV`, which is what the UI uses. This interface
+ * is kept as the typed contract for documents that DO exist in the production
+ * database, so a future rate-history view starts from the real shape.
  */
 export interface RateDoc extends Doc {
   type: 'rate';
@@ -217,17 +222,6 @@ export interface SessionUser {
   name: string;
   roles: string[];
 }
-
-export type AnyDoc =
-  | BatchDoc
-  | ProductDoc
-  | ClientDoc
-  | SystemConfigDoc
-  | ExpenseDoc
-  | SaleDoc
-  | PaymentDoc
-  | InventoryMovementDoc
-  | RateDoc;
 
 // ---- _id builders (deterministic ids ARE the uniqueness constraints) ----
 

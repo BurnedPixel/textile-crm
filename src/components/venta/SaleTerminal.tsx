@@ -27,7 +27,10 @@ import {
 import { checkout } from '../../lib/checkout';
 import { saveClient } from '../../lib/queries';
 import { useLiveQuery } from '../../lib/hooks';
-import { round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot } from '../../lib/format';
+import {
+  round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot,
+  PAYMENT_LABEL, PAYMENT_TONE, CONDITION_SHORT, CONDITION_TONE,
+} from '../../lib/format';
 import { UNIT_FOR, clientIdOf, type BatchDoc, type ProductDoc, type CartLineItem, type ClientDoc, type CartDoc, type PaymentStatus } from '../../lib/types';
 import {
   Button,
@@ -44,30 +47,6 @@ import {
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 type StockedEntry = { batch: BatchDoc; products: ProductDoc[] };
-
-function paymentTone(s: PaymentStatus): 'ok' | 'warn' | 'danger' {
-  if (s === 'PAID') return 'ok';
-  if (s === 'PARTIAL') return 'warn';
-  return 'danger';
-}
-
-function paymentLabel(s: PaymentStatus): string {
-  if (s === 'PAID') return 'Pagado';
-  if (s === 'PARTIAL') return 'Pago parcial';
-  return 'Pendiente';
-}
-
-function conditionLabel(tag: string): string {
-  if (tag === 'FIRST') return '1ª';
-  if (tag === 'SECONDS') return '2da';
-  return 'Def.';
-}
-
-function conditionTone(tag: string): 'ok' | 'warn' | 'danger' | 'neutral' {
-  if (tag === 'FIRST') return 'ok';
-  if (tag === 'SECONDS') return 'warn';
-  return 'danger';
-}
 
 // ── Listbox (keyboard-driven facet, independent selection) ───────────────────
 // Options are always fully visible. `isAvailable(opt)` decides whether an option
@@ -834,7 +813,7 @@ export default function SaleTerminal() {
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
           <Money usd={lastSale.totalUsd} rate={rate || undefined} />
-          <Badge tone={paymentTone(lastSale.status)}>{paymentLabel(lastSale.status)}</Badge>
+          <Badge tone={PAYMENT_TONE[lastSale.status]}>{PAYMENT_LABEL[lastSale.status]}</Badge>
         </div>
         <Button size="lg" onClick={handleNewSale}>
           Nueva venta <Kbd>N</Kbd>
@@ -901,7 +880,7 @@ export default function SaleTerminal() {
           </span>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             {remainingUsd > 0.009 && <Money usd={remainingUsd} rate={rate || undefined} />}
-            <Badge tone={paymentTone(previewStatus)}>{paymentLabel(previewStatus)}</Badge>
+            <Badge tone={PAYMENT_TONE[previewStatus]}>{PAYMENT_LABEL[previewStatus]}</Badge>
           </div>
         </div>
 
@@ -1415,7 +1394,7 @@ function BatchProductZone({
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-ink)', minWidth: '64px' }}>{fmtKg(roll.currentWeightKg)}</span>
                   <span style={{ color: 'var(--color-thread)', fontSize: '11px', textTransform: 'uppercase' }}>{roll.pieceId}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-thread)' }}>{fmtLot(roll.lotNumber)}</span>
-                  <Badge tone={conditionTone(roll.conditionTag)}>{conditionLabel(roll.conditionTag)}</Badge>
+                  <Badge tone={CONDITION_TONE[roll.conditionTag]}>{CONDITION_SHORT[roll.conditionTag]}</Badge>
                   {inCart
                     ? <Badge tone="neutral">EN CARRITO</Badge>
                     : <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--color-ink)' }}>{fmtUsd(roll.salePriceUsd)}/kg</span>
