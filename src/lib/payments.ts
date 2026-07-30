@@ -8,7 +8,10 @@
 // NEVER reads SystemConfig — exchangeRateBCV is a parameter, locked per payment,
 // exactly like checkout() and addExpense().
 
-import { paymentIdOf, type PaymentDoc, type SaleDoc, type PaymentStatus } from './types';
+import {
+  paymentIdOf, assertAmount, FIELD_MAX,
+  type PaymentDoc, type SaleDoc, type PaymentStatus,
+} from './types';
 import { round2 } from './format';
 // usdPaid/statusForPaid live in queries.ts beside computePaymentStatus so the
 // checkout status and the derived balance can never drift apart.
@@ -81,9 +84,12 @@ export interface RecordPaymentInput {
  */
 export async function recordPayment(db: DB, input: RecordPaymentInput): Promise<PaymentDoc> {
   const { paidUsdCash, paidUsdTransfer, paidBs } = input;
-  if (!(input.exchangeRateBCV > 0)) throw new Error('La tasa de cambio debe ser mayor que cero.');
+  assertAmount(input.exchangeRateBCV, 'La tasa de cambio');
   for (const amount of [paidUsdCash, paidUsdTransfer, paidBs]) {
-    if (!isFinite(amount) || amount < 0) throw new Error('Los montos del cobro no pueden ser negativos.');
+    assertAmount(amount, 'El monto del cobro', { allowZero: true });
+  }
+  if ((input.note ?? '').length > FIELD_MAX.note) {
+    throw new Error(`La referencia no puede superar ${FIELD_MAX.note} caracteres.`);
   }
 
   const amountUsd = usdPaid(paidUsdCash, paidUsdTransfer, paidBs, input.exchangeRateBCV);

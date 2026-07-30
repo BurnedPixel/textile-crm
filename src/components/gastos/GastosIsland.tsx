@@ -153,7 +153,8 @@ export default function GastosIsland() {
       </div>
 
       {/* Form card */}
-      <form onSubmit={handleSubmit}>
+      {/* noValidate — our Spanish messages, not the browser's localized bubbles. */}
+      <form onSubmit={handleSubmit} noValidate>
         <div className="card" style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', padding: '1.5rem', marginBottom: '2rem' }}>
           <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-thread)', margin: '0 0 1.25rem' }}>
             Nuevo gasto

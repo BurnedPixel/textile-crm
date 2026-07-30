@@ -6,7 +6,10 @@ import { db } from '../../lib/db';
 import { useLiveQuery } from '../../lib/hooks';
 import { getClients, getSales, saveClient, usdPaid } from '../../lib/queries';
 import { getPayments, paymentsBySale, saleBalance } from '../../lib/payments';
-import type { ClientDoc, SaleDoc, PaymentDoc, EntityType } from '../../lib/types';
+import {
+  FIELD_MAX, validateDocumentId, validateEmail, validateName, validatePhone,
+  type ClientDoc, type SaleDoc, type PaymentDoc, type EntityType,
+} from '../../lib/types';
 import { fmtDate, fmtUsd, PAYMENT_LABEL, PAYMENT_TONE } from '../../lib/format';
 import {
   Button,
@@ -31,16 +34,25 @@ const ENTITY_LABELS: Record<EntityType, string> = {
 interface FormErrors {
   documentId?: string;
   name?: string;
+  phoneNumber?: string;
   email?: string;
 }
 
+/**
+ * The same functions `saveClient` enforces — this only decides WHERE the message
+ * appears. Duplicating the rules here is how the two client forms drifted apart
+ * in the first place.
+ */
 function validateForm(form: ClientFormState): FormErrors {
   const errors: FormErrors = {};
-  if (!form.documentId.trim()) errors.documentId = 'La cédula o RIF es obligatorio.';
-  if (!form.name.trim()) errors.name = 'El nombre es obligatorio.';
-  if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-    errors.email = 'El correo electrónico no es válido.';
-  }
+  const documentId = validateDocumentId(form.documentId);
+  const name = validateName(form.name);
+  const phoneNumber = validatePhone(form.phoneNumber);
+  const email = validateEmail(form.email);
+  if (documentId) errors.documentId = documentId;
+  if (name) errors.name = name;
+  if (phoneNumber) errors.phoneNumber = phoneNumber;
+  if (email) errors.email = email;
   return errors;
 }
 
@@ -495,6 +507,11 @@ function ClientForm({ initial, isNew, onSave, onCancel, saving, serverError }: C
   return (
     <form
       onSubmit={handleSubmit}
+      // noValidate: the browser's own constraint bubbles are in ITS language,
+      // not the app's, and they fire before our Spanish messages can render.
+      // Every other form here does the same. `type=email/tel` stays — it picks
+      // the right mobile keyboard, which is all we want from it.
+      noValidate
       style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
     >
       <Field label="Cédula / RIF" error={errors.documentId}>
@@ -503,6 +520,8 @@ function ClientForm({ initial, isNew, onSave, onCancel, saving, serverError }: C
             value={form.documentId}
             onChange={set('documentId')}
             placeholder="V-12345678 / J-12345678-9"
+            maxLength={FIELD_MAX.documentId}
+            autoCapitalize="characters"
             style={{ fontFamily: 'var(--font-mono)', fontSize: '14px' }}
             autoFocus
           />
@@ -531,23 +550,52 @@ function ClientForm({ initial, isNew, onSave, onCancel, saving, serverError }: C
       </Field>
 
       <Field label="Nombre" error={errors.name}>
-        <Input value={form.name} onChange={set('name')} placeholder="Nombre completo o razón social" />
+        <Input
+          value={form.name}
+          onChange={set('name')}
+          placeholder="Nombre completo o razón social"
+          maxLength={FIELD_MAX.name}
+          autoComplete="name"
+        />
       </Field>
 
-      <Field label="Teléfono">
-        <Input value={form.phoneNumber} onChange={set('phoneNumber')} placeholder="+58 412-000-0000" type="tel" />
+      <Field label="Teléfono" error={errors.phoneNumber}>
+        <Input
+          value={form.phoneNumber}
+          onChange={set('phoneNumber')}
+          placeholder="+58 412-000-0000"
+          type="tel"
+          inputMode="tel"
+          maxLength={FIELD_MAX.phoneNumber}
+          autoComplete="tel"
+        />
       </Field>
 
       <Field label="Correo electrónico" error={errors.email}>
-        <Input value={form.email} onChange={set('email')} placeholder="correo@ejemplo.com" type="email" />
+        <Input
+          value={form.email}
+          onChange={set('email')}
+          placeholder="correo@ejemplo.com"
+          type="email"
+          inputMode="email"
+          maxLength={FIELD_MAX.email}
+          autoComplete="email"
+          autoCapitalize="none"
+        />
       </Field>
 
       <Field label="Dirección">
-        <Input value={form.address} onChange={set('address')} placeholder="Dirección completa" />
+        <Input
+          value={form.address}
+          onChange={set('address')}
+          placeholder="Dirección completa"
+          maxLength={FIELD_MAX.address}
+          autoComplete="street-address"
+        />
       </Field>
 
       <Field label="Especialidad" hint="Separado por comas: telas, confección, etc.">
-        <Input value={form.specialty} onChange={set('specialty')} placeholder="telas, confección, exportación" />
+        <Input value={form.specialty} onChange={set('specialty')} placeholder="telas, confección, exportación" maxLength={400} />
       </Field>
 
       {serverError && (

@@ -129,7 +129,8 @@ export default function ConfiguracionIsland() {
           </p>
         )}
 
-        <form onSubmit={handleSaveRate} className="rate-form" style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+        {/* noValidate — our Spanish messages, not the browser's localized bubbles. */}
+        <form onSubmit={handleSaveRate} noValidate className="rate-form" style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
           <div style={{ flex: 1 }}>
             <Field label="Nueva tasa (Bs/USD)">
               <NumberInput

@@ -57,12 +57,12 @@ describe('batchIdOf — convergence', () => {
 describe('saveClient — createOnly guard', () => {
   it('createOnly rejects an existing documentId instead of overwriting', async () => {
     const db = makeTestDb();
-    await saveClient(db, { documentId: 'V-1', name: 'Original' });
-    // A create against the same id (normalized: 'V-1' === 'v-1') must throw, not upsert.
+    await saveClient(db, { documentId: 'V-1000001', name: 'Original' });
+    // A create against the same id (normalized: case-insensitive) must throw, not upsert.
     await expect(
-      saveClient(db, { documentId: 'v-1', name: 'Impostor' }, { createOnly: true }),
+      saveClient(db, { documentId: 'v-1000001', name: 'Impostor' }, { createOnly: true }),
     ).rejects.toThrow(/Ya existe/);
-    const stored = await saveClient(db, { documentId: 'V-1', name: 'Edited' }); // upsert path still works
+    const stored = await saveClient(db, { documentId: 'V-1000001', name: 'Edited' }); // upsert still works
     expect(stored.name).toBe('Edited');
   });
 });

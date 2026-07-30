@@ -4,8 +4,14 @@
 
 import {
   SYSTEM_CONFIG_ID,
+  FIELD_MAX,
+  assertAmount,
   clientIdOf,
   expenseIdOf,
+  validateDocumentId,
+  validateEmail,
+  validateName,
+  validatePhone,
   type SystemConfigDoc,
   type BatchDoc,
   type ProductDoc,
@@ -59,7 +65,7 @@ export async function getConfig(db: DB): Promise<SystemConfigDoc | null> {
 
 /** Upsert the singleton rate. Newest lastUpdate wins on conflict (see conflicts.ts). */
 export async function saveDailyRate(db: DB, rate: number): Promise<SystemConfigDoc> {
-  if (!(rate > 0)) throw new Error('La tasa del día debe ser mayor que cero.');
+  assertAmount(rate, 'La tasa del día');
   const existing = await getConfig(db);
   const doc: SystemConfigDoc = {
     _id: SYSTEM_CONFIG_ID,
@@ -133,8 +139,21 @@ export async function saveClient(
   input: ClientInput,
   opts: { createOnly?: boolean } = {},
 ): Promise<ClientDoc> {
-  if (!input.documentId?.trim()) throw new Error('El documento (cédula/RIF) es obligatorio.');
-  if (!input.name?.trim()) throw new Error('El nombre del cliente es obligatorio.');
+  // The forms call these too, for field-level errors — but THIS is the contract.
+  for (const problem of [
+    validateDocumentId(input.documentId ?? ''),
+    validateName(input.name ?? ''),
+    validatePhone(input.phoneNumber ?? ''),
+    validateEmail(input.email ?? ''),
+  ]) {
+    if (problem) throw new Error(problem);
+  }
+  if ((input.address ?? '').length > FIELD_MAX.address) {
+    throw new Error(`La dirección no puede superar ${FIELD_MAX.address} caracteres.`);
+  }
+  if (input.specialty?.some((s) => s.length > FIELD_MAX.specialty)) {
+    throw new Error(`Cada especialidad no puede superar ${FIELD_MAX.specialty} caracteres.`);
+  }
   const _id = clientIdOf(input.documentId);
   const existing = await getById<ClientDoc>(db, _id);
   if (opts.createOnly && existing) throw new Error('Ya existe un cliente con ese documento.');
@@ -148,7 +167,9 @@ export async function saveClient(
     address: input.address ?? existing?.address ?? '',
     phoneNumber: input.phoneNumber ?? existing?.phoneNumber ?? '',
     email: input.email ?? existing?.email ?? '',
-    specialty: input.specialty ?? existing?.specialty ?? [],
+    // Capped: an unbounded array on a doc that syncs to every device is a
+    // payload the client controls.
+    specialty: (input.specialty ?? existing?.specialty ?? []).slice(0, 10),
     updatedAt: new Date().toISOString(),
   };
   await db.put(doc);
@@ -208,8 +229,15 @@ export interface ExpenseInput {
 }
 
 export async function addExpense(db: DB, input: ExpenseInput): Promise<ExpenseDoc> {
-  if (!(input.amountUsd > 0)) throw new Error('El monto del gasto debe ser mayor que cero.');
-  if (!(input.exchangeRateBCV > 0)) throw new Error('La tasa de cambio debe ser mayor que cero.');
+  assertAmount(input.amountUsd, 'El monto del gasto');
+  assertAmount(input.exchangeRateBCV, 'La tasa de cambio');
+  if (!input.category?.trim()) throw new Error('La categoría del gasto es obligatoria.');
+  if (input.category.length > FIELD_MAX.category) {
+    throw new Error(`La categoría no puede superar ${FIELD_MAX.category} caracteres.`);
+  }
+  if ((input.description ?? '').length > FIELD_MAX.description) {
+    throw new Error(`La descripción no puede superar ${FIELD_MAX.description} caracteres.`);
+  }
   const date = input.date ?? new Date().toISOString();
   const uuid = uuidv4();
   const doc: ExpenseDoc = {

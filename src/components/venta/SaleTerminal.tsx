@@ -31,7 +31,10 @@ import {
   round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot,
   PAYMENT_LABEL, PAYMENT_TONE, CONDITION_SHORT, CONDITION_TONE,
 } from '../../lib/format';
-import { UNIT_FOR, clientIdOf, type BatchDoc, type ProductDoc, type CartLineItem, type ClientDoc, type CartDoc, type PaymentStatus } from '../../lib/types';
+import {
+  UNIT_FOR, clientIdOf, FIELD_MAX, validateDocumentId, validateName, validatePhone,
+  type BatchDoc, type ProductDoc, type CartLineItem, type ClientDoc, type CartDoc, type PaymentStatus,
+} from '../../lib/types';
 import {
   Button,
   Input,
@@ -698,8 +701,10 @@ export default function SaleTerminal() {
     setNewClientErr(null);
     const name = newClientName.trim();
     const docId = newClientDocId.trim();
-    if (!name) { setNewClientErr('El nombre es obligatorio.'); return; }
-    if (!docId) { setNewClientErr('La cédula/RIF es obligatoria.'); return; }
+    // The same rules /clientes uses and saveClient enforces — this form used to
+    // check only that the two fields were non-empty.
+    const problem = validateName(name) ?? validateDocumentId(docId) ?? validatePhone(newClientPhone);
+    if (problem) { setNewClientErr(problem); return; }
     // Fast UX pre-check against the live list; saveClient(createOnly) is the real
     // guard — it re-reads from the DB atomically, so a client not yet in this
     // reactive snapshot still can't be silently overwritten.
@@ -1074,6 +1079,7 @@ export default function SaleTerminal() {
                 <Input
                   autoFocus
                   placeholder="Nombre completo"
+                  maxLength={FIELD_MAX.name}
                   value={newClientName}
                   onChange={(e) => setNewClientName(e.target.value)}
                   onKeyDown={(e) => {
@@ -1086,6 +1092,8 @@ export default function SaleTerminal() {
               <Field label="Cédula / RIF">
                 <Input
                   placeholder="V-12345678 o J-12345678"
+                  maxLength={FIELD_MAX.documentId}
+                  autoCapitalize="characters"
                   value={newClientDocId}
                   onChange={(e) => setNewClientDocId(e.target.value)}
                   onKeyDown={(e) => {
@@ -1098,7 +1106,9 @@ export default function SaleTerminal() {
               <Field label="Teléfono (opcional)">
                 <Input
                   type="tel"
+                  inputMode="tel"
                   placeholder="+58 412-000-0000"
+                  maxLength={FIELD_MAX.phoneNumber}
                   value={newClientPhone}
                   onChange={(e) => setNewClientPhone(e.target.value)}
                   onKeyDown={(e) => {
@@ -1111,6 +1121,7 @@ export default function SaleTerminal() {
               <Field label="Dirección (opcional)">
                 <Input
                   placeholder="Dirección"
+                  maxLength={FIELD_MAX.address}
                   value={newClientAddress}
                   onChange={(e) => setNewClientAddress(e.target.value)}
                   onKeyDown={(e) => {
