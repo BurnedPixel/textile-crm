@@ -5,6 +5,7 @@
 import {
   saleIdOf,
   movementIdOf,
+  assertAmount,
   UNIT_FOR,
   type BatchDoc,
   type ProductDoc,
@@ -42,8 +43,11 @@ export async function checkout(db: DB, input: CheckoutInput): Promise<SaleDoc> {
   if (existing) return existing;
 
   // --- Validate (Spanish errors). ---
-  if (!(input.exchangeRateBCV > 0)) throw new Error('La tasa de cambio debe ser mayor que cero.');
+  assertAmount(input.exchangeRateBCV, 'La tasa de cambio');
   if (!input.lines?.length) throw new Error('El carrito está vacío.');
+  for (const payment of [input.payments.paidUsdCash, input.payments.paidUsdTransfer, input.payments.paidBs]) {
+    assertAmount(payment, 'El monto pagado', { allowZero: true });
+  }
 
   return attemptCheckout(db, input, saleId, /*isRetry*/ false);
 }
@@ -82,7 +86,13 @@ async function attemptCheckout(
     const batch = batches.get(line.batchId);
     if (!batch) throw new Error(`Artículo no encontrado: ${line.batchId}`);
 
-    if (!(line.quantity > 0)) throw new Error(`Cantidad inválida para ${line.description}.`);
+    // Finite as well as positive: parseFloat('1e999') is Infinity, passes `> 0`,
+    // and would be frozen into an immutable sale total that nothing can correct.
+    assertAmount(line.quantity, `La cantidad de ${line.description}`);
+    // The price is allowed to be zero at this boundary (the terminal requires
+    // > 0; a policy-free companion line in a later phase would not) but never
+    // negative and never non-finite — either poisons the total silently.
+    assertAmount(line.unitPriceAtSale, `El precio de ${line.description}`, { allowZero: true });
 
     // Check unit-of-measure BEFORE the product lookup: a Units line on a ROLL
     // batch points at a non-existent pool product, and "wrong unit" is the real error.

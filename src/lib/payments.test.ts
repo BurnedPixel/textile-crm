@@ -129,7 +129,8 @@ describe('recordPayment — boundary validation', () => {
     const sale = await creditSale(db);
     const base = { saleId: sale._id, exchangeRateBCV: RATE, operatorId: 'op', paidUsdCash: 0, paidUsdTransfer: 0, paidBs: 0 };
     await expect(recordPayment(db, base)).rejects.toThrow(/mayor que cero/);
-    await expect(recordPayment(db, { ...base, paidUsdCash: -5 })).rejects.toThrow(/negativos/);
+    await expect(recordPayment(db, { ...base, paidUsdCash: -5 })).rejects.toThrow(/no puede ser negativo/);
+    await expect(recordPayment(db, { ...base, paidUsdCash: Infinity })).rejects.toThrow(/no es un número válido/);
     await expect(recordPayment(db, { ...base, exchangeRateBCV: 0, paidUsdCash: 10 })).rejects.toThrow(/tasa de cambio/);
     await expect(
       recordPayment(db, { ...base, saleId: 'sale:nope', paidUsdCash: 10 }),

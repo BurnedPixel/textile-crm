@@ -9,7 +9,7 @@ import { usdPaid } from '../../lib/queries';
 import { getPayments, paymentsBySale, recordPayment, saleBalance } from '../../lib/payments';
 import { cachedUser } from '../../lib/auth';
 import {
-  fmtUsd, fmtBs, fmtDate, fmtDateTime, toBs, round2,
+  fmtUsd, fmtBs, fmtDateTime, toBs, round2,
   PAYMENT_LABEL, PAYMENT_TONE, PRODUCT_TYPE_LABEL,
 } from '../../lib/format';
 import {

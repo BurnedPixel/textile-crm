@@ -259,3 +259,102 @@ export const paymentIdOf = (date: string, uuid: string): string => `payment:${da
 
 export const SYSTEM_CONFIG_ID = 'config:system';
 export const CART_ID = 'cart:current';
+
+// ---- Field validation (shared by the logic modules AND the forms) ----
+//
+// Each returns a Spanish message or null. The logic modules enforce them at the
+// boundary (that is the contract); the forms call the same functions to show the
+// error next to the field instead of after a failed save. One definition, so the
+// two client forms cannot disagree about what a valid phone number is.
+
+/** Caps: a paste of a whole document must never reach a document field. */
+export const FIELD_MAX = {
+  documentId: 20,
+  name: 120,
+  address: 200,
+  phoneNumber: 25,
+  email: 120,
+  specialty: 40,
+  note: 200,
+  description: 200,
+  category: 60,
+  text: 60,
+} as const;
+
+const tooLong = (label: string, max: number) => `${label} no puede superar ${max} caracteres.`;
+
+/**
+ * Cédula or RIF. Venezuelan documents are an optional letter prefix (V/E/J/G/P/C)
+ * plus digits, with RIF carrying a check digit: V-12345678, J-40123456-7,
+ * E81234567, or a bare cédula. Separators and dots are cosmetic and ignored.
+ *
+ * Deliberately not stricter: this value is the client's natural key, so a rule
+ * that rejects a legacy-but-real document would make an existing client
+ * uneditable. It rejects what cannot be a document, not what looks unusual.
+ */
+export function validateDocumentId(value: string): string | null {
+  const v = value.trim();
+  if (!v) return 'La cédula o RIF es obligatoria.';
+  if (v.length > FIELD_MAX.documentId) return tooLong('La cédula o RIF', FIELD_MAX.documentId);
+  const compact = v.replace(/[\s.]/g, '');
+  if (!/^[A-Za-z]?-?\d{5,12}(-\d)?$/.test(compact)) {
+    return 'Cédula o RIF inválido. Ej.: V-12345678 o J-40123456-7.';
+  }
+  return null;
+}
+
+/**
+ * A name has to contain at least one letter. Digits are allowed alongside them —
+ * "Textiles 2000 C.A." is a real company — but "12345" or "---" is not a name.
+ */
+export function validateName(value: string): string | null {
+  const v = value.trim();
+  if (!v) return 'El nombre es obligatorio.';
+  if (v.length < 2) return 'El nombre es demasiado corto.';
+  if (v.length > FIELD_MAX.name) return tooLong('El nombre', FIELD_MAX.name);
+  if (!/\p{L}/u.test(v)) return 'El nombre debe contener letras.';
+  return null;
+}
+
+/**
+ * Optional. Digits only once separators are stripped, with an optional leading
+ * `+`: 0412-1234567, +58 412 1234567, (0243) 765-4321. 7 digits covers a local
+ * landline; 15 is the E.164 maximum, so anything longer is a typo.
+ */
+export function validatePhone(value: string): string | null {
+  const v = value.trim();
+  if (!v) return null;
+  if (v.length > FIELD_MAX.phoneNumber) return tooLong('El teléfono', FIELD_MAX.phoneNumber);
+  const compact = v.replace(/[\s().-]/g, '');
+  if (!/^\+?\d{7,15}$/.test(compact)) {
+    return 'Teléfono inválido. Ej.: 0412-1234567 o +58 412 1234567.';
+  }
+  return null;
+}
+
+/** Optional. Deliberately loose — the only authority on an address is delivery. */
+export function validateEmail(value: string): string | null {
+  const v = value.trim();
+  if (!v) return null;
+  if (v.length > FIELD_MAX.email) return tooLong('El correo', FIELD_MAX.email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'El correo electrónico no es válido.';
+  return null;
+}
+
+/**
+ * A money/quantity amount that will be written to an immutable document.
+ * Rejects Infinity as well as NaN: `parseFloat('1e999')` is Infinity, `> 0` is
+ * true for it, and one Infinity in a cached counter or a sale total is permanent
+ * — the ledger that would correct it is append-only.
+ */
+export function assertAmount(value: number, label: string, opts: { allowZero?: boolean } = {}): void {
+  if (!Number.isFinite(value)) throw new Error(`${label} no es un número válido.`);
+  if (opts.allowZero) {
+    if (value < 0) throw new Error(`${label} no puede ser negativo.`);
+  } else if (!(value > 0)) {
+    throw new Error(`${label} debe ser mayor que cero.`);
+  }
+  // 1e12 is far past any real weight, price or bolívar total, and well inside
+  // the range where float arithmetic still holds cents.
+  if (Math.abs(value) > 1e12) throw new Error(`${label} es demasiado grande.`);
+}

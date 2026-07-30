@@ -7,6 +7,8 @@ import {
   batchIdOf,
   productIdOf,
   movementIdOf,
+  assertAmount,
+  FIELD_MAX,
   UNIT_FOR,
   type ProductType,
   type ConditionTag,
@@ -120,6 +122,28 @@ async function writeMovementAndCounters(
  */
 export async function ingressStock(db: DB, input: IngressInput): Promise<InventoryMovementDoc> {
   const isRoll = input.productType === 'ROLL';
+  // color/nm/fabricType become the batch _id — an unbounded value there is an
+  // unbounded document key, so they are capped before anything else happens.
+  for (const [label, value] of [
+    ['El color', input.color],
+    ['El NM', input.nm],
+    ['El tipo de tela', input.fabricType],
+  ] as const) {
+    if (!value?.trim()) throw new Error(`${label} es obligatorio.`);
+    if (value.length > FIELD_MAX.text) {
+      throw new Error(`${label} no puede superar ${FIELD_MAX.text} caracteres.`);
+    }
+  }
+  for (const [label, value] of [
+    ['El nº de lote', input.lotNumber],
+    ['El pantone', input.pantone],
+    ['La composición', input.fiberComposition],
+    ['La ubicación', input.location],
+  ] as const) {
+    if (value && value.length > FIELD_MAX.text) {
+      throw new Error(`${label} no puede superar ${FIELD_MAX.text} caracteres.`);
+    }
+  }
   const now = new Date().toISOString();
   const unitOfMeasure = UNIT_FOR[input.productType];
   const batchId = batchIdOf(input.color, input.nm, input.fabricType);
@@ -138,7 +162,11 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
   if (isRoll) {
     if (!input.rolls?.length) throw new Error('Debe indicar al menos un rollo.');
     for (const roll of input.rolls) {
-      if (!(roll.weightKg > 0)) throw new Error('El peso del rollo debe ser mayor que cero.');
+      // Finite, not just positive — an Infinity weight would be added into a
+      // cached counter AND an append-only movement, with no way to take it back.
+      assertAmount(roll.weightKg, 'El peso del rollo');
+      assertAmount(roll.purchaseValueUsd, 'El costo del rollo', { allowZero: true });
+      assertAmount(roll.salePriceUsd, 'El precio del rollo', { allowZero: true });
       const productId = productIdOf(batchId, roll.pieceId);
       const existing = await getById<ProductDoc>(db, productId);
       const conditionTag = roll.conditionTag ?? existing?.conditionTag ?? 'FIRST';
@@ -174,7 +202,11 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
     }
   } else {
     // COMBO/PIECE — single pool product, quantity tracked on batch.currentUnits.
-    if (!(input.units && input.units > 0)) throw new Error('Las unidades deben ser mayores que cero.');
+    const units = input.units ?? 0;
+    assertAmount(units, 'Las unidades');
+    if (!Number.isInteger(units)) throw new Error('Las unidades deben ser un número entero.');
+    assertAmount(input.unitPurchaseValueUsd ?? 0, 'El costo unitario', { allowZero: true });
+    assertAmount(input.unitSalePriceUsd ?? 0, 'El precio unitario', { allowZero: true });
     const productId = productIdOf(batchId, POOL_PIECE_ID);
     const existing = await getById<ProductDoc>(db, productId);
     const conditionTag = input.unitConditionTag ?? existing?.conditionTag ?? 'FIRST';
@@ -196,10 +228,10 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
       };
     };
     counters.push({ id: productId, doc: buildPool(existing), rebuild: buildPool });
-    addedUnits = input.units;
+    addedUnits = units;
     movementLines.push({
       productId,
-      quantityChanged: input.units,
+      quantityChanged: units,
       unitOfMeasure,
       conditionTag,
     });
@@ -256,7 +288,10 @@ export interface AdjustInput {
  * touched counter in ONE bulkDocs.
  */
 export async function adjustStock(db: DB, input: AdjustInput): Promise<InventoryMovementDoc> {
+  // Signed (a shrink is negative), so only the magnitude can be range-checked.
+  if (!Number.isFinite(input.quantityChanged)) throw new Error('El ajuste no es un número válido.');
   if (!input.quantityChanged) throw new Error('El ajuste no puede ser cero.');
+  if (Math.abs(input.quantityChanged) > 1e12) throw new Error('El ajuste es demasiado grande.');
   const batch = await getById<BatchDoc>(db, input.batchId);
   if (!batch) throw new Error(`Artículo no encontrado: ${input.batchId}`);
   const product = await getById<ProductDoc>(db, input.productId);
