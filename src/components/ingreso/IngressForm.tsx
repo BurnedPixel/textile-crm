@@ -8,18 +8,19 @@ import { cachedUser } from '../../lib/auth';
 import { getBatches, getBatchProducts, getMovements } from '../../lib/queries';
 import { ingressStock } from '../../lib/inventory';
 import { batchIdOf, norm, type ProductType, type ConditionTag, type BatchDoc, type InventoryMovementDoc } from '../../lib/types';
-import { fmtDateTime, fmtKg, fmtUnits } from '../../lib/format';
+import { fmtDateTime, fmtKg, fmtUnits, CONDITION_LABEL } from '../../lib/format';
 import {
   Button, Input, NumberInput, Select, Field, Kbd, SwatchChip, Badge, EmptyState, Combobox,
 } from '../ui';
 
 // ─── CONDITION OPTIONS ────────────────────────────────────────────────────────
 
-const CONDITIONS: { value: ConditionTag; label: string }[] = [
-  { value: 'FIRST',   label: 'Primera' },
-  { value: 'SECONDS', label: 'Segunda' },
-  { value: 'DEFECT',  label: 'Fallado' },
-];
+// Derived from the shared label map so the Select and the /venta badges can
+// never describe the same tag differently.
+const CONDITIONS = (Object.keys(CONDITION_LABEL) as ConditionTag[]).map((value) => ({
+  value,
+  label: CONDITION_LABEL[value],
+}));
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 

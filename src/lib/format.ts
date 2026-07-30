@@ -1,7 +1,15 @@
 // Display formatting — es-VE locale, dual currency. Display only: derived Bs
 // amounts are computed here and NEVER stored (see CLAUDE.md).
+//
+// Also the ONE home for the Spanish label of every domain enum. These used to be
+// re-declared per island and had already drifted ("Pagada" / "Pagado" / "Pago
+// parcial" for one status). Code is English, the user sees Spanish — so the
+// translation belongs in exactly one place.
 
-import type { UnitOfMeasure } from './types';
+import type { ConditionTag, PaymentStatus, ProductType } from './types';
+
+/** Structural match for the Badge component's `tone` prop (no import — ui imports lib, not back). */
+type Tone = 'ok' | 'warn' | 'danger' | 'neutral';
 
 const usdFmt = new Intl.NumberFormat('es-VE', {
   style: 'currency',
@@ -25,8 +33,6 @@ export const fmtUsd = (n: number): string => usdFmt.format(n);
 export const fmtBs = (n: number): string => `Bs ${numFmt.format(n)}`;
 export const fmtKg = (n: number): string => `${numFmt.format(n)} kg`;
 export const fmtUnits = (n: number): string => `${n} ud`;
-export const fmtQty = (n: number, unit: UnitOfMeasure): string =>
-  unit === 'Kg' ? fmtKg(n) : fmtUnits(n);
 /**
  * Lot label for a roll. Stock received before lot numbers existed has none and
  * reads "S/L" (sin lote) — an explicit "not recorded", not a blank.
@@ -36,3 +42,44 @@ export const fmtLot = (lotNumber?: string): string =>
 
 export const fmtDate = (iso: string): string => dateFmt.format(new Date(iso));
 export const fmtDateTime = (iso: string): string => dateTimeFmt.format(new Date(iso));
+
+// ---- Domain enums → Spanish. One definition each. ----
+
+/** Agrees with «la venta»: pagada, not pagado. */
+export const PAYMENT_LABEL: Record<PaymentStatus, string> = {
+  PAID: 'Pagada',
+  PARTIAL: 'Parcial',
+  PENDING: 'Pendiente',
+};
+
+export const PAYMENT_TONE: Record<PaymentStatus, Tone> = {
+  PAID: 'ok',
+  PARTIAL: 'warn',
+  PENDING: 'danger',
+};
+
+/** Full words — for a form's Select. */
+export const CONDITION_LABEL: Record<ConditionTag, string> = {
+  FIRST: 'Primera',
+  SECONDS: 'Segunda',
+  DEFECT: 'Fallado',
+};
+
+/** Abbreviated — for a badge in a dense list, where the full word will not fit. */
+export const CONDITION_SHORT: Record<ConditionTag, string> = {
+  FIRST: '1ª',
+  SECONDS: '2da',
+  DEFECT: 'Def.',
+};
+
+export const CONDITION_TONE: Record<ConditionTag, Tone> = {
+  FIRST: 'ok',
+  SECONDS: 'warn',
+  DEFECT: 'danger',
+};
+
+export const PRODUCT_TYPE_LABEL: Record<ProductType, string> = {
+  ROLL: 'Rollo',
+  COMBO: 'Combo',
+  PIECE: 'Pieza',
+};
