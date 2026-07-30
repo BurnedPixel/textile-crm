@@ -37,7 +37,9 @@ interface BatchDefaults {
   purchaseValueUsd: string;
   salePriceUsd: string;
   conditionTag: ConditionTag;
-  touched: { cost: boolean; price: boolean; condition: boolean };
+  pantone: string;
+  fiberComposition: string;
+  touched: { cost: boolean; price: boolean; condition: boolean; pantone: boolean; composition: boolean };
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -62,7 +64,9 @@ function freshDefaults(): BatchDefaults {
     purchaseValueUsd: '',
     salePriceUsd: '',
     conditionTag: 'FIRST',
-    touched: { cost: false, price: false, condition: false },
+    pantone: '',
+    fiberComposition: '',
+    touched: { cost: false, price: false, condition: false, pantone: false, composition: false },
   };
 }
 
@@ -110,6 +114,11 @@ export default function IngressForm() {
 
   // ─ batch-level defaults for ROLL mode ─
   const [batchDefaults, setBatchDefaults] = useState<BatchDefaults>(freshDefaults);
+
+  // ─ lot number: the supplier's printed number, one per submission ─
+  // Never prefilled and cleared after every ingress — a lot number left over from
+  // the previous arrival would silently stamp the wrong lot onto the next rolls.
+  const [lotNumber, setLotNumber] = useState('');
 
   // ─ roll rows ─
   const [rolls, setRolls] = useState<RollRow[]>(() => [emptyRoll('R1', freshDefaults())]);
@@ -192,6 +201,8 @@ export default function IngressForm() {
               purchaseValueUsd: prev.touched.cost   ? prev.purchaseValueUsd : String(latest.purchaseValueUsd),
               salePriceUsd:     prev.touched.price  ? prev.salePriceUsd     : String(latest.salePriceUsd),
               conditionTag:     prev.touched.condition ? prev.conditionTag  : latest.conditionTag,
+              pantone:          prev.touched.pantone ? prev.pantone : (latest.pantone ?? ''),
+              fiberComposition: prev.touched.composition ? prev.fiberComposition : (latest.fiberComposition ?? ''),
               touched: prev.touched,
             }));
           }
@@ -375,6 +386,9 @@ export default function IngressForm() {
           location: location.trim() || matchedBatch?.location,
           operatorId,
           reason: 'Ingreso de inventario',
+          lotNumber: lotNumber.trim() || undefined,
+          pantone: batchDefaults.pantone.trim() || undefined,
+          fiberComposition: batchDefaults.fiberComposition.trim() || undefined,
           rolls: parsedRolls,
         });
         const rollWord = parsedRolls.length === 1 ? 'rollo' : 'rollos';
@@ -399,6 +413,7 @@ export default function IngressForm() {
       // Reset row state but keep cascade + batch defaults for rapid multi-batch entry.
       const nextMax = existingRollCount + rolls.filter((r) => r.weightKg !== '').length;
       setRolls([emptyRoll(nextPieceLabel(nextMax, 0), batchDefaults)]);
+      setLotNumber(''); // the next arrival is a different lot — never carry it over
       setUnits('');
       // Keep unit price/condition for COMBO/PIECE rapid re-entry too (same as ROLL).
       // Refresh data.
@@ -421,6 +436,7 @@ export default function IngressForm() {
     setLocation('');
     setBatchDefaults(freshDefaults());
     setRolls([emptyRoll('R1', freshDefaults())]);
+    setLotNumber('');
     setUnits('');
     setUnitPurchaseValueUsd('');
     setUnitSalePriceUsd('');
@@ -457,7 +473,7 @@ export default function IngressForm() {
 
         {/* ─── CASCADE ──────────────────────────────────────────────────── */}
         <section style={sectionStyle} className="card">
-          <h2 style={sectionTitle}>Identificación del lote</h2>
+          <h2 style={sectionTitle}>Identificación del artículo</h2>
 
           <div className="form-grid-3">
             {/* COLOR */}
@@ -506,7 +522,7 @@ export default function IngressForm() {
                 <span>
                   <SwatchChip color={matchedBatch.color} size="sm" />
                   {' '}
-                  <strong>Lote existente</strong> — se sumará stock ·{' '}
+                  <strong>Artículo existente</strong> — se sumará stock ·{' '}
                   Stock actual:{' '}
                   <strong>
                     {matchedBatch.productType === 'ROLL'
@@ -515,7 +531,7 @@ export default function IngressForm() {
                   </strong>
                 </span>
               ) : (
-                <span><strong>Lote nuevo</strong> — se creará al registrar</span>
+                <span><strong>Artículo nuevo</strong> — se creará al registrar</span>
               )}
             </div>
           )}
@@ -524,7 +540,7 @@ export default function IngressForm() {
         {/* ─── PRODUCT TYPE + LOCATION (new batch only) ──────────────── */}
         {cascadeComplete && matchedBatch === null && (
           <section style={sectionStyle} className="card">
-            <h2 style={sectionTitle}>Tipo de producto (lote nuevo)</h2>
+            <h2 style={sectionTitle}>Tipo de producto (artículo nuevo)</h2>
             <div className="form-grid-2">
               <Field label="Tipo">
                 <Select value={productType} onChange={(e) => setProductType(e.target.value as ProductType)}>
@@ -589,6 +605,28 @@ export default function IngressForm() {
                   ))}
                 </Select>
               </Field>
+              <Field label="Pantone">
+                <Input
+                  value={batchDefaults.pantone}
+                  placeholder="19-4052 TCX"
+                  onChange={(e) => setBatchDefaults((prev) => ({
+                    ...prev,
+                    pantone: e.target.value,
+                    touched: { ...prev.touched, pantone: true },
+                  }))}
+                />
+              </Field>
+              <Field label="Composición">
+                <Input
+                  value={batchDefaults.fiberComposition}
+                  placeholder="95% algodón / 5% elastano"
+                  onChange={(e) => setBatchDefaults((prev) => ({
+                    ...prev,
+                    fiberComposition: e.target.value,
+                    touched: { ...prev.touched, composition: true },
+                  }))}
+                />
+              </Field>
             </div>
           </section>
         )}
@@ -601,6 +639,18 @@ export default function IngressForm() {
                 Rollos — {rolls.length} rollo{rolls.length !== 1 ? 's' : ''} · {fmtKg(totalKg)} total
               </h2>
               <Button variant="ghost" size="md" type="button" onClick={addRollRow}>+ Rollo</Button>
+            </div>
+
+            {/* Lot number — the supplier's printed number, one per arrival. Applies
+                to every row below; re-typing an existing number adds to that lot. */}
+            <div style={{ maxWidth: 240, marginBottom: 16 }}>
+              <Field label="Nº de lote" hint="Se aplica a todos los rollos de este ingreso">
+                <Input
+                  value={lotNumber}
+                  placeholder="Impreso en el bulto"
+                  onChange={(e) => setLotNumber(e.target.value)}
+                />
+              </Field>
             </div>
 
             {/* Column headers (hidden on phones — rows reflow to two lines) */}

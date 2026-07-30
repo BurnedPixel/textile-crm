@@ -14,7 +14,7 @@ const isDev = import.meta.env.DEV;
 const navItems = [
   { label: 'Panel',         href: '/',             key: 'p', hint: 'g p', icon: 'grid' },
   { label: 'Venta',         href: '/venta',        key: 'v', hint: 'g v', icon: 'cart' },
-  { label: 'Inventario',    href: '/ingreso',      key: 'i', hint: 'g i', icon: 'plus' },
+  { label: 'Inventario',    href: '/inventario',   key: 'i', hint: 'g i', icon: 'plus' },
   { label: 'Clientes',      href: '/clientes',     key: 'c', hint: 'g c', icon: 'person' },
   { label: 'Gastos',        href: '/gastos',       key: 'g', hint: 'g g', icon: 'receipt' },
   { label: 'Ajustes',       href: '/configuracion',key: 'o', hint: 'g o', icon: 'settings' },
@@ -245,7 +245,7 @@ const icons: Record<string, string> = {
       const gMap: Record<string, string> = {
         p: '/',
         v: '/venta',
-        i: '/ingreso',
+        i: '/inventario',
         c: '/clientes',
         g: '/gastos',
         o: '/configuracion',

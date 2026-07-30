@@ -27,7 +27,7 @@ import {
 import { checkout } from '../../lib/checkout';
 import { saveClient } from '../../lib/queries';
 import { useLiveQuery } from '../../lib/hooks';
-import { round2, fmtKg, fmtUnits, fmtUsd, fmtBs } from '../../lib/format';
+import { round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot } from '../../lib/format';
 import { UNIT_FOR, clientIdOf, type BatchDoc, type ProductDoc, type CartLineItem, type ClientDoc, type CartDoc, type PaymentStatus } from '../../lib/types';
 import {
   Button,
@@ -621,7 +621,13 @@ export default function SaleTerminal() {
     const line: CartLineItem = {
       productId,
       batchId: batch._id,
-      description: `${batch.color} · NM ${batch.nm} · ${batch.fabricType}${batch.productType === 'ROLL' ? ' · R' + (productDoc?.pieceId ?? '') : ''}`,
+      // Frozen into the immutable sale — the lot goes in NOW or that history is
+      // unrecoverable. (pieceId is already "R2"; the old template prepended a second R.)
+      description: `${batch.color} · NM ${batch.nm} · ${batch.fabricType}${
+        batch.productType === 'ROLL'
+          ? ` · ${productDoc?.pieceId ?? ''} · ${fmtLot(productDoc?.lotNumber)}`
+          : ''
+      }`,
       quantity: qtyNum,
       unitOfMeasure: uom,
       unitPriceAtSale: priceNum,
@@ -1408,6 +1414,7 @@ function BatchProductZone({
                 >
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-ink)', minWidth: '64px' }}>{fmtKg(roll.currentWeightKg)}</span>
                   <span style={{ color: 'var(--color-thread)', fontSize: '11px', textTransform: 'uppercase' }}>{roll.pieceId}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-thread)' }}>{fmtLot(roll.lotNumber)}</span>
                   <Badge tone={conditionTone(roll.conditionTag)}>{conditionLabel(roll.conditionTag)}</Badge>
                   {inCart
                     ? <Badge tone="neutral">EN CARRITO</Badge>

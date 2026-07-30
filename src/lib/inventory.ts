@@ -39,6 +39,10 @@ export interface IngressInput {
   location?: string;
   operatorId: string;
   reason?: string;
+  // Applies to every product of THIS submission (one lot arrives at a time).
+  lotNumber?: string;
+  pantone?: string;
+  fiberComposition?: string;
   // ROLL: one entry per physical roll.
   rolls?: RollIngress[];
   // COMBO/PIECE: a unit count plus pool pricing.
@@ -46,6 +50,23 @@ export interface IngressInput {
   unitPurchaseValueUsd?: number;
   unitSalePriceUsd?: number;
   unitConditionTag?: ConditionTag;
+}
+
+type ProductMeta = Partial<Pick<ProductDoc, 'lotNumber' | 'pantone' | 'fiberComposition'>>;
+
+/**
+ * Optional per-submission metadata. A new non-empty value wins; otherwise the value
+ * already on the doc is carried forward. Both product builders below rebuild the doc
+ * from an explicit field list with no spread, so a field NOT named here is erased by
+ * the next ingress onto the same roll.
+ */
+function carriedMeta(input: IngressInput, cur: ProductDoc | null): ProductMeta {
+  const meta: ProductMeta = {};
+  for (const key of ['lotNumber', 'pantone', 'fiberComposition'] as const) {
+    const value = input[key]?.trim() || cur?.[key];
+    if (value) meta[key] = value;
+  }
+  return meta;
 }
 
 async function getById<T>(db: DB, id: string): Promise<T | null> {
@@ -106,7 +127,7 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
   const existingBatch = await getById<BatchDoc>(db, batchId);
   if (existingBatch && existingBatch.productType !== input.productType) {
     throw new Error(
-      `El lote ya existe como ${existingBatch.productType}; no se puede mezclar con ${input.productType}.`,
+      `El artículo ya existe como ${existingBatch.productType}; no se puede mezclar con ${input.productType}.`,
     );
   }
 
@@ -137,6 +158,7 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
           salePriceUsd: round2(roll.salePriceUsd),
           conditionTag,
           createdAt: c?.createdAt ?? now,
+          ...carriedMeta(input, c),
         };
       };
       counters.push({ id: productId, doc: buildRoll(existing), rebuild: buildRoll });
@@ -170,6 +192,7 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
         salePriceUsd: round2(input.unitSalePriceUsd ?? c?.salePriceUsd ?? 0),
         conditionTag,
         createdAt: c?.createdAt ?? now,
+        ...carriedMeta(input, c),
       };
     };
     counters.push({ id: productId, doc: buildPool(existing), rebuild: buildPool });
@@ -235,7 +258,7 @@ export interface AdjustInput {
 export async function adjustStock(db: DB, input: AdjustInput): Promise<InventoryMovementDoc> {
   if (!input.quantityChanged) throw new Error('El ajuste no puede ser cero.');
   const batch = await getById<BatchDoc>(db, input.batchId);
-  if (!batch) throw new Error(`Lote no encontrado: ${input.batchId}`);
+  if (!batch) throw new Error(`Artículo no encontrado: ${input.batchId}`);
   const product = await getById<ProductDoc>(db, input.productId);
   if (!product) throw new Error(`Producto no encontrado: ${input.productId}`);
 

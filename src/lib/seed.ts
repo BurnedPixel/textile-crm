@@ -21,13 +21,17 @@ interface RollSpec {
   kgEach: number;
   purchaseUsd: number;
   saleUsd: number;
+  // Left off some batches on purpose — that is the legacy "S/L" case on screen.
+  lotNumber?: string;
+  pantone?: string;
+  fiberComposition?: string;
 }
 
 // ~8 batches: mostly ROLL, one COMBO, one PIECE.
 const ROLL_BATCHES: RollSpec[] = [
-  { color: 'Azul Rey', nm: '30', fabricType: 'Jersey', rolls: 5, kgEach: 22, purchaseUsd: 5.5, saleUsd: 8.5 },
-  { color: 'Negro', nm: '24', fabricType: 'Rib', rolls: 6, kgEach: 18, purchaseUsd: 5.0, saleUsd: 7.9 },
-  { color: 'Rojo Vino', nm: '30', fabricType: 'Piqué', rolls: 4, kgEach: 20, purchaseUsd: 6.0, saleUsd: 9.2 },
+  { color: 'Azul Rey', nm: '30', fabricType: 'Jersey', rolls: 5, kgEach: 22, purchaseUsd: 5.5, saleUsd: 8.5, lotNumber: '4471', pantone: '19-4052 TCX', fiberComposition: '100% algodón' },
+  { color: 'Negro', nm: '24', fabricType: 'Rib', rolls: 6, kgEach: 18, purchaseUsd: 5.0, saleUsd: 7.9, lotNumber: 'A-2210', pantone: '19-4005 TCX', fiberComposition: '95% algodón / 5% elastano' },
+  { color: 'Rojo Vino', nm: '30', fabricType: 'Piqué', rolls: 4, kgEach: 20, purchaseUsd: 6.0, saleUsd: 9.2, lotNumber: '4482' },
   { color: 'Verde Botella', nm: '20', fabricType: 'Interlock', rolls: 4, kgEach: 25, purchaseUsd: 5.8, saleUsd: 8.8 },
   { color: 'Blanco', nm: '24', fabricType: 'Jersey', rolls: 6, kgEach: 15, purchaseUsd: 4.9, saleUsd: 7.5 },
   { color: 'Gris Melange', nm: '30', fabricType: 'Rib', rolls: 3, kgEach: 21, purchaseUsd: 5.3, saleUsd: 8.1 },
@@ -46,6 +50,9 @@ export async function seedDemoData(db: DB): Promise<void> {
       location: 'Depósito A',
       operatorId: OP,
       reason: 'Inventario inicial',
+      lotNumber: spec.lotNumber,
+      pantone: spec.pantone,
+      fiberComposition: spec.fiberComposition,
       rolls: Array.from({ length: spec.rolls }, (_, i) => ({
         pieceId: `R${i + 1}`,
         weightKg: spec.kgEach,
@@ -124,7 +131,7 @@ export async function seedDemoData(db: DB): Promise<void> {
     creditTerms: null,
     operatorId: OP,
     lines: [
-      line(azulJersey, 'R1', 'Azul rey · NM 30 · Jersey · R1', 10, 'Kg', 8.5),
+      line(azulJersey, 'R1', 'Azul rey · NM 30 · Jersey · R1 · Lote 4471', 10, 'Kg', 8.5),
     ],
     payments: { paidUsdCash: 85, paidUsdTransfer: 0, paidBs: 0 },
   });
@@ -153,7 +160,7 @@ export async function seedDemoData(db: DB): Promise<void> {
     exchangeRateBCV: RATE,
     creditTerms: '30 días',
     operatorId: OP,
-    lines: [line(negroRib, 'R2', 'Negro · NM 24 · Rib · R2', 12, 'Kg', 7.9)],
+    lines: [line(negroRib, 'R2', 'Negro · NM 24 · Rib · R2 · Lote A-2210', 12, 'Kg', 7.9)],
     payments: { paidUsdCash: 0, paidUsdTransfer: 0, paidBs: 0 },
   });
 

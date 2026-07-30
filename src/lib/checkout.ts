@@ -80,7 +80,7 @@ async function attemptCheckout(
 
   for (const line of input.lines) {
     const batch = batches.get(line.batchId);
-    if (!batch) throw new Error(`Lote no encontrado: ${line.batchId}`);
+    if (!batch) throw new Error(`Artículo no encontrado: ${line.batchId}`);
 
     if (!(line.quantity > 0)) throw new Error(`Cantidad inválida para ${line.description}.`);
 
