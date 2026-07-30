@@ -130,9 +130,40 @@ export interface SaleDoc extends Doc {
   paidUsdCash: number;
   paidUsdTransfer: number;
   paidBs: number;
+  /**
+   * Status AT CHECKOUT, frozen with the rest of the document. NEVER read it to
+   * decide what is owed today — later collections are `payment:` docs and the
+   * sale cannot be updated. Use `saleBalance()` in `payments.ts`.
+   */
   paymentStatus: PaymentStatus;
   creditTerms: string | null;
   lineItems: CartLineItem[];
+}
+
+/**
+ * _id: payment:{ISO date}:{uuid}. A collection recorded AFTER checkout.
+ * Append-only and immutable, like sale/expense/movement — sales can never be
+ * edited, so the current balance is the sale's own payments plus these.
+ *
+ * Bs is stored, not derived: it is money actually handed over, converted at the
+ * rate locked on THIS payment (a collection weeks later happens at a different
+ * BCV rate than the sale). Named `paidBs` to match SaleDoc — `amountBs` is a
+ * forbidden derived name and both validation layers would reject the document.
+ */
+export interface PaymentDoc extends Doc {
+  type: 'payment';
+  paymentId: string;
+  /** → SaleDoc._id. */
+  saleId: string;
+  date: string;
+  /** Locked at creation. Never recompute old records. */
+  exchangeRateBCV: number;
+  paidUsdCash: number;
+  paidUsdTransfer: number;
+  paidBs: number;
+  /** Operator's reference — transfer number, receipt, "abono parcial". */
+  note: string;
+  operatorId: string;
 }
 
 export interface MovementLineItem {
@@ -194,6 +225,7 @@ export type AnyDoc =
   | SystemConfigDoc
   | ExpenseDoc
   | SaleDoc
+  | PaymentDoc
   | InventoryMovementDoc
   | RateDoc;
 
@@ -228,6 +260,8 @@ export const saleIdOf = (createdAt: string, transactionId: string): string =>
 export const movementIdOf = (date: string, uuid: string): string => `movement:${date}:${uuid}`;
 
 export const expenseIdOf = (date: string, uuid: string): string => `expense:${date}:${uuid}`;
+
+export const paymentIdOf = (date: string, uuid: string): string => `payment:${date}:${uuid}`;
 
 export const SYSTEM_CONFIG_ID = 'config:system';
 export const CART_ID = 'cart:current';

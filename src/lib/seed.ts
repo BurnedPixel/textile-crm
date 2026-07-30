@@ -7,6 +7,7 @@ import { batchIdOf, productIdOf, type CartLineItem } from './types';
 import { saveDailyRate, saveClient, addExpense } from './queries';
 import { ingressStock } from './inventory';
 import { checkout } from './checkout';
+import { recordPayment } from './payments';
 
 type DB = PouchDB.Database;
 
@@ -138,7 +139,7 @@ export async function seedDemoData(db: DB): Promise<void> {
 
   // Sale 2 — PARTIAL (some cash, rest owed), COMBO units.
   const combo = batchIdOf('Multicolor', '24', 'Combo');
-  await checkout(db, {
+  const sale2 = await checkout(db, {
     transactionId: 'seed-sale-2',
     createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
     clientId: c2._id,
@@ -162,6 +163,19 @@ export async function seedDemoData(db: DB): Promise<void> {
     operatorId: OP,
     lines: [line(negroRib, 'R2', 'Negro · NM 24 · Rib · R2 · Lote A-2210', 12, 'Kg', 7.9)],
     payments: { paidUsdCash: 0, paidUsdTransfer: 0, paidBs: 0 },
+  });
+
+  // --- One later collection, so the derived balance differs from the frozen
+  //     sale.paymentStatus (which stays PARTIAL forever — sales are immutable). ---
+  await recordPayment(db, {
+    saleId: sale2._id,
+    exchangeRateBCV: RATE,
+    paidUsdCash: 30,
+    paidUsdTransfer: 0,
+    paidBs: 0,
+    note: 'Abono en efectivo',
+    operatorId: OP,
+    date: new Date(Date.now() - 1 * 86400000).toISOString(),
   });
 
   // --- 2 expenses. ---

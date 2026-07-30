@@ -5,6 +5,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { db, dbReady, onDbChange } from '../../lib/db';
 import { getConfig, getStockedBatches, getSales, getClients } from '../../lib/queries';
+import { usdPaid } from '../../lib/queries';
+import { getPayments, paymentsBySale, recordPayment, saleBalance } from '../../lib/payments';
+import { cachedUser } from '../../lib/auth';
 import { fmtUsd, fmtBs, fmtDate, fmtDateTime, toBs, round2 } from '../../lib/format';
 import {
   Badge,
@@ -13,9 +16,12 @@ import {
   Kbd,
   EmptyState,
   Button,
+  Field,
+  Input,
+  NumberInput,
   normStr,
 } from '../ui';
-import type { SaleDoc, ClientDoc, BatchDoc, ProductDoc, SystemConfigDoc } from '../../lib/types';
+import type { SaleDoc, PaymentDoc, ClientDoc, BatchDoc, ProductDoc, SystemConfigDoc } from '../../lib/types';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
@@ -49,14 +55,9 @@ function productTypeBadge(pt: string): string {
   return 'Pieza';
 }
 
-/** Remaining USD owed on a sale (uses sale's locked rate for Bs conversion). */
-function remainingUsd(sale: SaleDoc): number {
-  const paidUsd =
-    sale.paidUsdCash +
-    sale.paidUsdTransfer +
-    (sale.exchangeRateBCV > 0 ? sale.paidBs / sale.exchangeRateBCV : 0);
-  return Math.max(0, sale.totalUsd - paidUsd);
-}
+// Payment state is DERIVED — sale.paymentStatus is only the checkout snapshot,
+// and every later collection is its own `payment:` doc. Reading the stored field
+// would show debts that were settled weeks ago (see payments.ts).
 
 // ─── DATA FETCH (raw, not via useLiveQuery — we need multiple queries at once) ─
 
@@ -66,29 +67,38 @@ interface DashboardData {
   todaySales: SaleDoc[];
   recentSales: SaleDoc[];
   pendingSales: SaleDoc[];
+  /** Collections indexed by saleId — every payment read on this page goes through it. */
+  paymentsFor: Map<string, PaymentDoc[]>;
   clients: ClientDoc[];
 }
 
 async function fetchAll(): Promise<DashboardData> {
   const todayStart = isoToday();
-  const [config, stocked, todaySales, recentSales, allClients] = await Promise.all([
+  const [config, stocked, todaySales, recentSales, allClients, payments] = await Promise.all([
     getConfig(db),
     getStockedBatches(db),
     getSales(db, { startDate: todayStart, endDate: todayStart, descending: true }),
     getSales(db, { limit: 8, descending: true }),
     getClients(db),
+    // Every payment, not a windowed slice: a collection made today can settle a
+    // sale older than the 90-day window below, and missing it would show a debt
+    // that no longer exists.
+    getPayments(db),
   ]);
+  const paymentsFor = paymentsBySale(payments);
 
   // Pending/partial sales — scan recent 90 days to avoid unbounded scan.
   // ponytail: scanning ~90d of sales is acceptable for typical factory volume (<10k sales/yr).
-  // Upgrade to a Mango index on paymentStatus if perf becomes an issue.
+  // Upgrade to a Mango index if perf becomes an issue.
   const cutoff = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
   const historicSales = await getSales(db, { startDate: cutoff, descending: true });
+  // DERIVED, not sale.paymentStatus — a sale settled by a later collection must
+  // drop out of this list, and the sale doc itself can never be updated to say so.
   const pendingSales = historicSales.filter(
-    (s) => s.paymentStatus === 'PENDING' || s.paymentStatus === 'PARTIAL',
+    (s) => saleBalance(s, paymentsFor.get(s._id)).status !== 'PAID',
   );
 
-  return { config, stocked, todaySales, recentSales, pendingSales, clients: allClients };
+  return { config, stocked, todaySales, recentSales, pendingSales, paymentsFor, clients: allClients };
 }
 
 // ─── STAT CARD ───────────────────────────────────────────────────────────────
@@ -407,11 +417,13 @@ function Divider() {
 interface SideProps {
   recentSales: SaleDoc[];
   pendingSales: SaleDoc[];
+  paymentsFor: Map<string, PaymentDoc[]>;
   clientMap: Map<string, string>;
   config: SystemConfigDoc | null;
+  onCollect: (sale: SaleDoc, owedUsd: number) => void;
 }
 
-function SidePanel({ recentSales, pendingSales, clientMap, config }: SideProps) {
+function SidePanel({ recentSales, pendingSales, paymentsFor, clientMap, config, onCollect }: SideProps) {
   const rate = config?.currentDailyRateBCV;
 
   function clientName(clientId: string | null): string {
@@ -489,8 +501,10 @@ function SidePanel({ recentSales, pendingSales, clientMap, config }: SideProps) 
                   >
                     {clientName(sale.clientId)}
                   </span>
-                  <Badge tone={paymentTone(sale.paymentStatus)}>
-                    {paymentLabel(sale.paymentStatus)}
+                  {/* Derived — a sale collected later is "Pagada" here even though
+                      its own frozen paymentStatus still says PENDING. */}
+                  <Badge tone={paymentTone(saleBalance(sale, paymentsFor.get(sale._id)).status)}>
+                    {paymentLabel(saleBalance(sale, paymentsFor.get(sale._id)).status)}
                   </Badge>
                 </div>
                 <div
@@ -550,11 +564,12 @@ function SidePanel({ recentSales, pendingSales, clientMap, config }: SideProps) 
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {pendingSales.map((sale) => {
-              const owed = remainingUsd(sale);
+              const owed = saleBalance(sale, paymentsFor.get(sale._id)).owedUsd;
               const days = daysSince(sale.date);
               return (
                 <div
                   key={sale._id}
+                  data-pending-sale={sale._id}
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -590,15 +605,20 @@ function SidePanel({ recentSales, pendingSales, clientMap, config }: SideProps) 
                     </span>
                     <Money usd={owed} rate={rate} />
                   </div>
-                  <span
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '10px',
-                      color: days > 30 ? 'var(--color-danger)' : 'var(--color-thread)',
-                    }}
-                  >
-                    {days === 0 ? 'Hoy' : `hace ${days}d`}
-                  </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                    <span
+                      style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '10px',
+                        color: days > 30 ? 'var(--color-danger)' : 'var(--color-thread)',
+                      }}
+                    >
+                      {days === 0 ? 'Hoy' : `hace ${days}d`}
+                    </span>
+                    <Button variant="ghost" size="md" type="button" onClick={() => onCollect(sale, owed)}>
+                      Registrar cobro
+                    </Button>
+                  </div>
                 </div>
               );
             })}
@@ -606,6 +626,143 @@ function SidePanel({ recentSales, pendingSales, clientMap, config }: SideProps) 
         )}
       </section>
     </aside>
+  );
+}
+
+// ─── COLLECT A PAYMENT ───────────────────────────────────────────────────────
+
+/**
+ * Records a collection against a sale. Native <dialog>.showModal() — backdrop,
+ * Esc-to-close and the focus trap come free, so there is no overlay CSS here.
+ */
+function CollectDialog({
+  sale,
+  owedUsd,
+  rate,
+  clientName,
+  onClose,
+}: {
+  sale: SaleDoc;
+  owedUsd: number;
+  rate: number | undefined;
+  clientName: string;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  // The balance is the usual collection — prefill cash, let the operator split it.
+  const [cash, setCash] = useState(owedUsd.toFixed(2));
+  const [transfer, setTransfer] = useState('');
+  const [bs, setBs] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+
+  const num = (s: string) => parseFloat(s) || 0;
+  const enteredUsd = rate ? usdPaid(num(cash), num(transfer), num(bs), rate) : 0;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    if (!rate) {
+      setError('No hay tasa del día registrada. Actualízala en Ajustes antes de registrar un cobro.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await recordPayment(db, {
+        saleId: sale._id,
+        exchangeRateBCV: rate,
+        paidUsdCash: num(cash),
+        paidUsdTransfer: num(transfer),
+        paidBs: num(bs),
+        note,
+        operatorId: cachedUser()?.name ?? 'desconocido',
+      });
+      onClose();
+    } catch (err) {
+      setError((err as Error).message ?? 'Error desconocido.');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      aria-label="Registrar cobro"
+      style={{
+        border: '1px solid var(--color-thread)',
+        borderRadius: '8px',
+        background: 'var(--color-cloth)',
+        padding: '20px 24px',
+        width: 'min(420px, calc(100vw - 32px))',
+        color: 'var(--color-ink)',
+      }}
+    >
+      <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <h2
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '13px',
+              fontWeight: 700,
+              letterSpacing: '0.07em',
+              textTransform: 'uppercase',
+              color: 'var(--color-thread)',
+              margin: '0 0 6px',
+            }}
+          >
+            Registrar cobro
+          </h2>
+          <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', margin: 0 }}>
+            {clientName} · saldo <strong>{fmtUsd(owedUsd)}</strong>
+            {rate ? ` · ${fmtBs(toBs(owedUsd, rate))}` : ''}
+          </p>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-thread)', margin: '4px 0 0' }}>
+            {fmtDateTime(sale.date)}
+          </p>
+        </div>
+
+        <div className="form-grid-2">
+          <Field label="Efectivo $">
+            <NumberInput value={cash} min="0" step="0.01" placeholder="0.00" autoFocus onChange={(e) => setCash(e.target.value)} />
+          </Field>
+          <Field label="Transferencia $">
+            <NumberInput value={transfer} min="0" step="0.01" placeholder="0.00" onChange={(e) => setTransfer(e.target.value)} />
+          </Field>
+        </div>
+        <Field label="Bolívares" hint={rate ? `A la tasa de hoy: ${fmtBs(rate)}/$` : 'Sin tasa del día'}>
+          <NumberInput value={bs} min="0" step="0.01" placeholder="0,00" onChange={(e) => setBs(e.target.value)} />
+        </Field>
+        <Field label="Referencia">
+          <Input value={note} placeholder="Nº de transferencia, recibo…" onChange={(e) => setNote(e.target.value)} />
+        </Field>
+
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--color-thread)', margin: 0 }}>
+          Total del cobro: <strong style={{ color: 'var(--color-ink)' }}>{fmtUsd(round2(enteredUsd))}</strong>
+          {' · '}queda {fmtUsd(round2(Math.max(0, owedUsd - enteredUsd)))}
+        </p>
+
+        {error && (
+          <div role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <Button variant="ghost" type="button" onClick={() => ref.current?.close()}>
+            Cancelar
+          </Button>
+          <Button variant="primary" type="submit" disabled={saving}>
+            {saving ? 'Registrando…' : 'Registrar cobro'}
+          </Button>
+        </div>
+      </form>
+    </dialog>
   );
 }
 
@@ -701,6 +858,7 @@ function Header({ config }: { config: SystemConfigDoc | null }) {
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [collecting, setCollecting] = useState<{ sale: SaleDoc; owedUsd: number } | null>(null);
 
   const load = useCallback(() => {
     void fetchAll().then(setData).catch((err) => console.error('[Dashboard]', err));
@@ -730,7 +888,7 @@ export default function Dashboard() {
     );
   }
 
-  const { config, stocked, todaySales, recentSales, pendingSales, clients } = data;
+  const { config, stocked, todaySales, recentSales, pendingSales, paymentsFor, clients } = data;
   const rate = config?.currentDailyRateBCV;
 
   // Client id → name map (single pass)
@@ -742,8 +900,10 @@ export default function Dashboard() {
   // Sum each sale's Bs using its own locked rate (immutability rule)
   const todayBs = todaySales.reduce((s, sale) => s + toBs(sale.totalUsd, sale.exchangeRateBCV), 0);
 
-  // Stat: Por cobrar
-  const receivableUsd = round2(pendingSales.reduce((s, sale) => s + remainingUsd(sale), 0));
+  // Stat: Por cobrar — derived from the ledger, not sale.paymentStatus.
+  const receivableUsd = round2(
+    pendingSales.reduce((s, sale) => s + saleBalance(sale, paymentsFor.get(sale._id)).owedUsd, 0),
+  );
 
   // Stat: Artículos con stock
   const stockedItems = stocked.length;
@@ -816,10 +976,22 @@ export default function Dashboard() {
         <SidePanel
           recentSales={recentSales}
           pendingSales={pendingSales}
+          paymentsFor={paymentsFor}
           clientMap={clientMap}
           config={config}
+          onCollect={(sale, owedUsd) => setCollecting({ sale, owedUsd })}
         />
       </div>
+
+      {collecting && (
+        <CollectDialog
+          sale={collecting.sale}
+          owedUsd={collecting.owedUsd}
+          rate={rate}
+          clientName={collecting.sale.clientId ? clientMap.get(collecting.sale.clientId) ?? 'Cliente' : 'Contado'}
+          onClose={() => setCollecting(null)}
+        />
+      )}
     </div>
   );
 }

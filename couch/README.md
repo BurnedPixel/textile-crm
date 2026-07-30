@@ -12,9 +12,20 @@ any time. It reads secrets from a sibling `../.env` (never commit that file).
    server admins can read/write.
 5. Pushes the `validate_doc_update` design doc from `validate_doc_update.js`
    (substituting `APP_ROLE` for its `__APP_ROLE__` placeholder), which rejects
-   derived fields (`totalBs`, `amountBs`) and any write from a user lacking the
-   app role.
+   derived fields (`totalBs`, `amountBs`), any write from a user lacking the
+   app role, and any mutation of an existing `sale:`/`payment:`/`expense:`/
+   `movement:` document.
 6. Creates the first application user in `_users` with the app role.
+
+## ⚠️ Pending re-run (2026-07-30)
+
+`validate_doc_update.js` gained the `payment:` prefix in its append-only regex
+when the payment ledger landed. **The change is in the repo but NOT on any
+node** — re-run `./couch/setup.sh` against the cloud node to push it (it
+re-pushes `_design/validation` preserving `_rev`), and make sure the Pi gets
+this same file when it is provisioned. Until then, collections replicate and
+work correctly but are *editable* by any role member rather than append-only —
+a data-integrity gap, not an outage.
 
 ## `.env` (in the repo root, gitignored)
 
