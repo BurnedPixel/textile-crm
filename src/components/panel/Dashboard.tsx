@@ -223,7 +223,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
     return (
       <EmptyState
         title="Sin inventario con stock disponible"
-        action={<a href="/ingreso"><Button variant="primary">Registrar ingreso</Button></a>}
+        action={<a href="/inventario"><Button variant="primary">Registrar ingreso</Button></a>}
       />
     );
   }
@@ -236,7 +236,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
           ref={inputRef}
           data-hotkey-search
           type="search"
-          placeholder="Filtrar lotes… Color, NM, tipo…"
+          placeholder="Filtrar artículos… Color, NM, tipo…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -745,8 +745,8 @@ export default function Dashboard() {
   // Stat: Por cobrar
   const receivableUsd = round2(pendingSales.reduce((s, sale) => s + remainingUsd(sale), 0));
 
-  // Stat: Lotes con stock
-  const stockedLotes = stocked.length;
+  // Stat: Artículos con stock
+  const stockedItems = stocked.length;
 
   // Stat: Inventario — ROLL in Kg, units in Units. Two separate figures.
   const totalKg = stocked
@@ -777,7 +777,7 @@ export default function Dashboard() {
           primary={fmtUsd(receivableUsd)}
           secondary={rate ? fmtBs(toBs(receivableUsd, rate)) : undefined}
         />
-        <StatCard label="Lotes con stock" primary={String(stockedLotes)} />
+        <StatCard label="Artículos con stock" primary={String(stockedItems)} />
         <StatCard
           label="Inventario"
           primary={`${totalKg.toFixed(2)} kg`}

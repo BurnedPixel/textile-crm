@@ -7,9 +7,12 @@ import AstroPWA from '@vite-pwa/astro';
 
 export default defineConfig({
   // The dashboard lives at / (nav: "Panel") — catch the URLs people guess.
+  // '/ingreso' is the pre-rename inventory URL — kept so bookmarks and any
+  // service-worker-cached link still land (Astro emits a precached meta-refresh stub).
   redirects: {
     '/dashboard': '/',
     '/panel': '/',
+    '/ingreso': '/inventario',
   },
   integrations: [
     react(),

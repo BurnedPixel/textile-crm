@@ -100,3 +100,49 @@ describe('ingressStock/adjustStock — counter 409 retries instead of dropping t
     expect(movements.filter((m) => m.movementType === 'ADJUST')).toHaveLength(1); // no dup ledger
   });
 });
+
+// The builder-erasure finding: buildRoll rebuilds the doc from an explicit field
+// list with no spread, so anything it does not name is WIPED by the next ingress
+// onto the same roll. Lot metadata is optional and often omitted on a top-up —
+// it has to survive that, and a newly typed lot number has to win.
+describe('ingressStock — optional lot metadata survives a later ingress', () => {
+  const ARTICLE = { color: 'Rojo Vino', nm: '30', fabricType: 'Piqué', productType: 'ROLL' as const, operatorId: 'op' };
+  const roll = (weightKg: number) => [{ pieceId: 'R1', weightKg, purchaseValueUsd: 5, salePriceUsd: 8 }];
+
+  it('carries lot/pantone/composición forward, and a new lot number overrides', async () => {
+    const db = makeTestDb();
+    const bid = batchIdOf(ARTICLE.color, ARTICLE.nm, ARTICLE.fabricType);
+    await ingressStock(db, {
+      ...ARTICLE,
+      lotNumber: '4471', pantone: '19-4052 TCX', fiberComposition: '100% algodón',
+      rolls: roll(20),
+    });
+
+    // Top up the SAME roll with no metadata typed — nothing may be erased.
+    await ingressStock(db, { ...ARTICLE, rolls: roll(5) });
+    const kept = (await db.get(productIdOf(bid, 'R1'))) as ProductDoc;
+    expect(kept.currentWeightKg).toBe(25);
+    expect(kept.lotNumber).toBe('4471');
+    expect(kept.pantone).toBe('19-4052 TCX');
+    expect(kept.fiberComposition).toBe('100% algodón');
+
+    // More fabric of a DIFFERENT lot onto the same roll id: the new number wins,
+    // the fields not retyped stay.
+    await ingressStock(db, { ...ARTICLE, lotNumber: '4482', rolls: roll(5) });
+    const updated = (await db.get(productIdOf(bid, 'R1'))) as ProductDoc;
+    expect(updated.lotNumber).toBe('4482');
+    expect(updated.pantone).toBe('19-4052 TCX');
+  });
+
+  it('stores nothing for a blank lot number (legacy rolls stay S/L)', async () => {
+    const db = makeTestDb();
+    const bid = batchIdOf('Blanco', '24', 'Jersey');
+    await ingressStock(db, {
+      color: 'Blanco', nm: '24', fabricType: 'Jersey', productType: 'ROLL', operatorId: 'op',
+      lotNumber: '   ',
+      rolls: roll(10),
+    });
+    const p = (await db.get(productIdOf(bid, 'R1'))) as ProductDoc;
+    expect(p.lotNumber).toBeUndefined();
+  });
+});

@@ -55,6 +55,16 @@ export interface ProductDoc extends Doc {
   salePriceUsd: number;
   conditionTag: ConditionTag;
   createdAt: string;
+  /**
+   * The supplier's printed lot number, typed as-is by the operator (NOT normalized,
+   * NOT part of any _id — the roll's identity stays batchId+pieceId). Optional:
+   * stock received before this field existed has none and displays as "S/L".
+   */
+  lotNumber?: string;
+  /** Pantone reference. One per lot — every roll of a lot shares it. */
+  pantone?: string;
+  /** Fibre composition, e.g. "95% algodón / 5% elastano". */
+  fiberComposition?: string;
 }
 
 /** _id: client:{documentId normalized} — cédula/RIF is the natural key. */
@@ -96,7 +106,7 @@ export interface ExpenseDoc extends Doc {
 export interface CartLineItem {
   productId: string;
   batchId: string;
-  /** Display snapshot, e.g. "Azul rey · NM 30 · Jersey · R2". */
+  /** Display snapshot, e.g. "Azul rey · NM 30 · Jersey · R2 · Lote 4471". */
   description: string;
   quantity: number;
   unitOfMeasure: UnitOfMeasure;
