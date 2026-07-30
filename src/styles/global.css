@@ -122,6 +122,11 @@
   .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
   .form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
 
+  /* Native <dialog> (showModal): the reset zeroes the UA `margin: auto` that
+     centres it, and Chromium's default backdrop is too faint over a light page. */
+  dialog { margin: auto; }
+  dialog::backdrop { background: rgba(34, 31, 26, 0.45); }
+
   /* Ingreso roll rows: piece | weight | cost | price | condition | delete */
   .roll-head, .roll-row { display: grid; grid-template-columns: 52px 2fr 1fr 1fr 110px 40px; gap: 8px; margin-bottom: 6px; }
   .roll-head { padding: 0 4px; }

@@ -4,9 +4,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../../lib/db';
 import { useLiveQuery } from '../../lib/hooks';
-import { getClients, getSales, saveClient } from '../../lib/queries';
-import type { ClientDoc, SaleDoc, EntityType } from '../../lib/types';
-import { fmtDate } from '../../lib/format';
+import { getClients, getSales, saveClient, usdPaid } from '../../lib/queries';
+import { getPayments, paymentsBySale, saleBalance } from '../../lib/payments';
+import type { ClientDoc, SaleDoc, PaymentDoc, EntityType } from '../../lib/types';
+import { fmtDate, fmtUsd } from '../../lib/format';
 import {
   Button,
   Input,
@@ -93,16 +94,15 @@ function clientToForm(c: ClientDoc): ClientFormState {
 
 // ─── OUTSTANDING BALANCE ─────────────────────────────────────────────────────
 
-/** Sum of USD owed across unpaid/partial sales. Display-only; derived. */
-function outstandingUsd(sales: SaleDoc[]): number {
+/**
+ * Sum of USD owed across this client's sales. Display-only; derived.
+ * Counts later `payment:` collections — `sale.paymentStatus` is frozen at
+ * checkout and would keep showing a debt that has since been paid.
+ */
+function outstandingUsd(sales: SaleDoc[], paymentsFor: Map<string, PaymentDoc[]>): number {
   let total = 0;
   for (const s of sales) {
-    if (s.paymentStatus === 'PAID') continue;
-    const paidUsd =
-      s.paidUsdCash +
-      s.paidUsdTransfer +
-      (s.exchangeRateBCV > 0 ? s.paidBs / s.exchangeRateBCV : 0);
-    total += Math.max(0, s.totalUsd - paidUsd);
+    total += saleBalance(s, paymentsFor.get(s._id)).owedUsd;
   }
   return total;
 }
@@ -119,9 +119,17 @@ function ClientSales({ clientId }: { clientId: string }) {
     (database) => getSales(database, { descending: true }),
     [clientId],
   );
+  const { data: payments } = useLiveQuery<PaymentDoc[]>(
+    (database) => getPayments(database),
+    [clientId],
+  );
 
   const clientSales = (sales ?? []).filter((s) => s.clientId === clientId);
-  const owed = outstandingUsd(clientSales);
+  const paymentsFor = paymentsBySale(payments ?? []);
+  const owed = outstandingUsd(clientSales, paymentsFor);
+  // Payments belong to a sale, not a client — reach the client's through their sales.
+  const saleIds = new Set(clientSales.map((s) => s._id));
+  const clientPayments = (payments ?? []).filter((p) => saleIds.has(p.saleId));
 
   if (clientSales.length === 0) {
     return (
@@ -205,33 +213,89 @@ function ClientSales({ clientId }: { clientId: string }) {
           </tr>
         </thead>
         <tbody>
-          {clientSales.map((sale) => (
-            <tr
-              key={sale._id}
-              style={{ borderBottom: '1px solid rgba(138,131,113,0.12)' }}
-            >
-              <td
-                style={{
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: '13px',
-                  color: 'var(--color-ink)',
-                  padding: '8px 0',
-                }}
+          {clientSales.map((sale) => {
+            // Derived — never sale.paymentStatus, which is the checkout snapshot.
+            const status = saleBalance(sale, paymentsFor.get(sale._id)).status;
+            return (
+              <tr
+                key={sale._id}
+                style={{ borderBottom: '1px solid rgba(138,131,113,0.12)' }}
               >
-                {fmtDate(sale.date)}
-              </td>
-              <td style={{ textAlign: 'right', padding: '8px 0' }}>
-                <Money usd={sale.totalUsd} />
-              </td>
-              <td style={{ textAlign: 'right', padding: '8px 0' }}>
-                <Badge tone={STATUS_TONE[sale.paymentStatus]}>
-                  {STATUS_LABELS[sale.paymentStatus]}
-                </Badge>
-              </td>
-            </tr>
-          ))}
+                <td
+                  style={{
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '13px',
+                    color: 'var(--color-ink)',
+                    padding: '8px 0',
+                  }}
+                >
+                  {fmtDate(sale.date)}
+                </td>
+                <td style={{ textAlign: 'right', padding: '8px 0' }}>
+                  <Money usd={sale.totalUsd} />
+                </td>
+                <td style={{ textAlign: 'right', padding: '8px 0' }}>
+                  <Badge tone={STATUS_TONE[status]}>{STATUS_LABELS[status]}</Badge>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+
+      {/* Collections recorded after checkout — otherwise the note captured with
+          each one would be written and never readable anywhere. */}
+      {clientPayments.length > 0 && (
+        <div style={{ marginTop: '4px' }}>
+          <h3
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '11px',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              color: 'var(--color-thread)',
+              margin: '8px 0 6px',
+            }}
+          >
+            Cobros registrados
+          </h3>
+          {clientPayments.map((p) => (
+            <div
+              key={p._id}
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: '10px',
+                padding: '5px 0',
+                borderBottom: '1px solid rgba(138,131,113,0.12)',
+              }}
+            >
+              <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ink)' }}>
+                {fmtDate(p.date)}
+              </span>
+              <span
+                style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '12px',
+                  color: 'var(--color-thread)',
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {p.note}
+              </span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontFeatureSettings: '"tnum" 1' }}>
+                {fmtUsd(usdPaid(p.paidUsdCash, p.paidUsdTransfer, p.paidBs, p.exchangeRateBCV))}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

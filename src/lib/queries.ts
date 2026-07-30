@@ -227,11 +227,37 @@ export async function addExpense(db: DB, input: ExpenseInput): Promise<ExpenseDo
   return doc;
 }
 
-// ---- Payment status (pure, exported for UI + checkout) ----
+// ---- Payment status (pure, exported for UI + checkout + payments.ts) ----
+
+/** Within a cent of the total counts as settled — float drift, not a debt. */
+export const SETTLED_EPSILON = 0.01;
+/** Above this, money genuinely changed hands (so: PARTIAL, not PENDING). */
+const RECEIVED_EPSILON = 0.009;
 
 /**
- * Split-payment status. Bs is converted to USD at the LOCKED sale rate so all
- * three payment channels compare in one currency. Epsilon tolerates cent drift.
+ * The three payment channels as one USD figure. Bs converts at the rate locked
+ * on the record that holds it — a sale's Bs at the sale's rate, a later
+ * collection's Bs at the rate the day it was collected.
+ */
+export function usdPaid(
+  paidUsdCash: number,
+  paidUsdTransfer: number,
+  paidBs: number,
+  exchangeRateBCV: number,
+): number {
+  return paidUsdCash + paidUsdTransfer + (exchangeRateBCV > 0 ? paidBs / exchangeRateBCV : 0);
+}
+
+/** The ONE definition of the thresholds — checkout and every read site share it. */
+export function statusForPaid(totalUsd: number, paidTotalUsd: number): PaymentStatus {
+  if (paidTotalUsd >= totalUsd - SETTLED_EPSILON) return 'PAID';
+  if (paidTotalUsd > RECEIVED_EPSILON) return 'PARTIAL';
+  return 'PENDING';
+}
+
+/**
+ * Split-payment status AT CHECKOUT. To ask what a sale is owed *today* — after
+ * later `payment:` collections — use `saleBalance()` in `payments.ts`, not this.
  */
 export function computePaymentStatus(
   totalUsd: number,
@@ -240,10 +266,7 @@ export function computePaymentStatus(
   paidBs: number,
   exchangeRateBCV: number,
 ): PaymentStatus {
-  const paidTotalUsd = paidUsdCash + paidUsdTransfer + (exchangeRateBCV > 0 ? paidBs / exchangeRateBCV : 0);
-  if (paidTotalUsd >= totalUsd - 0.01) return 'PAID';
-  if (paidTotalUsd > 0.009) return 'PARTIAL';
-  return 'PENDING';
+  return statusForPaid(totalUsd, usdPaid(paidUsdCash, paidUsdTransfer, paidBs, exchangeRateBCV));
 }
 
 // Shared uuid helper — crypto.randomUUID exists in browsers and node >=16.7.
