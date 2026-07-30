@@ -17,15 +17,13 @@ any time. It reads secrets from a sibling `../.env` (never commit that file).
    `movement:` document.
 6. Creates the first application user in `_users` with the app role.
 
-## ⚠️ Pending re-run (2026-07-30)
+## Design-doc history
 
-`validate_doc_update.js` gained the `payment:` prefix in its append-only regex
-when the payment ledger landed. **The change is in the repo but NOT on any
-node** — re-run `./couch/setup.sh` against the cloud node to push it (it
-re-pushes `_design/validation` preserving `_rev`), and make sure the Pi gets
-this same file when it is provisioned. Until then, collections replicate and
-work correctly but are *editable* by any role member rather than append-only —
-a data-integrity gap, not an outage.
+**2026-07-30 — `payment:` added to the append-only regex** (payment ledger).
+Pushed to the **cloud node**; verified by reading `_design/validation` back:
+`^(sale|payment|expense|movement):`. ⚠️ The **Pi has not been provisioned yet** —
+when it is, `setup.sh` must be run against it too, or it ships a stale validator
+that lets any role member rewrite a collection.
 
 ## `.env` (in the repo root, gitignored)
 

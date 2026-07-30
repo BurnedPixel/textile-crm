@@ -22,7 +22,7 @@ import { saveClient } from '../src/lib/queries';
 import { ingressStock } from '../src/lib/inventory';
 import { checkout } from '../src/lib/checkout';
 import { clientIdOf, type CartLineItem } from '../src/lib/types';
-import { round2 } from '../src/lib/format';
+import { round2, fmtLot } from '../src/lib/format';
 
 PouchDB.plugin(memory);
 
@@ -170,7 +170,7 @@ async function main() {
   }
 
   // Roll ledger for the checkout phase: which roll can still serve a line.
-  const rollsByArticle = new Map<string, { pieceId: string; remaining: number }[]>();
+  const rollsByArticle = new Map<string, { pieceId: string; remaining: number; lot: string }[]>();
   let rollCount = 0;
 
   let ai = 0;
@@ -193,16 +193,17 @@ async function main() {
         conditionTag: (/segunda/i.test(fabricType) ? 'SECONDS' : 'FIRST') as 'SECONDS' | 'FIRST',
       }));
       // A lot number per ingress; real ones from the description win.
+      const lot = a.lots[0] ?? inventLot(key);
       await ingressStock(db, {
         color, nm, fabricType, productType: 'ROLL',
         location: 'Depósito A', operatorId: 'importacion',
         reason: `Inventario inicial — ${informe.source}`,
-        lotNumber: a.lots[0] ?? inventLot(key),
+        lotNumber: lot,
         pantone: inventPantone(color),
         fiberComposition: inventComposition(fabricType),
         rolls,
       });
-      rollsByArticle.set(key, rolls.map((r) => ({ pieceId: r.pieceId, remaining: r.weightKg })));
+      rollsByArticle.set(key, rolls.map((r) => ({ pieceId: r.pieceId, remaining: r.weightKg, lot })));
       rollCount += rolls.length;
     } else {
       await ingressStock(db, {
@@ -244,7 +245,10 @@ async function main() {
         lines.push({
           productId: `${batchId.replace('batch:', 'product:batch:')}:${slug(roll.pieceId)}`,
           batchId,
-          description: `${l.color} · NM ${l.nm} · ${l.fabricType} · ${roll.pieceId}`,
+          // Identical to the template SaleTerminal freezes into a real sale —
+          // the lot has to be in the description or this history can never be
+          // told which lot it consumed (sale documents are immutable).
+          description: `${l.color} · NM ${l.nm} · ${l.fabricType} · ${roll.pieceId} · ${fmtLot(roll.lot)}`,
           quantity: l.qty, unitOfMeasure: 'Kg',
           unitPriceAtSale: l.price, lineSubtotalUsd: round2(l.qty * l.price),
         });
