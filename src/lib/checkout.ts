@@ -147,6 +147,10 @@ async function attemptCheckout(
     input.exchangeRateBCV,
   );
 
+  if (paymentStatus !== 'PAID' && !input.clientId) {
+    throw new Error('Las ventas a crédito requieren un cliente seleccionado.');
+  }
+
   const sale: SaleDoc = {
     _id: saleId,
     type: 'sale',
