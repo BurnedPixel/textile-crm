@@ -178,6 +178,24 @@ describe('checkout — rejections', () => {
     ).rejects.toThrow(/unidad/i);
   });
 
+  it('rejects credit sales (not fully paid) with no client selected', async () => {
+    const db = makeTestDb();
+    const bid = await seedRollBatch(db);
+    await expect(
+      checkout(db, {
+        transactionId: 'tx-credit-no-client',
+        createdAt: new Date().toISOString(),
+        clientId: null,
+        isOnTheBooks: true,
+        exchangeRateBCV: RATE,
+        creditTerms: null,
+        operatorId: 'op',
+        lines: [rollLine(bid, 'R1', 5, 8)],
+        payments: { paidUsdCash: 10, paidUsdTransfer: 0, paidBs: 0 },
+      }),
+    ).rejects.toThrow(/crédito requieren un cliente/i);
+  });
+
   it('rejects rate <= 0 and empty cart', async () => {
     const db = makeTestDb();
     const bid = await seedRollBatch(db);
