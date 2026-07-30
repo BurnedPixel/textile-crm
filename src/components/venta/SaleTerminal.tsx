@@ -427,6 +427,7 @@ export default function SaleTerminal() {
   const [newClientName, setNewClientName] = useState('');
   const [newClientDocId, setNewClientDocId] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
+  const [newClientAddress, setNewClientAddress] = useState('');
   const [newClientErr, setNewClientErr] = useState<string | null>(null);
 
   // Accent-insensitive fold (same logic as colorFor uses).
@@ -698,6 +699,7 @@ export default function SaleTerminal() {
     setNewClientName(clientSearch);
     setNewClientDocId('');
     setNewClientPhone('');
+    setNewClientAddress('');
     setNewClientErr(null);
     setClientOpen(false);
   }
@@ -728,6 +730,7 @@ export default function SaleTerminal() {
         entityType,
         name,
         phoneNumber: newClientPhone.trim() || undefined,
+        address: newClientAddress.trim() || undefined,
       }, { createOnly: true });
       const updated = await setClient(cartDb, saved._id);
       setCart(updated);
@@ -1113,6 +1116,18 @@ export default function SaleTerminal() {
                   placeholder="+58 412-000-0000"
                   value={newClientPhone}
                   onChange={(e) => setNewClientPhone(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') { e.preventDefault(); void handleSaveNewClient(); }
+                    if (e.key === 'Escape') { e.preventDefault(); cancelCreatingClient(); }
+                  }}
+                />
+              </Field>
+              <Field label="Dirección (opcional)">
+                <Input
+                  placeholder="Dirección"
+                  value={newClientAddress}
+                  onChange={(e) => setNewClientAddress(e.target.value)}
                   onKeyDown={(e) => {
                     e.stopPropagation();
                     if (e.key === 'Enter') { e.preventDefault(); void handleSaveNewClient(); }

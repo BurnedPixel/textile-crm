@@ -7,7 +7,7 @@ import { getConfig, getExpenses, addExpense } from '../../lib/queries';
 import { useLiveQuery } from '../../lib/hooks';
 import { fmtDate, fmtUsd, fmtBs, toBs, round2 } from '../../lib/format';
 import {
-  Button, Input, NumberInput, Select, Field, Kbd, Badge, Money, EmptyState,
+  Button, Input, NumberInput, Select, Field, Kbd, Badge, Money, EmptyState, Combobox,
 } from '../ui';
 import type { ExpenseDoc } from '../../lib/types';
 
@@ -68,6 +68,23 @@ export default function GastosIsland() {
 
   // Filter: only expenses whose date starts with month (scanLedger uses ISO date prefix)
   const expenses: ExpenseDoc[] = useMemo(() => allExpenses ?? [], [allExpenses]);
+
+  // ponytail: separate month-unbounded query just for description suggestions —
+  // an extra allDocs prefix scan that re-runs on every debounced db change
+  // (including sync), acceptable at this data volume.
+  const { data: recentExpenses } = useLiveQuery((db) => getExpenses(db, { limit: 200 }));
+
+  const descriptionOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const e of recentExpenses ?? []) {
+      const d = e.description.trim();
+      if (!d || seen.has(d)) continue;
+      seen.add(d);
+      out.push(d);
+    }
+    return out;
+  }, [recentExpenses]);
 
   const monthlyTotalUsd = useMemo(
     () => round2(expenses.reduce((acc, e) => acc + e.amountUsd, 0)),
@@ -164,9 +181,10 @@ export default function GastosIsland() {
 
           <div style={{ marginBottom: '1rem' }}>
             <Field label="Descripción">
-              <Input
+              <Combobox
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={setDescription}
+                options={descriptionOptions}
                 placeholder="Descripción del gasto…"
                 required
               />

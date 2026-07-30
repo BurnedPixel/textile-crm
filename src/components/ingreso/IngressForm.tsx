@@ -442,7 +442,7 @@ export default function IngressForm() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: 22, fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
-            Ingreso de stock
+            Inventario
           </h1>
           <p className="kbd-hints" style={{ fontFamily: 'var(--font-sans)', fontSize: 13, color: 'var(--color-thread)', margin: '4px 0 0' }}>
             Presiona <Kbd>/</Kbd> para enfocar Color · <Kbd>Enter</Kbd> avanza al siguiente campo

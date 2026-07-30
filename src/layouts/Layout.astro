@@ -14,7 +14,7 @@ const isDev = import.meta.env.DEV;
 const navItems = [
   { label: 'Panel',         href: '/',             key: 'p', hint: 'g p', icon: 'grid' },
   { label: 'Venta',         href: '/venta',        key: 'v', hint: 'g v', icon: 'cart' },
-  { label: 'Ingreso',       href: '/ingreso',      key: 'i', hint: 'g i', icon: 'plus' },
+  { label: 'Inventario',    href: '/ingreso',      key: 'i', hint: 'g i', icon: 'plus' },
   { label: 'Clientes',      href: '/clientes',     key: 'c', hint: 'g c', icon: 'person' },
   { label: 'Gastos',        href: '/gastos',       key: 'g', hint: 'g g', icon: 'receipt' },
   { label: 'Ajustes',       href: '/configuracion',key: 'o', hint: 'g o', icon: 'settings' },
@@ -80,8 +80,10 @@ const icons: Record<string, string> = {
               aria-hidden="true"
               set:html={icons[item.icon]}
             />
-            <span class="rail-label">
-              {item.label.length > 8 ? item.label.slice(0, 7) + '…' : item.label}
+            {/* Labels over 8 chars get a tighter size rather than an ellipsis —
+                the 64px rail cannot fit "INVENTARIO" at the default tracking. */}
+            <span class:list={['rail-label', { 'rail-label-long': item.label.length > 8 }]}>
+              {item.label}
             </span>
             <span class="rail-hint">
               {item.hint}
@@ -164,6 +166,7 @@ const icons: Record<string, string> = {
         font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
         text-transform: uppercase; line-height: 1; font-family: var(--font-sans);
       }
+      .rail-label-long { font-size: 8.5px; letter-spacing: 0.02em; }
       .rail-hint {
         font-family: var(--font-mono); font-size: 9px;
         color: rgba(138,131,113,0.7); margin-top: 1px; letter-spacing: 0.03em;
