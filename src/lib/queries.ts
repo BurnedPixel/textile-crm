@@ -5,6 +5,7 @@
 import {
   SYSTEM_CONFIG_ID,
   clientIdOf,
+  expenseIdOf,
   type SystemConfigDoc,
   type BatchDoc,
   type ProductDoc,
@@ -212,7 +213,7 @@ export async function addExpense(db: DB, input: ExpenseInput): Promise<ExpenseDo
   const date = input.date ?? new Date().toISOString();
   const uuid = uuidv4();
   const doc: ExpenseDoc = {
-    _id: `expense:${date}:${uuid}`,
+    _id: expenseIdOf(date, uuid),
     type: 'expense',
     expenseId: uuid,
     date,

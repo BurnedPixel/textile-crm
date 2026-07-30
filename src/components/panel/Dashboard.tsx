@@ -59,24 +59,28 @@ interface DashboardData {
 
 async function fetchAll(): Promise<DashboardData> {
   const todayStart = isoToday();
-  const [config, stocked, todaySales, recentSales, allClients, payments] = await Promise.all([
+  // ponytail: scanning ~90d of sales is acceptable for typical factory volume
+  // (<10k sales/yr). Upgrade to a Mango index if perf becomes an issue.
+  const cutoff = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
+
+  const [config, stocked, historicSales, recentSales, allClients, payments] = await Promise.all([
     getConfig(db),
     getStockedBatches(db),
-    getSales(db, { startDate: todayStart, endDate: todayStart, descending: true }),
+    getSales(db, { startDate: cutoff, descending: true }),
+    // Separate from the window above on purpose: after a quiet stretch the last
+    // 8 sales can all be older than 90 days, and this list must not go blank.
+    // `limit` stops the scan at 8 rows, so it is not a second full read.
     getSales(db, { limit: 8, descending: true }),
     getClients(db),
     // Every payment, not a windowed slice: a collection made today can settle a
-    // sale older than the 90-day window below, and missing it would show a debt
-    // that no longer exists.
+    // sale older than the window, and missing it would show a debt that is gone.
     getPayments(db),
   ]);
   const paymentsFor = paymentsBySale(payments);
 
-  // Pending/partial sales — scan recent 90 days to avoid unbounded scan.
-  // ponytail: scanning ~90d of sales is acceptable for typical factory volume (<10k sales/yr).
-  // Upgrade to a Mango index if perf becomes an issue.
-  const cutoff = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
-  const historicSales = await getSales(db, { startDate: cutoff, descending: true });
+  // Today's sales are the head of the 90-day window — filtering beats a third scan.
+  const todaySales = historicSales.filter((s) => s.date.slice(0, 10) === todayStart);
+
   // DERIVED, not sale.paymentStatus — a sale settled by a later collection must
   // drop out of this list, and the sale doc itself can never be updated to say so.
   const pendingSales = historicSales.filter(
