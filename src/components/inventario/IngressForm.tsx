@@ -5,10 +5,11 @@
 import { useState, useEffect, useRef, type KeyboardEvent } from 'react';
 import { db } from '../../lib/db';
 import { cachedUser } from '../../lib/auth';
-import { getBatches, getBatchProducts } from '../../lib/queries';
+import { getBatches, getBatchProducts, getClients, getSales, getFiscalConfig } from '../../lib/queries';
 import { ingressStock } from '../../lib/inventory';
 import { useLiveQuery } from '../../lib/hooks';
-import { batchIdOf, norm, type ProductType, type ConditionTag, type BatchDoc } from '../../lib/types';
+import { clientsWhoBought, waLink, buildArrivalText } from '../../lib/whatsapp';
+import { batchIdOf, norm, type ProductType, type ConditionTag, type BatchDoc, type ClientDoc } from '../../lib/types';
 import { fmtKg, fmtUnits, CONDITION_LABEL } from '../../lib/format';
 import {
   Button, Input, NumberInput, Select, Field, Kbd, SwatchChip, Combobox,
@@ -70,6 +71,10 @@ function freshDefaults(): BatchDefaults {
     touched: { cost: false, price: false, condition: false, pantone: false, composition: false },
   };
 }
+
+// How far back to look for clients who buy this cloth. Six months of a fabric
+// they never came back for is not a lead.
+const ARRIVAL_WINDOW_DAYS = 182;
 
 // Stable identity for "no batches yet" — the cascade effect keys on `batches`,
 // and a fresh [] every render would re-run it every render.
@@ -134,6 +139,14 @@ export default function IngressForm({ onDone }: IngressFormProps) {
   const [unitConditionTag, setUnitConditionTag]   = useState<ConditionTag>('FIRST');
   // Tracks whether user has touched the combo/piece price fields (blocks prefill)
   const unitTouched = useRef({ cost: false, price: false, condition: false });
+
+  // ─ "acaba de llegar" — offered AFTER a successful ingress, never before ─
+  // Detected from this ingress, not from the batch's createdAt: refilling an
+  // existing article preserves the original date, so a batch never looks new
+  // again and the notice would only ever fire for brand-new articles.
+  const [arrivals, setArrivals] = useState<
+    { what: string; targets: Array<{ client: ClientDoc; link: string }> } | null
+  >(null);
 
   // ─ feedback ─
   const [submitting, setSubmitting] = useState(false);
@@ -415,10 +428,44 @@ export default function IngressForm({ onDone }: IngressFormProps) {
       setUnits('');
       // Keep unit price/condition for COMBO/PIECE rapid re-entry too (same as ROLL).
       onDone?.(); // batches refresh themselves — useLiveQuery watches the DB
+      void offerArrivalNotices(color.trim(), fabricType.trim());
     } catch (err) {
       setError((err as Error).message ?? 'Error desconocido.');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  /**
+   * Who bought this cloth recently, and can be told it just arrived. Loaded
+   * lazily on success rather than on mount: the ledger scan is only worth doing
+   * once there is something to announce.
+   */
+  async function offerArrivalNotices(color: string, fabric: string) {
+    setArrivals(null);
+    try {
+      const since = new Date(Date.now() - ARRIVAL_WINDOW_DAYS * 86_400_000).toISOString();
+      const [sales, clients, fiscal] = await Promise.all([
+        getSales(db, { startDate: since }),
+        getClients(db),
+        getFiscalConfig(db),
+      ]);
+      const byId = new Map(clients.map((c) => [c._id, c]));
+      const targets = clientsWhoBought(sales, fabric, since)
+        .map((id) => byId.get(id))
+        .filter((c): c is ClientDoc => Boolean(c))
+        .map((client) => ({
+          client,
+          link: waLink(client.phoneNumber, buildArrivalText({
+            clientName: client.name, fabricType: fabric, color,
+            businessName: fiscal?.businessName,
+          })),
+        }))
+        // No usable number means no button — never a link to nobody.
+        .filter((t): t is { client: ClientDoc; link: string } => Boolean(t.link));
+      if (targets.length) setArrivals({ what: `${fabric} ${color}`.trim(), targets });
+    } catch (err) {
+      console.error(err); // a failed suggestion must never break the ingress
     }
   }
 
@@ -784,6 +831,44 @@ export default function IngressForm({ onDone }: IngressFormProps) {
         )}
         {error && (
           <div role="alert" style={alertErr}>{error}</div>
+        )}
+
+        {/* ─── ACABA DE LLEGAR ─── who buys this cloth, one press each ─── */}
+        {arrivals && (
+          <section data-arrivals style={{ ...sectionStyle, borderColor: 'var(--color-ok)' }} className="card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+              <h2 style={{ ...sectionTitle, marginBottom: 0, color: 'var(--color-ok)' }}>
+                Avisar que llegó {arrivals.what}
+              </h2>
+              <Button variant="ghost" size="md" type="button" onClick={() => setArrivals(null)}>
+                Descartar
+              </Button>
+            </div>
+            <p style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-thread)', margin: '0 0 12px' }}>
+              {arrivals.targets.length === 1
+                ? 'Un cliente compró esta tela en los últimos 6 meses.'
+                : `${arrivals.targets.length} clientes compraron esta tela en los últimos 6 meses.`}
+              {' '}Cada mensaje se envía a mano, uno por uno.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {arrivals.targets.map(({ client, link }) => (
+                <a
+                  key={client._id}
+                  data-arrival-link
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 14px',
+                    borderRadius: 6, border: '1.5px solid var(--color-ok)', color: 'var(--color-ok)',
+                    fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 600, textDecoration: 'none',
+                  }}
+                >
+                  {client.name}
+                </a>
+              ))}
+            </div>
+          </section>
         )}
 
         {/* ─── SUBMIT ────────────────────────────────────────────────── */}
