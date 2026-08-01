@@ -156,6 +156,28 @@ export async function getStockedBatches(
     .map((batch) => ({ batch, products: byBatch.get(batch._id) ?? [] }));
 }
 
+/**
+ * Every product paired with its article — including rolls with nothing left on
+ * them, which `getStockedBatches` filters out. Powers the lot search, where a
+ * sold-out roll is often exactly the one being looked for.
+ *
+ * ponytail: two full prefix scans and a join in memory, like getStockedBatches.
+ * Fine at factory scale (hundreds of rolls); if it ever isn't, the answer is a
+ * per-lot index, not a Mango selector.
+ */
+export async function getProductsWithBatch(
+  db: DB,
+): Promise<Array<{ batch: BatchDoc; product: ProductDoc }>> {
+  const [batches, products] = await Promise.all([
+    getBatches(db),
+    scanPrefix<ProductDoc>(db, 'product:'),
+  ]);
+  const byId = new Map(batches.map((b) => [b._id, b]));
+  return products
+    .map((product) => ({ batch: byId.get(product.batchId), product }))
+    .filter((row): row is { batch: BatchDoc; product: ProductDoc } => Boolean(row.batch));
+}
+
 // ---- Clients ----
 
 export async function getClients(db: DB): Promise<ClientDoc[]> {

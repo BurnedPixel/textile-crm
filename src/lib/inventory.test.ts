@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { makeTestDb } from './testdb';
 import {
-  ingressStock, adjustStock, returnStock, returnPieceId,
+  ingressStock, adjustStock, returnStock, returnPieceId, updateRollDetails,
   RETURN_REASON, EXCHANGE_REASON,
 } from './inventory';
 import { checkout } from './checkout';
@@ -465,5 +465,70 @@ describe('returnStock — the cached counter agrees with a rebuild from the ledg
     const batch = (await db.get(bid)) as BatchDoc;
     expect(batch.currentUnits).toBe(1);
     expect(await rebuiltUnits(db, bid)).toBe(1);
+  });
+});
+
+// ─── Correcting a roll's details ─────────────────────────────────────────────
+//
+// The whole point of keeping the lot number OUT of the _id: correcting a
+// mistyped one is an ordinary field write, with no migration and no dangling
+// reference in the frozen sale history.
+
+describe('updateRollDetails — corrects what is written on a roll, never its weight', () => {
+  const setup = async () => {
+    const db = makeTestDb();
+    const bid = batchIdOf(ROLL_ARTICLE.color, ROLL_ARTICLE.nm, ROLL_ARTICLE.fabricType);
+    await ingressStock(db, {
+      ...ROLL_ARTICLE,
+      lotNumber: '7250', pantone: '18-0135 TCX', fiberComposition: '100% algodón',
+      rolls: rollsOf(['R1', 20]),
+    });
+    return { db, bid, productId: productIdOf(bid, 'R1') };
+  };
+
+  it('fixes a mistyped lot number without touching anything else', async () => {
+    const { db, productId } = await setup();
+    const updated = await updateRollDetails(db, { productId, lotNumber: '7252' });
+    expect(updated.lotNumber).toBe('7252');
+    expect(updated.pantone).toBe('18-0135 TCX');       // untouched
+    expect(updated.fiberComposition).toBe('100% algodón');
+    expect(updated.currentWeightKg).toBe(20);          // weight is the ledger's job
+    expect(updated.salePriceUsd).toBe(8);
+  });
+
+  it('clears an optional field back to S/L when it is emptied', async () => {
+    const { db, productId } = await setup();
+    const updated = await updateRollDetails(db, { productId, lotNumber: '  ' });
+    expect(updated.lotNumber).toBeUndefined();
+    expect(updated.pantone).toBe('18-0135 TCX');
+  });
+
+  it('updates prices and condition, and rejects a nonsense price', async () => {
+    const { db, productId } = await setup();
+    const updated = await updateRollDetails(db, {
+      productId, purchaseValueUsd: 6.25, salePriceUsd: 9.9, conditionTag: 'SECONDS',
+    });
+    expect(updated.purchaseValueUsd).toBe(6.25);
+    expect(updated.salePriceUsd).toBe(9.9);
+    expect(updated.conditionTag).toBe('SECONDS');
+
+    await expect(updateRollDetails(db, { productId, salePriceUsd: Number.POSITIVE_INFINITY }))
+      .rejects.toThrow(/precio de venta/i);
+    await expect(updateRollDetails(db, { productId, lotNumber: 'x'.repeat(200) }))
+      .rejects.toThrow(/lote/i);
+  });
+
+  it('refuses a roll that does not exist', async () => {
+    const { db } = await setup();
+    await expect(updateRollDetails(db, { productId: 'product:nope:r9', lotNumber: '1' }))
+      .rejects.toThrow(/no encontrado/i);
+  });
+
+  it('leaves the cached counter agreeing with the ledger', async () => {
+    const { db, bid, productId } = await setup();
+    await updateRollDetails(db, { productId, lotNumber: '9999', salePriceUsd: 12 });
+    const before = ((await db.get(bid)) as BatchDoc).currentUnits;
+    await recomputeBatchCounters(db, bid);
+    expect(((await db.get(bid)) as BatchDoc).currentUnits).toBe(before);
   });
 });

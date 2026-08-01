@@ -317,6 +317,13 @@
   }
 }
 
+/* Three tabs of uppercase 12px do not fit a 375px phone. They scroll inside the
+   bar rather than widening the page — inline styles cannot reach a media query,
+   which is why this hook exists. */
+@media (max-width: 767px) {
+  .inv-tabs button { padding: 12px 10px !important; font-size: 11px !important; }
+}
+
 /* ── Print: the nota de entrega, and nothing else ─────────────────────────────
    Only one page prints anything today (the /venta success view). Rather than
    listing chrome to hide — the rail, the sync bar, the buttons, whatever gets

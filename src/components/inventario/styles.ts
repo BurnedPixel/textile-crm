@@ -110,11 +110,15 @@ export const rollListBox: React.CSSProperties = {
   borderRadius: 6,
   maxHeight: 220,
   overflowY: 'auto',
+  // A wide row scrolls inside its own box rather than pushing the page sideways
+  // — on a phone the search results are wider than the screen by design.
+  overflowX: 'auto',
   backgroundColor: 'var(--color-cloth)',
 };
 
 export const rollRowStyle = (active: boolean): React.CSSProperties => ({
   padding: '9px 14px',
+  minWidth: 'max-content',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',

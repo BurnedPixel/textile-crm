@@ -506,6 +506,73 @@ export async function returnStock(db: DB, input: ReturnInput): Promise<Inventory
   return movement;
 }
 
+// ---- Correcting a roll's details (never its weight) ----
+
+export interface RollDetailsInput {
+  productId: string;
+  lotNumber?: string;
+  pantone?: string;
+  fiberComposition?: string;
+  purchaseValueUsd?: number;
+  salePriceUsd?: number;
+  conditionTag?: ConditionTag;
+}
+
+/**
+ * Correct what is written ON a roll — the lot number the operator mistyped, the
+ * pantone nobody recorded, a price that changed. Only fields actually present in
+ * the input are touched; `''` clears an optional one.
+ *
+ * Deliberately CANNOT change the weight. Stock moves only through the ledger
+ * (`adjustStock`), which is what makes the cached counters recomputable — a
+ * direct weight write here would be invisible to `recomputeBatchCounters` and
+ * would be silently undone by the next conflict.
+ *
+ * This is also the one thing the lot number's design bought: it is a plain field
+ * on the roll, not part of any _id, so correcting a typo is an ordinary write
+ * with no migration and no dangling reference in the frozen sale history.
+ */
+export async function updateRollDetails(
+  db: DB,
+  input: RollDetailsInput,
+): Promise<ProductDoc> {
+  const product = await getById<ProductDoc>(db, input.productId);
+  if (!product) throw new Error(`Rollo no encontrado: ${input.productId}`);
+
+  for (const [label, value] of [
+    ['El nº de lote', input.lotNumber],
+    ['El pantone', input.pantone],
+    ['La composición', input.fiberComposition],
+  ] as const) {
+    if (value && value.length > FIELD_MAX.text) {
+      throw new Error(`${label} no puede superar ${FIELD_MAX.text} caracteres.`);
+    }
+  }
+  if (input.purchaseValueUsd !== undefined) {
+    assertAmount(input.purchaseValueUsd, 'El costo', { allowZero: true });
+  }
+  if (input.salePriceUsd !== undefined) {
+    assertAmount(input.salePriceUsd, 'El precio de venta', { allowZero: true });
+  }
+
+  // Spread, not a rebuild: here the intent is to PRESERVE everything not named,
+  // the opposite of the ingress builders.
+  const next: ProductDoc = { ...product };
+  for (const key of ['lotNumber', 'pantone', 'fiberComposition'] as const) {
+    const value = input[key];
+    if (value === undefined) continue;
+    const trimmed = value.trim();
+    if (trimmed) next[key] = trimmed;
+    else delete next[key]; // cleared — the roll goes back to reading "S/L"
+  }
+  if (input.purchaseValueUsd !== undefined) next.purchaseValueUsd = round2(input.purchaseValueUsd);
+  if (input.salePriceUsd !== undefined) next.salePriceUsd = round2(input.salePriceUsd);
+  if (input.conditionTag !== undefined) next.conditionTag = input.conditionTag;
+
+  await db.put(next);
+  return next;
+}
+
 export interface AdjustInput {
   batchId: string;
   productId: string;
