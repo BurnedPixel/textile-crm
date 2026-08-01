@@ -27,6 +27,7 @@ import {
 import { checkout } from '../../lib/checkout';
 import { saveClient } from '../../lib/queries';
 import { useLiveQuery } from '../../lib/hooks';
+import { isPique, suggestedCombos, companionCandidates, COMBOS_PER_KG_PIQUE } from '../../lib/companions';
 import {
   round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot, fmtPiece,
   PAYMENT_LABEL, PAYMENT_TONE, CONDITION_SHORT, CONDITION_TONE,
@@ -275,6 +276,26 @@ function MicroField({ label, children }: { label: string; children: ReactNode })
   );
 }
 
+// The compañeros suggestion sits at the head of the cart column, marked with
+// the dye accent so it reads as an offer rather than as something already added.
+const companionPanel: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '8px',
+  padding: '10px 12px',
+  borderRadius: '8px',
+  border: '1.5px solid var(--color-dye)',
+  backgroundColor: 'rgba(181,23,92,0.04)',
+};
+
+const companionList: CSSProperties = {
+  border: '1px dashed var(--color-thread)',
+  borderRadius: '6px',
+  maxHeight: '132px',
+  overflowY: 'auto',
+  backgroundColor: 'var(--color-cloth)',
+};
+
 const dividerStyle: CSSProperties = {
   width: '1px',
   background: 'repeating-linear-gradient(to bottom, var(--color-thread) 0px, var(--color-thread) 4px, transparent 4px, transparent 8px)',
@@ -282,6 +303,22 @@ const dividerStyle: CSSProperties = {
   alignSelf: 'stretch',
   opacity: 0.4,
 };
+
+/**
+ * The line description, frozen into the immutable sale at checkout. ONE
+ * definition: a roll line and a compañero line must read the same way or the
+ * history becomes unreadable, and it can never be corrected afterwards.
+ *
+ * (pieceId is already "R2" — the old template prepended a second R. fmtPiece
+ * renders a returned roll as "R2 · devolución" rather than its raw
+ * collision-proof id.)
+ */
+function lineDescription(batch: BatchDoc, roll?: ProductDoc): string {
+  const head = `${batch.color} · NM ${batch.nm} · ${batch.fabricType}`;
+  return batch.productType === 'ROLL'
+    ? `${head} · ${roll ? fmtPiece(roll.pieceId) : ''} · ${fmtLot(roll?.lotNumber)}`
+    : head;
+}
 
 // ── main component ────────────────────────────────────────────────────────────
 
@@ -297,6 +334,15 @@ export default function SaleTerminal() {
   const [cart, setCart] = useState<CartDoc | null>(null);
   const [cartErr, setCartErr] = useState<string | null>(null);
   const [lineUpdateErr, setLineUpdateErr] = useState<string | null>(null);
+
+  // ── compañeros: the suggestion raised after a piqué line is added ──
+  // React state only. Nothing may be smuggled onto CartDoc — getCart and
+  // clearCart rebuild it from an explicit field list, so a flag parked there is
+  // silently dropped on the next sale.
+  const [companion, setCompanion] = useState<
+    { color: string; kg: number; qty: string; pick: string | null } | null
+  >(null);
+  const [companionErr, setCompanionErr] = useState<string | null>(null);
 
   // Load cart once dbReady
   useEffect(() => {
@@ -451,6 +497,10 @@ export default function SaleTerminal() {
     inCartQty.set(l.productId, (inCartQty.get(l.productId) ?? 0) + l.quantity);
   }
 
+  // Compañero candidates: stocked unit articles, this colour first. Tolerant by
+  // design — no naming rule has to hold, so the picker cannot ship dead.
+  const companionOptions = companion ? companionCandidates(stocked, companion.color) : [];
+
   // ── payment status preview ──
   const paidCash = parseFloat(payments.paidUsdCash) || 0;
   const paidTransfer = parseFloat(payments.paidUsdTransfer) || 0;
@@ -558,62 +608,76 @@ export default function SaleTerminal() {
   }
 
   // ── add to cart ──
+  /**
+   * Add whole units of a COMBO/PIECE pool product. Returns a Spanish error or
+   * null. The only place that subtracts what the cart already holds from
+   * batch.currentUnits — a companion line added around it would pass the
+   * terminal and then throw "Stock insuficiente" at the payment step.
+   */
+  async function addUnitsLine(
+    entry: { batch: BatchDoc; products: ProductDoc[] },
+    qtyNum: number,
+    priceNum: number,
+  ): Promise<string | null> {
+    const { batch, products } = entry;
+    const pool = products[0];
+    if (!pool) return 'Producto no encontrado.';
+    const inCart = inCartQty.get(pool._id) ?? 0;
+    const remaining = batch.currentUnits - inCart;
+    if (qtyNum > remaining) {
+      return inCart > 0
+        ? `Solo quedan ${fmtUnits(Math.max(0, remaining))} disponibles (el carrito ya tiene ${fmtUnits(inCart)}).`
+        : `Solo quedan ${fmtUnits(batch.currentUnits)} en stock.`;
+    }
+    try {
+      setCart(await addLine(cartDb, {
+        productId: pool._id,
+        batchId: batch._id,
+        description: lineDescription(batch),
+        quantity: qtyNum,
+        unitOfMeasure: UNIT_FOR[batch.productType],
+        unitPriceAtSale: priceNum,
+        lineSubtotalUsd: round2(qtyNum * priceNum),
+      }));
+      return null;
+    } catch (err) {
+      return (err as Error).message;
+    }
+  }
+
   async function handleAddToCart(): Promise<void> {
     setCartErr(null);
     if (!matchedEntry) return;
-    const { batch, products } = matchedEntry;
+    const { batch } = matchedEntry;
     const qtyNum = parseFloat(qty);
     const priceNum = parseFloat(unitPrice);
 
     if (!(qtyNum > 0)) { setCartErr('Ingrese una cantidad válida.'); return; }
     if (!(priceNum > 0)) { setCartErr('Ingrese un precio válido.'); return; }
 
-    let productDoc: ProductDoc | undefined;
-    let productId: string;
-    const uom = UNIT_FOR[batch.productType];
+    if (batch.productType !== 'ROLL') {
+      const problem = await addUnitsLine(matchedEntry, qtyNum, priceNum);
+      if (problem) { setCartErr(problem); return; }
+      resetSelection();
+      return;
+    }
 
-    if (batch.productType === 'ROLL') {
-      if (!selRoll) { setCartErr('Seleccione un rollo.'); return; }
-      if (inCartRollIds.has(selRoll._id)) {
-        setCartErr('Ese rollo ya está en el carrito.');
-        return;
-      }
-      if (qtyNum > selRoll.currentWeightKg) {
-        setCartErr(`Solo quedan ${fmtKg(selRoll.currentWeightKg)} en ese rollo.`);
-        return;
-      }
-      productDoc = selRoll;
-      productId = selRoll._id;
-    } else {
-      productDoc = products[0]; // pool doc
-      if (!productDoc) { setCartErr('Producto no encontrado.'); return; }
-      const inCart = inCartQty.get(productDoc._id) ?? 0;
-      const remaining = batch.currentUnits - inCart;
-      if (qtyNum > remaining) {
-        if (inCart > 0) {
-          setCartErr(`Solo quedan ${fmtUnits(Math.max(0, remaining))} disponibles (el carrito ya tiene ${fmtUnits(inCart)}).`);
-        } else {
-          setCartErr(`Solo quedan ${fmtUnits(batch.currentUnits)} en stock.`);
-        }
-        return;
-      }
-      productId = productDoc._id;
+    if (!selRoll) { setCartErr('Seleccione un rollo.'); return; }
+    if (inCartRollIds.has(selRoll._id)) {
+      setCartErr('Ese rollo ya está en el carrito.');
+      return;
+    }
+    if (qtyNum > selRoll.currentWeightKg) {
+      setCartErr(`Solo quedan ${fmtKg(selRoll.currentWeightKg)} en ese rollo.`);
+      return;
     }
 
     const line: CartLineItem = {
-      productId,
+      productId: selRoll._id,
       batchId: batch._id,
-      // Frozen into the immutable sale — the lot goes in NOW or that history is
-      // unrecoverable. (pieceId is already "R2"; the old template prepended a second R.
-      // fmtPiece renders a returned roll as "R2 · devolución" instead of its raw
-      // collision-proof id — and this string is frozen, so it has to be right here.)
-      description: `${batch.color} · NM ${batch.nm} · ${batch.fabricType}${
-        batch.productType === 'ROLL'
-          ? ` · ${productDoc ? fmtPiece(productDoc.pieceId) : ''} · ${fmtLot(productDoc?.lotNumber)}`
-          : ''
-      }`,
+      description: lineDescription(batch, selRoll),
       quantity: qtyNum,
-      unitOfMeasure: uom,
+      unitOfMeasure: UNIT_FOR[batch.productType],
       unitPriceAtSale: priceNum,
       lineSubtotalUsd: round2(qtyNum * priceNum),
     };
@@ -621,10 +685,37 @@ export default function SaleTerminal() {
     try {
       const updated = await addLine(cartDb, line);
       setCart(updated);
+      // Clients who buy piqué normally buy the matching combos with it. Offer,
+      // never add — and offer AFTER the line lands, so a failed add suggests
+      // nothing. The panel lives out here, not in BatchProductZone, which
+      // resetSelection unmounts on the very next line.
+      if (isPique(batch.fabricType)) {
+        setCompanion({
+          color: batch.color,
+          kg: qtyNum,
+          qty: String(suggestedCombos(qtyNum)),
+          pick: null,
+        });
+      }
       resetSelection();
     } catch (err) {
       setCartErr((err as Error).message);
     }
+  }
+
+  /** Add the compañero combos the seller settled on. Zero means "no thanks". */
+  async function handleAddCompanion(): Promise<void> {
+    if (!companion) return;
+    const entry = companionOptions.find((e) => e.batch._id === companion.pick);
+    if (!entry) { setCompanionErr('Seleccione el artículo de combos.'); return; }
+    const qtyNum = parseInt(companion.qty, 10);
+    if (!(qtyNum > 0)) { setCompanion(null); setCompanionErr(null); return; }
+    const price = entry.products[0]?.salePriceUsd ?? 0;
+    if (!(price > 0)) { setCompanionErr('Ese artículo no tiene precio de venta.'); return; }
+    const problem = await addUnitsLine(entry, qtyNum, price);
+    if (problem) { setCompanionErr(problem); return; }
+    setCompanion(null);
+    setCompanionErr(null);
   }
 
   // ── cart mutations ──
@@ -762,6 +853,8 @@ export default function SaleTerminal() {
         payments: { paidUsdCash: paidCash, paidUsdTransfer: paidTransfer, paidBs: paidBsNum },
       });
       setLastSale({ totalUsd: sale.totalUsd, status: sale.paymentStatus });
+      setCompanion(null);
+      setCompanionErr(null);
       const fresh = await clearCart(cartDb);
       setCart(fresh);
       setPayments({ paidUsdCash: '', paidUsdTransfer: '', paidBs: '' });
@@ -1019,6 +1112,93 @@ export default function SaleTerminal() {
             </span>
           )}
         </div>
+
+        {/* ── COMPAÑEROS ── a suggestion after a piqué line, never an auto-add */}
+        {companion && (
+          <div data-companion style={companionPanel} role="group" aria-label="Compañeros sugeridos">
+            <div style={{ ...stepLabelStyle, marginBottom: '2px', color: 'var(--color-dye)' }}>
+              Compañeros
+            </div>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>
+              {fmtKg(companion.kg)} de piqué × {COMBOS_PER_KG_PIQUE} ={' '}
+              <strong style={{ color: 'var(--color-ink)' }}>
+                {suggestedCombos(companion.kg)} combos
+              </strong>
+            </div>
+
+            {companionOptions.length === 0 ? (
+              <div style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>
+                No hay combos con stock para ofrecer.
+              </div>
+            ) : (
+              <>
+                <div role="listbox" aria-label="Artículos de combos" style={companionList}>
+                  {companionOptions.map((e) => {
+                    const active = e.batch._id === companion.pick;
+                    return (
+                      <div
+                        key={e.batch._id}
+                        role="option"
+                        aria-selected={active}
+                        onClick={() => { setCompanion({ ...companion, pick: e.batch._id }); setCompanionErr(null); }}
+                        style={{
+                          padding: '7px 10px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          fontFamily: 'var(--font-sans)',
+                          fontSize: '12px',
+                          backgroundColor: active ? 'rgba(181,23,92,0.10)' : 'transparent',
+                          borderLeft: active ? '3px solid var(--color-dye)' : '3px solid transparent',
+                        }}
+                      >
+                        <SwatchChip color={e.batch.color} size="sm" />
+                        <span style={{ color: 'var(--color-ink)' }}>
+                          NM {e.batch.nm} · {e.batch.fabricType}
+                        </span>
+                        <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', color: 'var(--color-thread)' }}>
+                          {fmtUnits(e.batch.currentUnits)} · {fmtUsd(e.batch.currentUnits > 0 ? (e.products[0]?.salePriceUsd ?? 0) : 0)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
+                  <div style={{ width: '96px' }}>
+                    <MicroField label="Combos">
+                      <NumberInput
+                        data-companion-qty
+                        value={companion.qty}
+                        min={0}
+                        step={1}
+                        onChange={(e) => setCompanion({ ...companion, qty: e.target.value })}
+                      />
+                    </MicroField>
+                  </div>
+                  <Button variant="primary" size="md" type="button" onClick={() => void handleAddCompanion()}>
+                    Agregar
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="md"
+                    type="button"
+                    onClick={() => { setCompanion(null); setCompanionErr(null); }}
+                  >
+                    Descartar
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {companionErr && (
+              <div role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-danger)' }}>
+                {companionErr}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Cart lines */}
         {(cart?.lines.length ?? 0) === 0 ? (
@@ -1494,6 +1674,7 @@ function CartLine({ line, rate, onUpdate, onRemove }: CartLineProps) {
   return (
     <div
       className="cart-line"
+      data-cart-line
       style={{
         padding: '12px 14px',
         border: '1px dashed var(--color-thread)',
