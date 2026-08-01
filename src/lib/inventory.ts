@@ -506,6 +506,131 @@ export async function returnStock(db: DB, input: ReturnInput): Promise<Inventory
   return movement;
 }
 
+// ---- What the ingress FORM refuses to submit ----
+//
+// These are per-field rules for what an operator may type today. They are NOT
+// inside ingressStock, and that is deliberate: stock received before lot
+// numbers existed, and every row of the INFORME import, legitimately have no
+// lot. The document model has to keep representing them. What must not happen
+// is a NEW arrival being registered without one — which is how four rolls ended
+// up reading S/L on the shelf.
+//
+// ingressStock keeps its own hard guards (finite amounts, length caps, unit of
+// measure); this adds "and none of it may be blank", with the message attached
+// to the field that is wrong instead of a banner at the bottom of the page.
+
+/** Per-field messages, keyed by the form field. Empty object = good to write. */
+export interface IngressFormErrors {
+  color?: string;
+  nm?: string;
+  fabricType?: string;
+  lotNumber?: string;
+  purchaseValueUsd?: string;
+  salePriceUsd?: string;
+  units?: string;
+  unitPurchaseValueUsd?: string;
+  unitSalePriceUsd?: string;
+  /** Keyed by roll row index. */
+  rollWeights?: Record<number, string>;
+  /** Nothing worth registering at all. */
+  rolls?: string;
+}
+
+export interface IngressFormValues {
+  color: string;
+  nm: string;
+  fabricType: string;
+  productType: ProductType;
+  lotNumber: string;
+  /** Batch-level defaults, used when a row leaves its own cost/price blank. */
+  purchaseValueUsd: string;
+  salePriceUsd: string;
+  rolls: Array<{ weightKg: string; purchaseValueUsd: string; salePriceUsd: string }>;
+  units: string;
+  unitPurchaseValueUsd: string;
+  unitSalePriceUsd: string;
+}
+
+/**
+ * Strict numeric parse. `parseFloat` is not good enough here: it reads "12abc"
+ * as 12 and "1e999" as Infinity, and either would sail through a bare `> 0`.
+ */
+function parseNumber(raw: string): number | null {
+  const text = raw.trim();
+  if (!text) return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+const REQUIRED = 'Obligatorio.';
+const NOT_A_NUMBER = 'Debe ser un número.';
+const TOO_LONG = `No puede superar ${FIELD_MAX.text} caracteres.`;
+
+export function validateIngressForm(v: IngressFormValues): IngressFormErrors {
+  const errors: IngressFormErrors = {};
+
+  for (const key of ['color', 'nm', 'fabricType', 'lotNumber'] as const) {
+    const value = v[key].trim();
+    if (!value) errors[key] = REQUIRED;
+    else if (value.length > FIELD_MAX.text) errors[key] = TOO_LONG;
+  }
+
+  if (v.productType === 'ROLL') {
+    // The last row is usually the empty one the Enter key just created.
+    const filled = v.rolls
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.weightKg.trim() !== '');
+
+    if (filled.length === 0) {
+      errors.rolls = 'Agrega al menos un rollo con peso.';
+    }
+
+    const rollWeights: Record<number, string> = {};
+    for (const { row, index } of filled) {
+      const weight = parseNumber(row.weightKg);
+      if (weight === null) rollWeights[index] = NOT_A_NUMBER;
+      else if (weight <= 0) rollWeights[index] = 'El peso debe ser mayor que cero.';
+    }
+    if (Object.keys(rollWeights).length) errors.rollWeights = rollWeights;
+
+    // A row may leave cost/price blank and inherit the batch default — but then
+    // the default itself has to be there.
+    const defaultCost = parseNumber(v.purchaseValueUsd);
+    const defaultPrice = parseNumber(v.salePriceUsd);
+    for (const [field, fallback, raw] of [
+      ['purchaseValueUsd', defaultCost, v.purchaseValueUsd],
+      ['salePriceUsd', defaultPrice, v.salePriceUsd],
+    ] as const) {
+      const someRowInherits = filled.some(({ row }) => row[field].trim() === '');
+      if (raw.trim() === '') {
+        if (someRowInherits && filled.length) errors[field] = REQUIRED;
+      } else if (fallback === null) errors[field] = NOT_A_NUMBER;
+      else if (fallback < 0) errors[field] = 'No puede ser negativo.';
+    }
+  } else {
+    const units = parseNumber(v.units);
+    if (v.units.trim() === '') errors.units = REQUIRED;
+    else if (units === null) errors.units = NOT_A_NUMBER;
+    else if (units <= 0) errors.units = 'Debe ser mayor que cero.';
+    else if (!Number.isInteger(units)) errors.units = 'Debe ser un número entero.';
+
+    for (const field of ['unitPurchaseValueUsd', 'unitSalePriceUsd'] as const) {
+      const raw = v[field];
+      const value = parseNumber(raw);
+      if (raw.trim() === '') errors[field] = REQUIRED;
+      else if (value === null) errors[field] = NOT_A_NUMBER;
+      else if (value < 0) errors[field] = 'No puede ser negativo.';
+    }
+  }
+
+  return errors;
+}
+
+/** True when nothing is wrong — `Object.keys` on a nested record is easy to get wrong. */
+export function ingressFormIsValid(errors: IngressFormErrors): boolean {
+  return Object.keys(errors).length === 0;
+}
+
 // ---- Correcting a roll's details (never its weight) ----
 
 export interface RollDetailsInput {

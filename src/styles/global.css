@@ -318,6 +318,14 @@
   }
 }
 
+/* Invalid fields read red even after focus. Input/Select in ui.tsx write
+   style.borderColor imperatively on focus and blur, which beats any inline
+   style a caller passes — so the marker has to be a stylesheet rule with
+   !important, keyed on the attribute screen readers already use. */
+[aria-invalid='true'] {
+  border-color: var(--color-danger) !important;
+}
+
 /* Three tabs of uppercase 12px do not fit a 375px phone. They scroll inside the
    bar rather than widening the page — inline styles cannot reach a media query,
    which is why this hook exists. */

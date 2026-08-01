@@ -66,6 +66,8 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+  // Which specific field is wrong, so the message lands on it.
+  const [fieldErr, setFieldErr] = useState<{ weight?: string; replacement?: string }>({});
 
   const colorRef = useRef<HTMLInputElement>(null);
   const nmRef = useRef<HTMLInputElement>(null);
@@ -191,6 +193,7 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setFieldErr({});
 
     if (!cascadeComplete || !matchedBatch) {
       setError('Selecciona un artículo existente de rollos.');
@@ -200,9 +203,13 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
       setError('Selecciona el rollo que se está devolviendo.');
       return;
     }
-    const kg = parseFloat(weightKg);
-    if (!(kg > 0)) {
-      setError('Indica el peso devuelto.');
+    // Number(), not parseFloat(): parseFloat reads "12abc" as 12 and "1e999"
+    // as Infinity, and Infinity passes a bare > 0.
+    const kg = Number(weightKg.trim());
+    if (!weightKg.trim() || !Number.isFinite(kg) || kg <= 0) {
+      setFieldErr({ weight: 'Indica un peso mayor que cero.' });
+      setError('Faltan datos — revisa los campos marcados en rojo.');
+      document.getElementById('devolucion-peso')?.focus();
       return;
     }
     let replacementLeg: { productId: string; weightKg: number } | undefined;
@@ -211,9 +218,10 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
         setError('Selecciona el rollo de reposición.');
         return;
       }
-      const outKg = parseFloat(replacementKg);
-      if (!(outKg > 0)) {
-        setError('Indica cuántos kilos se entregan en reposición.');
+      const outKg = Number(replacementKg.trim());
+      if (!replacementKg.trim() || !Number.isFinite(outKg) || outKg <= 0) {
+        setFieldErr({ replacement: 'Indica un peso mayor que cero.' });
+        setError('Faltan datos — revisa los campos marcados en rojo.');
         return;
       }
       replacementLeg = { productId: replacement.product._id, weightKg: outKg };
@@ -392,14 +400,15 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
               Datos de la devolución — {fmtPiece(selRoll.pieceId)} · {fmtLot(selRoll.lotNumber)}
             </h2>
             <div className="form-grid-3 form-grid-compact">
-              <Field label="Peso devuelto (Kg)">
+              <Field label="Peso devuelto (Kg)" error={fieldErr.weight}>
                 <NumberInput
                   id="devolucion-peso"
+                  aria-invalid={Boolean(fieldErr.weight)}
                   value={weightKg}
                   placeholder="0.000"
                   min="0.001"
                   step="0.001"
-                  onChange={(e) => setWeightKg(e.target.value)}
+                  onChange={(e) => { setFieldErr((p) => ({ ...p, weight: undefined })); setWeightKg(e.target.value); }}
                   required
                 />
               </Field>
@@ -500,14 +509,17 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
                     <Field
                       label="Kg de reposición"
                       hint={`Quedan ${fmtKg(replacement.product.currentWeightKg)} en ${replacement.product.pieceId}`}
+                      error={fieldErr.replacement}
                     >
                       <NumberInput
+                        data-replacement-kg
+                        aria-invalid={Boolean(fieldErr.replacement)}
                         value={replacementKg}
                         placeholder="0.000"
                         min="0.001"
                         step="0.001"
                         max={replacement.product.currentWeightKg}
-                        onChange={(e) => setReplacementKg(e.target.value)}
+                        onChange={(e) => { setFieldErr((p) => ({ ...p, replacement: undefined })); setReplacementKg(e.target.value); }}
                       />
                     </Field>
                   </div>
