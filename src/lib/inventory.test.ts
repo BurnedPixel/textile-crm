@@ -6,6 +6,7 @@ import {
 } from './inventory';
 import { checkout } from './checkout';
 import { getMovements } from './queries';
+import { recomputeBatchCounters } from './conflicts';
 import { batchIdOf, productIdOf, type CartLineItem, type ProductDoc, type BatchDoc } from './types';
 
 const RATE = 36.5;
@@ -409,5 +410,60 @@ describe('returnStock — an exchange writes both legs in ONE movement', () => {
     ).rejects.toThrow(/insuficiente/i);
     // Nothing partially written.
     expect(((await db.get(bid)) as BatchDoc).currentUnits).toBe(2);
+  });
+});
+
+// The cached counter is only ever a cache: recomputeBatchCounters rebuilding it
+// from the movement ledger must land on the SAME number. Anything that drifts
+// here is invisible until a sync conflict happens to fire the recompute.
+describe('returnStock — the cached counter agrees with a rebuild from the ledger', () => {
+  const rebuiltUnits = async (db: PouchDB.Database, bid: string) => {
+    await recomputeBatchCounters(db, bid);
+    return ((await db.get(bid)) as BatchDoc).currentUnits;
+  };
+
+  it('agrees after a return, an exchange, and an exchange that empties the replacement', async () => {
+    const db = makeTestDb();
+    const bid = batchIdOf(ROLL_ARTICLE.color, ROLL_ARTICLE.nm, ROLL_ARTICLE.fabricType);
+    await ingressStock(db, { ...ROLL_ARTICLE, rolls: rollsOf(['R1', 20], ['R2', 20], ['R3', 5]) });
+
+    await returnStock(db, {
+      returnId: '33334444-5555-6666-7777-888888888888',
+      date: new Date().toISOString(),
+      productId: productIdOf(bid, 'R1'), weightKg: 7, operatorId: 'op',
+    });
+    let cached = ((await db.get(bid)) as BatchDoc).currentUnits;
+    expect(cached).toBe(4);
+    expect(await rebuiltUnits(db, bid)).toBe(cached);
+
+    await returnStock(db, {
+      returnId: '44445555-6666-7777-8888-999999999999',
+      date: new Date().toISOString(),
+      productId: productIdOf(bid, 'R2'), weightKg: 3, operatorId: 'op',
+      replacement: { productId: productIdOf(bid, 'R3'), weightKg: 5 }, // empties R3
+    });
+    cached = ((await db.get(bid)) as BatchDoc).currentUnits;
+    expect(cached).toBe(4); // +1 returned roll, −1 emptied R3
+    expect(await rebuiltUnits(db, bid)).toBe(cached);
+  });
+
+  it('refuses a return so small it would store as an empty roll', async () => {
+    const db = makeTestDb();
+    const bid = batchIdOf(ROLL_ARTICLE.color, ROLL_ARTICLE.nm, ROLL_ARTICLE.fabricType);
+    await ingressStock(db, { ...ROLL_ARTICLE, rolls: rollsOf(['R1', 20]) });
+
+    // round2(0.002) is 0 — the roll would arrive empty and the kilos would be
+    // lost, while the batch counted a roll the ledger rebuild does not.
+    await expect(
+      returnStock(db, {
+        returnId: '55556666-7777-8888-9999-aaaaaaaaaaaa',
+        date: new Date().toISOString(),
+        productId: productIdOf(bid, 'R1'), weightKg: 0.002, operatorId: 'op',
+      }),
+    ).rejects.toThrow(/demasiado pequeño/i);
+
+    const batch = (await db.get(bid)) as BatchDoc;
+    expect(batch.currentUnits).toBe(1);
+    expect(await rebuiltUnits(db, bid)).toBe(1);
   });
 });

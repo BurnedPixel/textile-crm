@@ -358,6 +358,12 @@ export async function returnStock(db: DB, input: ReturnInput): Promise<Inventory
   if (already) return already;
 
   assertAmount(input.weightKg, 'El peso devuelto');
+  // Weights are stored rounded to the cent of a kilo, so anything under half a
+  // gram lands as 0.000 kg: a roll document holding nothing, and the returned
+  // fabric lost. Reject it rather than write a roll that is empty on arrival.
+  if (!hasRollStock(round2(input.weightKg))) {
+    throw new Error('El peso devuelto es demasiado pequeño para registrarse.');
+  }
 
   const original = await getById<ProductDoc>(db, input.productId);
   if (!original) throw new Error(`Rollo no encontrado: ${input.productId}`);
@@ -405,7 +411,13 @@ export async function returnStock(db: DB, input: ReturnInput): Promise<Inventory
     };
   };
   counters.push({ id: returnedId, doc: buildReturned(existingReturn), rebuild: buildReturned });
-  if (!hasRollStock(existingReturn?.currentWeightKg ?? 0)) bump(batch._id, 1, 0);
+  // BOTH sides of the transition, exactly as ingressStock tests it. Checking
+  // only "was it empty before" counts a roll onto the shelf that the recompute
+  // from the ledger would not count — and the cache and the ledger then disagree
+  // permanently, because nothing recomputes until a conflict happens to fire.
+  const prevReturnKg = existingReturn?.currentWeightKg ?? 0;
+  const nextReturnKg = round2(prevReturnKg + input.weightKg);
+  if (!hasRollStock(prevReturnKg) && hasRollStock(nextReturnKg)) bump(batch._id, 1, 0);
   if (!existingReturn) bump(batch._id, 0, 1);
 
   const movementLines: MovementLineItem[] = [

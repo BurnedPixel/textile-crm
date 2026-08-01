@@ -107,8 +107,6 @@ export default function IngressForm({ onDone }: IngressFormProps) {
   // article look new — the form then offers roll id R1, which already exists.
   const { data: loadedBatches } = useLiveQuery(() => getBatches(db), []);
   const batches = loadedBatches ?? NO_BATCHES;
-  const [matchedBatch, setMatchedBatch] = useState<BatchDoc | null | undefined>(undefined);
-  // undefined = not yet resolved; null = new batch; BatchDoc = existing
 
   // ─ new-batch fields ─
   const [productType, setProductType] = useState<ProductType>('ROLL');
@@ -161,16 +159,23 @@ export default function IngressForm({ onDone }: IngressFormProps) {
     ? [...new Set(batches.filter((b) => norm(b.color) === norm(color) && norm(b.nm) === norm(nm)).map((b) => b.fabricType))].sort()
     : [...new Set(batches.map((b) => b.fabricType))].sort();
 
-  // ─── Resolve matched batch whenever cascade is complete ─────────────────────
+  // ─── Which article the cascade points at ────────────────────────────────────
+  //
+  // Derived during render, not held in state: `batches` refreshes on every DB
+  // change, and a state copy would lag a sync by one render.
+  // undefined = cascade incomplete; null = new article; BatchDoc = existing.
+
+  const cascadeComplete = Boolean(color.trim() && nm.trim() && fabricType.trim());
+  const matchedBatch: BatchDoc | null | undefined = cascadeComplete
+    ? (batches.find((b) => b._id === batchIdOf(color, nm, fabricType)) ?? null)
+    : undefined;
+  // The effect below rewrites the roll rows, so it must fire when the ARTICLE
+  // changes and at no other time. Both "no article yet" and "a new article"
+  // resolve to no id, so they get their own keys.
+  const matchKey = cascadeComplete ? (matchedBatch?._id ?? 'new') : 'none';
 
   useEffect(() => {
-    if (!color.trim() || !nm.trim() || !fabricType.trim()) {
-      setMatchedBatch(undefined);
-      return;
-    }
-    const id = batchIdOf(color, nm, fabricType);
-    const found = batches.find((b) => b._id === id) ?? null;
-    setMatchedBatch(found);
+    const found = matchedBatch ?? null;
 
     // Pre-fill rolls with next pieceId continuing past every roll ever created
     // (including sold-out ones), read from the actual product docs — not
@@ -226,8 +231,13 @@ export default function IngressForm({ onDone }: IngressFormProps) {
           .catch(console.error);
       }
     }
+    // Keyed on WHICH article is resolved, never on the `batches` array identity.
+    // useLiveQuery hands back a fresh array on every DB change — including one
+    // arriving over sync from another device — and this effect calls setRolls,
+    // so an array-identity dep wipes the weights the operator is typing every
+    // time anyone, anywhere, writes a document.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [color, nm, fabricType, batches]);
+  }, [matchKey]);
 
   // ─── "/" hotkey focuses color ────────────────────────────────────────────────
 
@@ -416,7 +426,6 @@ export default function IngressForm({ onDone }: IngressFormProps) {
     setColor('');
     setNm('');
     setFabricType('');
-    setMatchedBatch(undefined);
     setProductType('ROLL');
     setLocation('');
     setBatchDefaults(freshDefaults());
@@ -431,8 +440,6 @@ export default function IngressForm({ onDone }: IngressFormProps) {
     setError('');
     colorRef.current?.focus();
   }
-
-  const cascadeComplete = color.trim() && nm.trim() && fabricType.trim();
 
   // ─── RENDER ─────────────────────────────────────────────────────────────────
 
