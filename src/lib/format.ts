@@ -6,6 +6,7 @@
 // parcial" for one status). Code is English, the user sees Spanish — so the
 // translation belongs in exactly one place.
 
+import { hasRollStock } from './types';
 import type { ConditionTag, PaymentStatus, ProductType } from './types';
 
 /** Structural match for the Badge component's `tone` prop (no import — ui imports lib, not back). */
@@ -52,6 +53,42 @@ export const isReturnPiece = (pieceId: string): boolean => RETURN_PIECE_RE.test(
 
 export const fmtPiece = (pieceId: string): string =>
   isReturnPiece(pieceId) ? `${pieceId.replace(RETURN_PIECE_RE, '')} · devolución` : pieceId;
+
+/**
+ * The lot numbers an artículo is currently holding. A lot is per ROLL, so one
+ * artículo can hold several at once — or none, for stock received before lot
+ * numbers existed, which reads "S/L".
+ *
+ * Only the products that ARE stock count: an empty roll is not fabric on the
+ * shelf, and listing its lot would offer the operator something to sell that
+ * is not there. COMBO/PIECE keep their single pool product, whose count lives
+ * on the batch rather than on the product.
+ */
+export function fmtLots(
+  productType: ProductType,
+  products: Array<{ currentWeightKg: number; lotNumber?: string }>,
+): string {
+  const inStock = productType === 'ROLL'
+    ? products.filter((p) => hasRollStock(p.currentWeightKg))
+    : products;
+  const lots = [...new Set(
+    inStock.map((p) => p.lotNumber?.trim()).filter((l): l is string => Boolean(l)),
+  )].sort();
+  if (lots.length === 0) return 'S/L';
+  if (lots.length <= 2) return lots.join(' · ');
+  // Three or more would wrap a table cell; the rest are one click away.
+  return `${lots[0]} · ${lots[1]} +${lots.length - 2}`;
+}
+
+/** `fmtLots` with the word in front, for prose rather than a labelled column. */
+export function fmtLotsLabel(
+  productType: ProductType,
+  products: Array<{ currentWeightKg: number; lotNumber?: string }>,
+): string {
+  const lots = fmtLots(productType, products);
+  if (lots === 'S/L') return 'S/L';
+  return `${lots.includes('·') ? 'Lotes' : 'Lote'} ${lots}`;
+}
 
 export const fmtDate = (iso: string): string => dateFmt.format(new Date(iso));
 export const fmtDateTime = (iso: string): string => dateTimeFmt.format(new Date(iso));

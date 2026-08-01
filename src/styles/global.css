@@ -197,14 +197,15 @@
 
     .inv-table tr {
       grid-template-columns: auto 1fr auto;
-      grid-template-areas: "sw nm tipo" "stock stock loc";
+      grid-template-areas: "sw nm tipo" "stock lote loc";
     }
     .inv-table td:nth-child(1) { grid-area: sw; }
     .inv-table td:nth-child(2) { grid-area: nm; }
     .inv-table td:nth-child(3) { grid-area: tipo; text-align: right; }
     .inv-table td:nth-child(4) { display: none; } /* Categoría badge — redundant: stock line already states type */
     .inv-table td:nth-child(5) { grid-area: stock; white-space: nowrap !important; }
-    .inv-table td:nth-child(6) { grid-area: loc; text-align: right; }
+    .inv-table td:nth-child(6) { grid-area: lote; text-align: center; }
+    .inv-table td:nth-child(7) { grid-area: loc; text-align: right; }
     /* Stitch separators instead of zebra fills — same treatment as .roll-row */
     .inv-table tbody tr { background: transparent !important; border-bottom: 1px dashed rgba(138,131,113,0.35); }
 

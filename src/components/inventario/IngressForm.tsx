@@ -9,8 +9,8 @@ import { getBatches, getBatchProducts, getClients, getSales, getFiscalConfig } f
 import { ingressStock } from '../../lib/inventory';
 import { useLiveQuery } from '../../lib/hooks';
 import { clientsWhoBought, waLink, buildArrivalText } from '../../lib/whatsapp';
-import { batchIdOf, norm, type ProductType, type ConditionTag, type BatchDoc, type ClientDoc } from '../../lib/types';
-import { fmtKg, fmtUnits, CONDITION_LABEL } from '../../lib/format';
+import { batchIdOf, norm, type ProductType, type ConditionTag, type BatchDoc, type ClientDoc, type ProductDoc } from '../../lib/types';
+import { fmtKg, fmtUnits, fmtLotsLabel, CONDITION_LABEL } from '../../lib/format';
 import {
   Button, Input, NumberInput, Select, Field, Kbd, SwatchChip, Combobox,
 } from '../ui';
@@ -113,6 +113,11 @@ export default function IngressForm({ onDone }: IngressFormProps) {
   const { data: loadedBatches } = useLiveQuery(() => getBatches(db), []);
   const batches = loadedBatches ?? NO_BATCHES;
 
+  // The matched article's products, kept so the banner can name the lots it
+  // already holds — the operator needs to know whether this arrival is the same
+  // lot as what is on the shelf before they type the number.
+  const [batchProducts, setBatchProducts] = useState<ProductDoc[]>([]);
+
   // ─ new-batch fields ─
   const [productType, setProductType] = useState<ProductType>('ROLL');
   const [location, setLocation]       = useState('');
@@ -193,9 +198,12 @@ export default function IngressForm({ onDone }: IngressFormProps) {
     // Pre-fill rolls with next pieceId continuing past every roll ever created
     // (including sold-out ones), read from the actual product docs — not
     // currentUnits, which only counts non-empty rolls.
+    if (!found) setBatchProducts([]);
+
     if (found?.productType === 'ROLL') {
       getBatchProducts(db, found._id)
         .then((products) => {
+          setBatchProducts(products);
           const max = maxRollNumber(products.map((p) => p.pieceId));
           setMaxExistingRoll(max);
 
@@ -235,6 +243,7 @@ export default function IngressForm({ onDone }: IngressFormProps) {
       if (found && (found.productType === 'COMBO' || found.productType === 'PIECE')) {
         getBatchProducts(db, found._id)
           .then((products) => {
+            setBatchProducts(products);
             if (products.length === 0) return;
             const latest = products.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
             if (!unitTouched.current.cost)      setUnitPurchaseValueUsd(String(latest.purchaseValueUsd));
@@ -563,6 +572,8 @@ export default function IngressForm({ onDone }: IngressFormProps) {
                       ? `${matchedBatch.currentUnits} rollos`
                       : fmtUnits(matchedBatch.currentUnits)}
                   </strong>
+                  {' · '}
+                  <strong>{fmtLotsLabel(matchedBatch.productType, batchProducts)}</strong>
                 </span>
               ) : (
                 <span><strong>Artículo nuevo</strong> — se creará al registrar</span>
