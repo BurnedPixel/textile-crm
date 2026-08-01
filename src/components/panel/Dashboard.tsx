@@ -9,7 +9,7 @@ import { usdPaid, grandTotalUsd } from '../../lib/queries';
 import { getPayments, paymentsBySale, recordPayment, saleBalance } from '../../lib/payments';
 import { cachedUser } from '../../lib/auth';
 import {
-  fmtUsd, fmtBs, fmtDateTime, toBs, round2,
+  fmtUsd, fmtBs, fmtDateTime, toBs, round2, fmtLots,
   PAYMENT_LABEL, PAYMENT_TONE, PRODUCT_TYPE_LABEL,
 } from '../../lib/format';
 import {
@@ -170,13 +170,16 @@ function InventoryTable({ stocked }: InventoryTableProps) {
 
   // Accent-insensitive: "pique" finds "Piqué", "azúl" finds "Azul".
   const filtered = filter.trim()
-    ? stocked.filter(({ batch }) => {
+    ? stocked.filter(({ batch, products }) => {
         const q = normStr(filter);
         return (
           normStr(batch.color).includes(q) ||
           normStr(batch.nm).includes(q) ||
           normStr(batch.fabricType).includes(q) ||
-          (batch.location ? normStr(batch.location).includes(q) : false)
+          (batch.location ? normStr(batch.location).includes(q) : false) ||
+          // The lot is the number printed on the bundle — the one an operator
+          // has in hand when they go looking for an artículo.
+          products.some((p) => p.lotNumber && normStr(p.lotNumber).includes(q))
         );
       })
     : stocked;
@@ -236,7 +239,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
           ref={inputRef}
           data-hotkey-search
           type="search"
-          placeholder="Filtrar artículos… Color, NM, tipo…"
+          placeholder="Filtrar artículos… Color, NM, tipo, nº de lote…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -282,7 +285,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
         >
           <thead>
             <tr>
-              {['Color', 'NM', 'Tipo', 'Categoría', 'Stock', 'Ubicación'].map((h) => (
+              {['Color', 'NM', 'Tipo', 'Categoría', 'Stock', 'Lote', 'Ubicación'].map((h) => (
                 <th
                   key={h}
                   style={{
@@ -349,6 +352,17 @@ function InventoryTable({ stocked }: InventoryTableProps) {
                 >
                   {stockLabel(batch, products)}
                 </td>
+                <td
+                  style={{
+                    padding: '10px 12px',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '12px',
+                    color: 'var(--color-dye)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {fmtLots(batch.productType, products)}
+                </td>
                 <td style={{ padding: '10px 12px', color: 'var(--color-thread)', whiteSpace: 'nowrap' }}>
                   {batch.location || '—'}
                 </td>
@@ -357,7 +371,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   style={{
                     padding: '32px',
                     textAlign: 'center',

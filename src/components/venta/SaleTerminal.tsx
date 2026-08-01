@@ -33,7 +33,7 @@ import { useLiveQuery } from '../../lib/hooks';
 import NotaEntrega from './NotaEntrega';
 import { isPique, suggestedCombos, companionCandidates, COMBOS_PER_KG_PIQUE } from '../../lib/companions';
 import {
-  round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot, fmtPiece,
+  round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot, fmtLotsLabel, fmtPiece,
   PAYMENT_LABEL, PAYMENT_TONE, CONDITION_SHORT, CONDITION_TONE,
 } from '../../lib/format';
 import {
@@ -1553,7 +1553,7 @@ function BatchProductZone({
   error,
   inCartRollIds,
 }: BatchProductZoneProps) {
-  const { batch } = entry;
+  const { batch, products } = entry;
   const isRoll = batch.productType === 'ROLL';
   const rollListRef = useRef<HTMLDivElement>(null);
 
@@ -1632,7 +1632,8 @@ function BatchProductZone({
             NM {batch.nm} · {batch.fabricType}
           </div>
           <div style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--color-thread)' }}>
-            {batch.location} · Stock: {stockText}
+            {batch.location} · Stock: {stockText} ·{' '}
+            <span style={{ color: 'var(--color-dye)' }}>{fmtLotsLabel(batch.productType, products)}</span>
           </div>
         </div>
       </div>
