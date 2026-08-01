@@ -1,7 +1,7 @@
 // Multi-master conflict resolution (Browser ↔ Pi ↔ cloud sync WILL conflict).
 // Never accept CouchDB's arbitrary default winner. Rules per CLAUDE.md:
 //   batch:/product:  → delete ALL conflicting revs, recompute counters from the ledger.
-//   config:system    → newest lastUpdate wins.
+//   config:            → newest lastUpdate wins (system AND fiscal).
 //   client:          → newest updatedAt wins.
 //   sale:/payment:/expense:/movement: → append-only unique ids; must not conflict.
 //                              If they somehow do, keep the winner and warn.
@@ -63,7 +63,11 @@ export async function resolveDocConflicts(db: DB, id: string): Promise<void> {
     return;
   }
 
-  if (id === 'config:system') {
+  // Every config: document, not just config:system. A new one that falls
+  // through lands in the append-only branch below, which keeps whichever
+  // revision CouchDB happened to pick — the one thing this module exists to
+  // prevent. They all carry `lastUpdate`, so the rule already fits.
+  if (id.startsWith('config:')) {
     await keepBy<SystemConfigDoc>(db, id, conflicts, (a, b) =>
       a.lastUpdate >= b.lastUpdate ? a : b,
     );

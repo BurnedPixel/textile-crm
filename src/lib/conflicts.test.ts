@@ -3,7 +3,8 @@ import { makeTestDb } from './testdb';
 import { ingressStock } from './inventory';
 import { checkout } from './checkout';
 import { recomputeBatchCounters, resolveDocConflicts } from './conflicts';
-import { batchIdOf, productIdOf, type CartLineItem } from './types';
+import { saveFiscalConfig, getFiscalConfig } from './queries';
+import { batchIdOf, productIdOf, FISCAL_CONFIG_ID, type CartLineItem } from './types';
 
 const RATE = 36.5;
 
@@ -95,5 +96,45 @@ describe('resolveDocConflicts — counters resolve via the ledger', () => {
     };
     expect(resolved._conflicts ?? []).toHaveLength(0); // conflicts gone
     expect(resolved.currentWeightKg).toBe(20); // rebuilt from ledger, not the bogus rev
+  });
+});
+
+// A new config document that falls through this resolver lands in the
+// append-only branch, which keeps whichever revision CouchDB happened to pick.
+// That is exactly what "never accept CouchDB's arbitrary winner" forbids, and
+// it is silent: the losing edit is deleted and the stale RIF keeps printing.
+describe('resolveDocConflicts — every config: doc resolves by newest lastUpdate', () => {
+  it('keeps the newer fiscal header when two devices edited it offline', async () => {
+    const db = makeTestDb();
+    await saveFiscalConfig(db, {
+      businessName: 'Vieja Razón, C.A.', taxId: 'J-30665094-6', address: 'Dirección vieja',
+    });
+    const stale = (await getFiscalConfig(db))!;
+
+    // The other device's edit, made later and replicated in as a conflict.
+    await saveFiscalConfig(db, {
+      businessName: 'ML Textiles, C.A.', taxId: 'J-40123456-7', address: 'Dirección nueva',
+    });
+    const fresh = (await getFiscalConfig(db))!;
+    expect(fresh.lastUpdate >= stale.lastUpdate).toBe(true);
+
+    // The losing branch, explicitly older. (An exact lastUpdate tie would fall
+    // back to CouchDB's pick — inherent to "newest wins", and the same for
+    // config:system.)
+    await db.put(
+      { ...stale, businessName: 'Rama en conflicto', lastUpdate: '2020-01-01T00:00:00.000Z' },
+      { force: true },
+    );
+    const conflicted = (await db.get(FISCAL_CONFIG_ID, { conflicts: true })) as {
+      _conflicts?: string[];
+    };
+    expect(conflicted._conflicts?.length).toBe(1);
+
+    await resolveDocConflicts(db, FISCAL_CONFIG_ID);
+    const winner = (await getFiscalConfig(db))!;
+    expect(winner.businessName).toBe('ML Textiles, C.A.');
+    expect(winner.taxId).toBe('J-40123456-7');
+    expect(((await db.get(FISCAL_CONFIG_ID, { conflicts: true })) as { _conflicts?: string[] })._conflicts)
+      .toBeUndefined();
   });
 });

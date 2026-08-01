@@ -513,7 +513,12 @@ function SidePanel({ recentSales, pendingSales, paymentsFor, clientMap, config, 
                   >
                     {fmtDateTime(sale.date)}
                   </span>
-                  <Money usd={grandTotalUsd(sale)} rate={rate} />
+                  {/* The rate locked on THIS sale, not today's. A sale from
+                      Tuesday converted at Friday's rate shows bolívares nobody
+                      ever charged — and disagrees with its own nota. (The
+                      pending list below is different on purpose: an outstanding
+                      balance is money owed TODAY, so it converts at today's.) */}
+                  <Money usd={grandTotalUsd(sale)} rate={sale.exchangeRateBCV} />
                 </div>
               </div>
             ))}
