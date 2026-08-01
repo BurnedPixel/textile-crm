@@ -16,13 +16,15 @@ import { fmtDateTime, fmtKg, fmtUnits } from '../../lib/format';
 import { Badge, EmptyState } from '../ui';
 import IngressForm from './IngressForm';
 import ReturnsPane from './ReturnsPane';
+import EditPane from './EditPane';
 import { stitchDivider, movementRow } from './styles';
 
-type Pane = 'nueva' | 'devoluciones';
+type Pane = 'nueva' | 'devoluciones' | 'buscar';
 
 const PANES: Array<{ id: Pane; label: string }> = [
   { id: 'nueva', label: 'Tela nueva' },
   { id: 'devoluciones', label: 'Devoluciones' },
+  { id: 'buscar', label: 'Buscar y corregir' },
 ];
 
 // Strip the doc-id prefixes and join segments with spaces:
@@ -114,8 +116,9 @@ export default function InventarioPage() {
         ref={tabsRef}
         role="tablist"
         aria-label="Modo de inventario"
+        className="inv-tabs"
         onKeyDown={onTabsKeyDown}
-        style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '1px solid var(--color-thread)' }}
+        style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '1px solid var(--color-thread)', overflowX: 'auto' }}
       >
         {PANES.map((p) => {
           const active = p.id === pane;
@@ -142,6 +145,8 @@ export default function InventarioPage() {
                 padding: '12px 18px',
                 minHeight: 44,
                 cursor: 'pointer',
+                flexShrink: 0,
+                whiteSpace: 'nowrap',
               }}
             >
               {p.label}
@@ -151,9 +156,9 @@ export default function InventarioPage() {
       </div>
 
       <div id={`pane-${pane}`} role="tabpanel" aria-labelledby={`tab-${pane}`}>
-        {pane === 'nueva'
-          ? <IngressForm onDone={refreshMovements} />
-          : <ReturnsPane onDone={refreshMovements} />}
+        {pane === 'nueva' && <IngressForm onDone={refreshMovements} />}
+        {pane === 'devoluciones' && <ReturnsPane onDone={refreshMovements} />}
+        {pane === 'buscar' && <EditPane onDone={refreshMovements} />}
       </div>
 
       <div aria-hidden="true" style={stitchDivider} />
