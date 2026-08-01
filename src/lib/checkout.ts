@@ -16,7 +16,7 @@ import {
   type CartLineItem,
 } from './types';
 import { round2 } from './format';
-import { computePaymentStatus, uuidv4 } from './queries';
+import { computePaymentStatus, saleTaxes, uuidv4, IVA_RATE, IGTF_RATE } from './queries';
 
 type DB = PouchDB.Database;
 
@@ -146,8 +146,21 @@ async function attemptCheckout(
   }
 
   const { paidUsdCash, paidUsdTransfer, paidBs } = input.payments;
+
+  // «En libros» and «con factura» are the same thing (client, casilla 12), so
+  // one flag carries both taxes. The RATES are stored and the amounts derived —
+  // storing ivaUsd/igtfUsd would be a derived field on an immutable document,
+  // which both validation layers exist to reject.
+  const ivaRate = input.isOnTheBooks ? IVA_RATE : 0;
+  const igtfRate = input.isOnTheBooks ? IGTF_RATE : 0;
+  // Status is decided against what the client actually owes, tax included.
+  // Against the pre-tax figure, a payment covering the net but not the IVA
+  // freezes as PAID and the tax portion never appears in receivables anywhere.
+  const { grandTotalUsd } = saleTaxes({
+    totalUsd, ivaRate, igtfRate, paidUsdCash, paidUsdTransfer,
+  });
   const paymentStatus = computePaymentStatus(
-    totalUsd,
+    grandTotalUsd,
     paidUsdCash,
     paidUsdTransfer,
     paidBs,
@@ -173,6 +186,8 @@ async function attemptCheckout(
     paymentStatus,
     creditTerms: input.creditTerms,
     lineItems: saleLines,
+    ivaRate,
+    igtfRate,
   };
 
   const movement: InventoryMovementDoc = {

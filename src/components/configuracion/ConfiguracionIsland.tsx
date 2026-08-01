@@ -3,12 +3,12 @@
 
 import { useState, useEffect } from 'react';
 import { db } from '../../lib/db';
-import { getConfig, saveDailyRate } from '../../lib/queries';
+import { getConfig, saveDailyRate, getFiscalConfig, saveFiscalConfig } from '../../lib/queries';
 import { onSyncState } from '../../lib/db';
 import { cachedUser, logout } from '../../lib/auth';
 import { useLiveQuery } from '../../lib/hooks';
 import { fmtDateTime } from '../../lib/format';
-import { Button, NumberInput, Field, Badge } from '../ui';
+import { Button, Input, NumberInput, Field, Badge } from '../ui';
 
 type SyncState = 'idle' | 'active' | 'error' | 'offline' | 'unauthorized';
 
@@ -61,6 +61,42 @@ export default function ConfiguracionIsland() {
       setSaveError((err as Error).message ?? 'Error al guardar la tasa.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ---- Fiscal identity card ----
+  // Its OWN document, never config:system: saveDailyRate rebuilds that one from
+  // an explicit field list, so a header parked there is deleted by the next
+  // 07:00 rate write and nobody finds out until the next time someone prints.
+  const { data: fiscal } = useLiveQuery((d) => getFiscalConfig(d));
+  const [fiscalForm, setFiscalForm] = useState<{ businessName: string; taxId: string; address: string } | null>(null);
+  const [fiscalSaving, setFiscalSaving] = useState(false);
+  const [fiscalErr, setFiscalErr] = useState<string | null>(null);
+  const [fiscalOk, setFiscalOk] = useState(false);
+
+  // Seeded from the stored document once it arrives, then owned by the form —
+  // re-seeding on every live-query refresh would overwrite what is being typed.
+  const fiscalValues = fiscalForm ?? {
+    businessName: fiscal?.businessName ?? '',
+    taxId: fiscal?.taxId ?? '',
+    address: fiscal?.address ?? '',
+  };
+  const setFiscalField = (patch: Partial<typeof fiscalValues>) =>
+    setFiscalForm({ ...fiscalValues, ...patch });
+
+  async function handleSaveFiscal(e: React.FormEvent) {
+    e.preventDefault();
+    setFiscalErr(null);
+    setFiscalSaving(true);
+    try {
+      await saveFiscalConfig(db, fiscalValues);
+      setFiscalForm(null); // fall back to the stored document
+      setFiscalOk(true);
+      setTimeout(() => setFiscalOk(false), 2500);
+    } catch (err) {
+      setFiscalErr((err as Error).message);
+    } finally {
+      setFiscalSaving(false);
     }
   }
 
@@ -164,7 +200,49 @@ export default function ConfiguracionIsland() {
         </p>
       </div>
 
-      {/* ── Card 2: Session ── */}
+      {/* ── Card 2: fiscal identity (nota de entrega header) ── */}
+      <div className="card" style={card}>
+        <h2 style={cardTitle}>Datos fiscales</h2>
+        <form onSubmit={handleSaveFiscal} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <Field label="Razón social">
+            <Input
+              value={fiscalValues.businessName}
+              placeholder="ML Textiles, C.A."
+              onChange={(e) => setFiscalField({ businessName: e.target.value })}
+            />
+          </Field>
+          <Field label="RIF">
+            <Input
+              value={fiscalValues.taxId}
+              placeholder="J-30665094-6"
+              onChange={(e) => setFiscalField({ taxId: e.target.value })}
+            />
+          </Field>
+          <Field label="Dirección fiscal">
+            <Input
+              value={fiscalValues.address}
+              placeholder="Calle Manduca, edf. 90, La Candelaria, Caracas"
+              onChange={(e) => setFiscalField({ address: e.target.value })}
+            />
+          </Field>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <Button type="submit" disabled={fiscalSaving}>
+              {fiscalSaving ? 'Guardando…' : 'Guardar datos fiscales'}
+            </Button>
+            {fiscalOk && <Badge tone="ok">Guardado</Badge>}
+          </div>
+          {fiscalErr && (
+            <div role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }}>
+              {fiscalErr}
+            </div>
+          )}
+        </form>
+        <p className="config-note" style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)', marginTop: '1rem', marginBottom: 0 }}>
+          Encabezan la nota de entrega. La factura fiscal la sigue emitiendo la máquina homologada por el SENIAT.
+        </p>
+      </div>
+
+      {/* ── Card 3: Session ── */}
       <div className="card" style={card}>
         <h2 style={cardTitle}>Sesión</h2>
 

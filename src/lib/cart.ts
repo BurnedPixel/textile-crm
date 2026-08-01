@@ -25,7 +25,11 @@ export async function getCart(cartDb: DB): Promise<CartDoc> {
       transactionId,
       createdAt,
       clientId: null,
-      isOnTheBooks: true,
+      // Unticked by default. The day IVA was wired to this flag it stopped
+      // being cosmetic: left ticked, every walk-in cash sale silently gains
+      // 16% unless the seller notices and unticks. Ticking it is one click and
+      // a deliberate act; not noticing it is a wrong price the client pays.
+      isOnTheBooks: false,
       lines: [],
       updatedAt: now,
     };
@@ -112,7 +116,7 @@ export async function clearCart(cartDb: DB): Promise<CartDoc> {
     transactionId,
     createdAt,
     clientId: null,
-    isOnTheBooks: true,
+    isOnTheBooks: false, // see getCart — never carry «en libros» into the next sale
     lines: [],
     updatedAt: now,
   };

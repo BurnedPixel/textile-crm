@@ -28,7 +28,7 @@ async function creditSale(db: PouchDB.Database, paid = 0): Promise<SaleDoc> {
   });
   return checkout(db, {
     transactionId: 'tx-credit', createdAt: new Date().toISOString(), clientId: 'client:v-1',
-    isOnTheBooks: true, exchangeRateBCV: RATE, creditTerms: '30 días', operatorId: 'op',
+    isOnTheBooks: false, exchangeRateBCV: RATE, creditTerms: '30 días', operatorId: 'op',
     lines: [rollLine(bid, 'R1', 10, 10)],
     payments: { paidUsdCash: paid, paidUsdTransfer: 0, paidBs: 0 },
   });

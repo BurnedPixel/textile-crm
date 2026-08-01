@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../../lib/db';
 import { useLiveQuery } from '../../lib/hooks';
-import { getClients, getSales, saveClient, usdPaid } from '../../lib/queries';
+import { getClients, getSales, saveClient, usdPaid, grandTotalUsd } from '../../lib/queries';
 import { getPayments, paymentsBySale, saleBalance } from '../../lib/payments';
 import {
   FIELD_MAX, validateDocumentId, validateEmail, validateName, validatePhone,
@@ -235,7 +235,7 @@ function ClientSales({ clientId, ledger }: { clientId: string; ledger: Ledger })
                   {fmtDate(sale.date)}
                 </td>
                 <td style={{ textAlign: 'right', padding: '8px 0' }}>
-                  <Money usd={sale.totalUsd} />
+                  <Money usd={grandTotalUsd(sale)} />
                 </td>
                 <td style={{ textAlign: 'right', padding: '8px 0' }}>
                   <Badge tone={PAYMENT_TONE[status]}>{PAYMENT_LABEL[status]}</Badge>

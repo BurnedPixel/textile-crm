@@ -121,13 +121,13 @@ export async function seedDemoData(db: DB): Promise<void> {
   });
 
   // --- 3 sales with varied payment states. ---
-  // Sale 1 — PAID in USD cash.
+  // Sale 1 — PAID in USD cash. Not «en libros»: a plain walk-in, no IVA.
   const azulJersey = batchIdOf('Azul Rey', '30', 'Jersey');
   await checkout(db, {
     transactionId: 'seed-sale-1',
     createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
     clientId: c1._id,
-    isOnTheBooks: true,
+    isOnTheBooks: false,
     exchangeRateBCV: RATE,
     creditTerms: null,
     operatorId: OP,
@@ -137,7 +137,9 @@ export async function seedDemoData(db: DB): Promise<void> {
     payments: { paidUsdCash: 85, paidUsdTransfer: 0, paidBs: 0 },
   });
 
-  // Sale 2 — PARTIAL (some cash, rest owed), COMBO units.
+  // Sale 2 — PARTIAL, COMBO units, and «en libros»: the one invoiced sale in
+  // the dev store, so IVA + IGTF and the nota de entrega have something to
+  // render without the operator having to build a sale first.
   const combo = batchIdOf('Multicolor', '24', 'Combo');
   const sale2 = await checkout(db, {
     transactionId: 'seed-sale-2',

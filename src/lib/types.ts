@@ -153,6 +153,37 @@ export interface SaleDoc extends Doc {
   paymentStatus: PaymentStatus;
   creditTerms: string | null;
   lineItems: CartLineItem[];
+  /**
+   * Tax RATES, locked at checkout. The amounts are derived — `ivaUsd`,
+   * `igtfUsd` and `grandTotalUsd` must never be stored, exactly like `totalBs`.
+   * Keeping the rates means a sale from any date can still be re-explained, and
+   * a rate change never rewrites history.
+   *
+   * Absent on every sale written before this existed, which is why both are
+   * optional and read as 0: otherwise the whole back catalogue would grow a
+   * 16% phantom debt the day this shipped, on documents that are immutable.
+   */
+  ivaRate?: number;
+  igtfRate?: number;
+}
+
+/**
+ * _id: config:fiscal. The company's fiscal identity, printed on the nota de
+ * entrega. Mutable config, not a ledger entry.
+ *
+ * Its own document ON PURPOSE: `saveDailyRate` rebuilds `config:system` from an
+ * explicit field list, so a fiscal header parked there is deleted by the next
+ * 07:00 rate write — silently, and only visible the next time someone prints.
+ */
+export interface FiscalConfigDoc extends Doc {
+  type: 'config';
+  /** Razón social. */
+  businessName: string;
+  /** RIF. */
+  taxId: string;
+  /** Dirección fiscal. */
+  address: string;
+  lastUpdate: string;
 }
 
 /**
@@ -273,6 +304,7 @@ export const expenseIdOf = (date: string, uuid: string): string => `expense:${da
 export const paymentIdOf = (date: string, uuid: string): string => `payment:${date}:${uuid}`;
 
 export const SYSTEM_CONFIG_ID = 'config:system';
+export const FISCAL_CONFIG_ID = 'config:fiscal';
 export const CART_ID = 'cart:current';
 
 // ---- Field validation (shared by the logic modules AND the forms) ----

@@ -5,6 +5,8 @@ import { checkout } from './checkout';
 import { getSales, getMovements } from './queries';
 import { batchIdOf, productIdOf, type CartLineItem, type ProductDoc, type BatchDoc } from './types';
 
+// These fixtures are about stock, counters and idempotency, not tax: they are
+// plain (not en libros) sales so their arithmetic stays the pre-IVA one.
 const RATE = 36.5;
 
 function rollLine(
@@ -69,7 +71,7 @@ describe('checkout — happy path', () => {
       transactionId: 'tx1',
       createdAt: new Date().toISOString(),
       clientId: null,
-      isOnTheBooks: true,
+      isOnTheBooks: false,
       exchangeRateBCV: RATE,
       creditTerms: null,
       operatorId: 'op',
@@ -101,7 +103,7 @@ describe('checkout — happy path', () => {
       transactionId: 'tx-empty',
       createdAt: new Date().toISOString(),
       clientId: null,
-      isOnTheBooks: true,
+      isOnTheBooks: false,
       exchangeRateBCV: RATE,
       creditTerms: null,
       operatorId: 'op',
@@ -123,7 +125,7 @@ describe('checkout — idempotency', () => {
       transactionId: 'tx-idem',
       createdAt: '2026-07-13T10:00:00.000Z',
       clientId: null,
-      isOnTheBooks: true,
+      isOnTheBooks: false,
       exchangeRateBCV: RATE,
       creditTerms: null,
       operatorId: 'op',
@@ -150,7 +152,7 @@ describe('checkout — rejections', () => {
         transactionId: 'tx-over',
         createdAt: new Date().toISOString(),
         clientId: null,
-        isOnTheBooks: true,
+        isOnTheBooks: false,
         exchangeRateBCV: RATE,
         creditTerms: null,
         operatorId: 'op',
@@ -168,7 +170,7 @@ describe('checkout — rejections', () => {
         transactionId: 'tx-mismatch',
         createdAt: new Date().toISOString(),
         clientId: null,
-        isOnTheBooks: true,
+        isOnTheBooks: false,
         exchangeRateBCV: RATE,
         creditTerms: null,
         operatorId: 'op',
@@ -186,7 +188,7 @@ describe('checkout — rejections', () => {
         transactionId: 'tx-credit-no-client',
         createdAt: new Date().toISOString(),
         clientId: null,
-        isOnTheBooks: true,
+        isOnTheBooks: false,
         exchangeRateBCV: RATE,
         creditTerms: null,
         operatorId: 'op',
@@ -204,7 +206,7 @@ describe('checkout — rejections', () => {
         transactionId: 'tx-rate',
         createdAt: new Date().toISOString(),
         clientId: null,
-        isOnTheBooks: true,
+        isOnTheBooks: false,
         exchangeRateBCV: 0,
         creditTerms: null,
         operatorId: 'op',

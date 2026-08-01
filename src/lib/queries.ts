@@ -4,6 +4,7 @@
 
 import {
   SYSTEM_CONFIG_ID,
+  FISCAL_CONFIG_ID,
   FIELD_MAX,
   assertAmount,
   clientIdOf,
@@ -13,6 +14,7 @@ import {
   validateName,
   validatePhone,
   type SystemConfigDoc,
+  type FiscalConfigDoc,
   type BatchDoc,
   type ProductDoc,
   type ClientDoc,
@@ -61,6 +63,48 @@ async function scanPrefix<T>(
 
 export async function getConfig(db: DB): Promise<SystemConfigDoc | null> {
   return getById<SystemConfigDoc>(db, SYSTEM_CONFIG_ID);
+}
+
+// ---- Fiscal identity (its OWN document — see FiscalConfigDoc) ----
+
+export async function getFiscalConfig(db: DB): Promise<FiscalConfigDoc | null> {
+  return getById<FiscalConfigDoc>(db, FISCAL_CONFIG_ID);
+}
+
+export interface FiscalConfigInput {
+  businessName: string;
+  taxId: string;
+  address: string;
+}
+
+/** Upsert the fiscal header printed on the nota de entrega. */
+export async function saveFiscalConfig(
+  db: DB,
+  input: FiscalConfigInput,
+): Promise<FiscalConfigDoc> {
+  const businessName = input.businessName.trim();
+  const taxId = input.taxId.trim();
+  if (!businessName) throw new Error('La razón social es obligatoria.');
+  if (businessName.length > FIELD_MAX.name) {
+    throw new Error(`La razón social no puede superar ${FIELD_MAX.name} caracteres.`);
+  }
+  const problem = validateDocumentId(taxId);
+  if (problem) throw new Error(problem);
+  if ((input.address ?? '').length > FIELD_MAX.address) {
+    throw new Error(`La dirección fiscal no puede superar ${FIELD_MAX.address} caracteres.`);
+  }
+  const existing = await getFiscalConfig(db);
+  const doc: FiscalConfigDoc = {
+    _id: FISCAL_CONFIG_ID,
+    ...(existing?._rev ? { _rev: existing._rev } : {}),
+    type: 'config',
+    businessName,
+    taxId,
+    address: input.address?.trim() ?? '',
+    lastUpdate: new Date().toISOString(),
+  };
+  await db.put(doc);
+  return doc;
 }
 
 /** Upsert the singleton rate. Newest lastUpdate wins on conflict (see conflicts.ts). */
@@ -254,6 +298,78 @@ export async function addExpense(db: DB, input: ExpenseInput): Promise<ExpenseDo
   };
   await db.put(doc);
   return doc;
+}
+
+// ---- Tax (pure, exported for UI + checkout + payments.ts) ----
+//
+// ONE definition of the money rules, beside the payment thresholds below, so
+// the two cannot drift. Every consumer — the terminal, the payment panel, the
+// nota de entrega, the receivable screens, and eventually the fiscal printer —
+// reads the SAME numbers rather than re-deriving them.
+
+/** IVA is always 16%, no exemptions and no reduced cases (client, casilla 16). */
+export const IVA_RATE = 0.16;
+
+/** IGTF on divisas — cash AND USD transfers alike (client, casilla 13). */
+export const IGTF_RATE = 0.03;
+
+export interface SaleTaxes {
+  /** Σ line subtotals — pre-tax, and what SaleDoc.totalUsd stores. */
+  baseUsd: number;
+  ivaUsd: number;
+  igtfUsd: number;
+  /** What the client actually owes. */
+  grandTotalUsd: number;
+}
+
+/** Everything the tax arithmetic needs; a whole SaleDoc satisfies it. */
+export interface TaxableSale {
+  totalUsd: number;
+  ivaRate?: number;
+  igtfRate?: number;
+  paidUsdCash: number;
+  paidUsdTransfer: number;
+}
+
+/**
+ * The tax breakdown of a sale — a pure function of the document, so a print
+ * view, a screen and a future fiscal-printer payload all build from the same
+ * figures instead of re-deriving them (two derivations of one tax figure is how
+ * they drift).
+ *
+ * ⚠️ TWO THINGS THE ACCOUNTANT STILL HAS TO CONFIRM (docs/plan.md §3, casilla 14).
+ * The client's own answer names two different bases, and sales are immutable, so
+ * a wrong one cannot be corrected afterwards — only annotated.
+ *
+ *   1. The IGTF base EXCLUDES IVA here, per their written observation
+ *      («sobre la base imponible, no incluyendo el IVA»). Venezuelan practice
+ *      normally applies IGTF to the amount actually tendered, IVA included.
+ *   2. The divisa share is measured against what is owed BEFORE IGTF
+ *      (base + IVA). Measuring it against the grand total, as the checkbox
+ *      wording suggests, makes the definition circular — IGTF would depend on a
+ *      total that depends on IGTF — and only resolves through a quadratic that
+ *      no one could explain to a tax inspector.
+ *
+ * Also deliberate: the divisa share is read from the payments made AT CHECKOUT.
+ * A later `payment:` collection in divisas incurs its own IGTF in the real
+ * world, and this does not model that — the sale is immutable, so its tax
+ * figures are fixed at the moment it was written.
+ */
+export function saleTaxes(sale: TaxableSale): SaleTaxes {
+  const baseUsd = round2(sale.totalUsd);
+  // Absent rates read as 0 — every sale written before tax existed keeps a
+  // grand total equal to its net total, which is what its history says.
+  const ivaUsd = round2(baseUsd * (sale.ivaRate ?? 0));
+  const owedBeforeIgtf = round2(baseUsd + ivaUsd);
+  const divisaUsd = sale.paidUsdCash + sale.paidUsdTransfer;
+  const divisaShare = owedBeforeIgtf > 0 ? Math.min(1, divisaUsd / owedBeforeIgtf) : 0;
+  const igtfUsd = round2(baseUsd * divisaShare * (sale.igtfRate ?? 0));
+  return { baseUsd, ivaUsd, igtfUsd, grandTotalUsd: round2(baseUsd + ivaUsd + igtfUsd) };
+}
+
+/** What the client owes, tax included. The ONE total every money read site uses. */
+export function grandTotalUsd(sale: TaxableSale): number {
+  return saleTaxes(sale).grandTotalUsd;
 }
 
 // ---- Payment status (pure, exported for UI + checkout + payments.ts) ----

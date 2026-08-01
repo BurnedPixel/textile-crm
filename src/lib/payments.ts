@@ -15,7 +15,7 @@ import {
 import { round2 } from './format';
 // usdPaid/statusForPaid live in queries.ts beside computePaymentStatus so the
 // checkout status and the derived balance can never drift apart.
-import { SETTLED_EPSILON, statusForPaid, usdPaid, uuidv4 } from './queries';
+import { SETTLED_EPSILON, grandTotalUsd, statusForPaid, usdPaid, uuidv4 } from './queries';
 
 type DB = PouchDB.Database;
 
@@ -36,10 +36,14 @@ export function saleBalance(sale: SaleDoc, payments: PaymentDoc[] = []): SaleBal
     0,
   );
   const paidUsd = round2(atCheckout + collected);
+  // What is owed is the GRAND total — base + IVA + IGTF — not the pre-tax
+  // figure the document stores. Every derived balance in the app comes through
+  // here, which is why the switch happens once, at this line.
+  const owed = grandTotalUsd(sale);
   return {
     paidUsd,
-    owedUsd: round2(Math.max(0, sale.totalUsd - paidUsd)),
-    status: statusForPaid(sale.totalUsd, paidUsd),
+    owedUsd: round2(Math.max(0, owed - paidUsd)),
+    status: statusForPaid(owed, paidUsd),
   };
 }
 
