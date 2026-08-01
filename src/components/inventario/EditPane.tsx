@@ -59,6 +59,7 @@ export default function EditPane({ onDone }: EditPaneProps) {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+  const [fieldErr, setFieldErr] = useState<{ weight?: string; reason?: string }>({});
 
   const { data: rows } = useLiveQuery(() => getProductsWithBatch(db), []);
   const all = useMemo<Row[]>(() => rows ?? [], [rows]);
@@ -145,13 +146,16 @@ export default function EditPane({ onDone }: EditPaneProps) {
     if (!selected) return;
     setError('');
     setSuccess('');
-    const measured = parseFloat(realWeight);
-    if (!Number.isFinite(measured) || measured < 0) {
-      setError('Indica el peso real medido.');
+    setFieldErr({});
+    const measured = Number(realWeight.trim());
+    if (!realWeight.trim() || !Number.isFinite(measured) || measured < 0) {
+      setFieldErr({ weight: 'Indica el peso real medido.' });
+      setError('Faltan datos — revisa los campos marcados en rojo.');
       return;
     }
     if (!adjustReason.trim()) {
-      setError('El motivo del ajuste es obligatorio — queda en el historial.');
+      setFieldErr({ reason: 'Obligatorio — queda en el historial.' });
+      setError('Faltan datos — revisa los campos marcados en rojo.');
       return;
     }
     const delta = Math.round((measured - selected.product.currentWeightKg) * 1000) / 1000;
@@ -324,22 +328,24 @@ export default function EditPane({ onDone }: EditPaneProps) {
               </h2>
               <form onSubmit={handleAdjustWeight} noValidate>
                 <div className="form-grid-2 form-grid-compact">
-                  <Field label="Peso real medido (Kg)">
+                  <Field label="Peso real medido (Kg)" error={fieldErr.weight}>
                     <NumberInput
                       data-adjust-weight
+                      aria-invalid={Boolean(fieldErr.weight)}
                       value={realWeight}
                       placeholder="0.000"
                       min="0"
                       step="0.001"
-                      onChange={(e) => setRealWeight(e.target.value)}
+                      onChange={(e) => { setFieldErr((p) => ({ ...p, weight: undefined })); setRealWeight(e.target.value); }}
                     />
                   </Field>
-                  <Field label="Motivo" hint="Queda en el historial de movimientos">
+                  <Field label="Motivo" hint="Queda en el historial de movimientos" error={fieldErr.reason}>
                     <Input
                       data-adjust-reason
+                      aria-invalid={Boolean(fieldErr.reason)}
                       value={adjustReason}
                       placeholder="Reconteo, merma, error de tipeo…"
-                      onChange={(e) => setAdjustReason(e.target.value)}
+                      onChange={(e) => { setFieldErr((p) => ({ ...p, reason: undefined })); setAdjustReason(e.target.value); }}
                     />
                   </Field>
                 </div>

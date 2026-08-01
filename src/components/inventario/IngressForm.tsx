@@ -6,7 +6,9 @@ import { useState, useEffect, useRef, type KeyboardEvent } from 'react';
 import { db } from '../../lib/db';
 import { cachedUser } from '../../lib/auth';
 import { getBatches, getBatchProducts, getClients, getSales, getFiscalConfig } from '../../lib/queries';
-import { ingressStock } from '../../lib/inventory';
+import {
+  ingressStock, validateIngressForm, ingressFormIsValid, type IngressFormErrors,
+} from '../../lib/inventory';
 import { useLiveQuery } from '../../lib/hooks';
 import { clientsWhoBought, waLink, buildArrivalText } from '../../lib/whatsapp';
 import { batchIdOf, norm, type ProductType, type ConditionTag, type BatchDoc, type ClientDoc, type ProductDoc } from '../../lib/types';
@@ -152,6 +154,12 @@ export default function IngressForm({ onDone }: IngressFormProps) {
   const [arrivals, setArrivals] = useState<
     { what: string; targets: Array<{ client: ClientDoc; link: string }> } | null
   >(null);
+
+  // ─ per-field errors ─ the message belongs next to the field that is wrong,
+  //   not in a banner at the bottom the operator has to go hunting through.
+  const [fieldErrors, setFieldErrors] = useState<IngressFormErrors>({});
+  const clearFieldError = (key: keyof IngressFormErrors) =>
+    setFieldErrors((prev) => (key in prev ? { ...prev, [key]: undefined } : prev));
 
   // ─ feedback ─
   const [submitting, setSubmitting] = useState(false);
@@ -362,8 +370,28 @@ export default function IngressForm({ onDone }: IngressFormProps) {
     setError('');
     setSuccess('');
 
-    if (!color.trim() || !nm.trim() || !fabricType.trim()) {
-      setError('Completa Color, NM y Tipo de tela antes de registrar.');
+    const resolvedTypeForCheck = matchedBatch ? matchedBatch.productType : productType;
+    const problems = validateIngressForm({
+      color, nm, fabricType,
+      productType: resolvedTypeForCheck,
+      lotNumber,
+      purchaseValueUsd: batchDefaults.purchaseValueUsd,
+      salePriceUsd: batchDefaults.salePriceUsd,
+      rolls,
+      units,
+      unitPurchaseValueUsd,
+      unitSalePriceUsd,
+    });
+    setFieldErrors(problems);
+    if (!ingressFormIsValid(problems)) {
+      setError('Faltan datos — revisa los campos marcados en rojo.');
+      // Put the cursor on the first thing that is wrong rather than making the
+      // operator scan the form for it.
+      setTimeout(() => {
+        const first = document.querySelector<HTMLElement>('form [aria-invalid="true"]');
+        first?.focus();
+        first?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, 0);
       return;
     }
 
@@ -385,14 +413,13 @@ export default function IngressForm({ onDone }: IngressFormProps) {
 
         const parsedRolls = submittedRolls.map((r) => {
           // Per-row cost/price fall back to defaults if blank.
-          const pv = r.purchaseValueUsd !== '' ? parseFloat(r.purchaseValueUsd) : parseFloat(batchDefaults.purchaseValueUsd);
-          const sp = r.salePriceUsd !== ''     ? parseFloat(r.salePriceUsd)     : parseFloat(batchDefaults.salePriceUsd);
-          if (isNaN(pv) || isNaN(sp)) {
-            throw new Error('Define el costo y precio de venta antes de registrar.');
-          }
+          // Both the row value and the fallback were checked by
+          // validateIngressForm above, so these parses cannot be NaN here.
+          const pv = Number(r.purchaseValueUsd !== '' ? r.purchaseValueUsd : batchDefaults.purchaseValueUsd);
+          const sp = Number(r.salePriceUsd !== '' ? r.salePriceUsd : batchDefaults.salePriceUsd);
           return {
             pieceId: r.pieceId,
-            weightKg: parseFloat(r.weightKg),
+            weightKg: Number(r.weightKg),
             purchaseValueUsd: pv,
             salePriceUsd: sp,
             conditionTag: r.conditionTag,
@@ -422,12 +449,12 @@ export default function IngressForm({ onDone }: IngressFormProps) {
           location: location.trim() || matchedBatch?.location,
           operatorId,
           reason: 'Ingreso de inventario',
-          units: parseFloat(units),
-          unitPurchaseValueUsd: parseFloat(unitPurchaseValueUsd),
-          unitSalePriceUsd: parseFloat(unitSalePriceUsd),
+          units: Number(units),
+          unitPurchaseValueUsd: Number(unitPurchaseValueUsd),
+          unitSalePriceUsd: Number(unitSalePriceUsd),
           unitConditionTag,
         });
-        setSuccess(`Ingreso registrado — ${fmtUnits(parseFloat(units))}.`);
+        setSuccess(`Ingreso registrado — ${fmtUnits(Number(units))}.`);
       }
 
       // Reset row state but keep cascade + batch defaults for rapid multi-batch entry.
@@ -436,6 +463,7 @@ export default function IngressForm({ onDone }: IngressFormProps) {
       setLotNumber(''); // the next arrival is a different lot — never carry it over
       setUnits('');
       // Keep unit price/condition for COMBO/PIECE rapid re-entry too (same as ROLL).
+      setFieldErrors({});
       onDone?.(); // batches refresh themselves — useLiveQuery watches the DB
       void offerArrivalNotices(color.trim(), fabricType.trim());
     } catch (err) {
@@ -494,6 +522,7 @@ export default function IngressForm({ onDone }: IngressFormProps) {
     unitTouched.current = { cost: false, price: false, condition: false };
     setSuccess('');
     setError('');
+    setFieldErrors({});
     colorRef.current?.focus();
   }
 
@@ -520,39 +549,42 @@ export default function IngressForm({ onDone }: IngressFormProps) {
 
           <div className="form-grid-3">
             {/* COLOR */}
-            <Field label="Color">
+            <Field label="Color" error={fieldErrors.color}>
               <Combobox
                 ref={colorRef}
                 data-hotkey-search=""
+                aria-invalid={Boolean(fieldErrors.color)}
                 value={color}
                 placeholder="Azul rey"
                 options={colorOptions}
-                onChange={setColor}
+                onChange={(v) => { clearFieldError('color'); setColor(v); }}
                 onKeyDown={(e) => { if (e.key === 'Escape') { setColor(''); return; } advanceCascade(e, nmRef); }}
                 renderOption={(c) => <SwatchChip color={c} size="sm" />}
               />
             </Field>
 
             {/* NM */}
-            <Field label="NM (métrica aguja)">
+            <Field label="NM (métrica aguja)" error={fieldErrors.nm}>
               <Combobox
                 ref={nmRef}
+                aria-invalid={Boolean(fieldErrors.nm)}
                 value={nm}
                 placeholder="30"
                 options={nmOptions}
-                onChange={setNm}
+                onChange={(v) => { clearFieldError('nm'); setNm(v); }}
                 onKeyDown={(e) => { if (e.key === 'Escape') { setNm(''); return; } advanceCascade(e, fabricRef); }}
               />
             </Field>
 
             {/* FABRIC TYPE */}
-            <Field label="Tipo de tela">
+            <Field label="Tipo de tela" error={fieldErrors.fabricType}>
               <Combobox
                 ref={fabricRef}
+                aria-invalid={Boolean(fieldErrors.fabricType)}
                 value={fabricType}
                 placeholder="Jersey"
                 options={fabricOptions}
-                onChange={setFabricType}
+                onChange={(v) => { clearFieldError('fabricType'); setFabricType(v); }}
                 onKeyDown={(e) => { if (e.key === 'Escape') setFabricType(''); }}
               />
             </Field>
@@ -610,28 +642,30 @@ export default function IngressForm({ onDone }: IngressFormProps) {
           <section style={sectionStyle} className="card">
             <h2 style={sectionTitle}>Precios y condición</h2>
             <div className="form-grid-3 form-grid-compact">
-              <Field label="Costo · $/kg">
+              <Field label="Costo · $/kg" error={fieldErrors.purchaseValueUsd}>
                 <NumberInput
+                  aria-invalid={Boolean(fieldErrors.purchaseValueUsd)}
                   value={batchDefaults.purchaseValueUsd}
                   placeholder="0.00"
                   min="0"
                   step="0.01"
                   onChange={(e) => setBatchDefaults((prev) => ({
                     ...prev,
-                    purchaseValueUsd: e.target.value,
+                    purchaseValueUsd: (clearFieldError('purchaseValueUsd'), e.target.value),
                     touched: { ...prev.touched, cost: true },
                   }))}
                 />
               </Field>
-              <Field label="Venta · $/kg">
+              <Field label="Venta · $/kg" error={fieldErrors.salePriceUsd}>
                 <NumberInput
+                  aria-invalid={Boolean(fieldErrors.salePriceUsd)}
                   value={batchDefaults.salePriceUsd}
                   placeholder="0.00"
                   min="0"
                   step="0.01"
                   onChange={(e) => setBatchDefaults((prev) => ({
                     ...prev,
-                    salePriceUsd: e.target.value,
+                    salePriceUsd: (clearFieldError('salePriceUsd'), e.target.value),
                     touched: { ...prev.touched, price: true },
                   }))}
                 />
@@ -689,11 +723,17 @@ export default function IngressForm({ onDone }: IngressFormProps) {
             {/* Lot number — the supplier's printed number, one per arrival. Applies
                 to every row below; re-typing an existing number adds to that lot. */}
             <div style={{ maxWidth: 240, marginBottom: 16 }}>
-              <Field label="Nº de lote" hint="Se aplica a todos los rollos de este ingreso">
+              <Field
+                label="Nº de lote *"
+                hint="Obligatorio · se aplica a todos los rollos de este ingreso"
+                error={fieldErrors.lotNumber}
+              >
                 <Input
+                  data-lot-input
+                  aria-invalid={Boolean(fieldErrors.lotNumber)}
                   value={lotNumber}
                   placeholder="Impreso en el bulto"
-                  onChange={(e) => setLotNumber(e.target.value)}
+                  onChange={(e) => { clearFieldError('lotNumber'); setLotNumber(e.target.value); }}
                 />
               </Field>
             </div>
@@ -708,6 +748,12 @@ export default function IngressForm({ onDone }: IngressFormProps) {
               <span />
             </div>
 
+            {fieldErrors.rolls && (
+              <div role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-danger)', marginBottom: 8 }}>
+                {fieldErrors.rolls}
+              </div>
+            )}
+
             <div ref={rollsContainerRef}>
               {rolls.map((roll, idx) => (
                 <div key={idx} data-roll-row className="roll-row">
@@ -719,11 +765,24 @@ export default function IngressForm({ onDone }: IngressFormProps) {
                   {/* Weight — primary input, full-width feel */}
                   <NumberInput
                     data-weight-input
+                    aria-invalid={Boolean(fieldErrors.rollWeights?.[idx])}
+                    title={fieldErrors.rollWeights?.[idx]}
                     value={roll.weightKg}
                     placeholder="0.000"
                     min="0.001"
                     step="0.001"
-                    onChange={(e) => updateRoll(idx, { weightKg: e.target.value })}
+                    onChange={(e) => {
+                      setFieldErrors((prev) => {
+                        if (!prev.rollWeights?.[idx] && !prev.rolls) return prev;
+                        const next = { ...prev, rolls: undefined };
+                        if (next.rollWeights) {
+                          const { [idx]: _dropped, ...rest } = next.rollWeights;
+                          next.rollWeights = rest;
+                        }
+                        return next;
+                      });
+                      updateRoll(idx, { weightKg: e.target.value });
+                    }}
                     onKeyDown={(e) => onWeightKeyDown(e, idx)}
                     required
                   />
@@ -790,33 +849,36 @@ export default function IngressForm({ onDone }: IngressFormProps) {
           <section style={sectionStyle} className="card">
             <h2 style={sectionTitle}>Unidades</h2>
             <div className="form-grid-3 form-grid-compact">
-              <Field label="Cantidad">
+              <Field label="Cantidad" error={fieldErrors.units}>
                 <NumberInput
+                  aria-invalid={Boolean(fieldErrors.units)}
                   value={units}
                   placeholder="0"
                   min="1"
                   step="1"
-                  onChange={(e) => setUnits(e.target.value)}
+                  onChange={(e) => { clearFieldError('units'); setUnits(e.target.value); }}
                   required
                 />
               </Field>
-              <Field label="Costo unitario USD">
+              <Field label="Costo unitario USD" error={fieldErrors.unitPurchaseValueUsd}>
                 <NumberInput
+                  aria-invalid={Boolean(fieldErrors.unitPurchaseValueUsd)}
                   value={unitPurchaseValueUsd}
                   placeholder="0.00"
                   min="0"
                   step="0.01"
-                  onChange={(e) => { unitTouched.current.cost = true; setUnitPurchaseValueUsd(e.target.value); }}
+                  onChange={(e) => { clearFieldError('unitPurchaseValueUsd'); unitTouched.current.cost = true; setUnitPurchaseValueUsd(e.target.value); }}
                   required
                 />
               </Field>
-              <Field label="Precio venta USD">
+              <Field label="Precio venta USD" error={fieldErrors.unitSalePriceUsd}>
                 <NumberInput
+                  aria-invalid={Boolean(fieldErrors.unitSalePriceUsd)}
                   value={unitSalePriceUsd}
                   placeholder="0.00"
                   min="0"
                   step="0.01"
-                  onChange={(e) => { unitTouched.current.price = true; setUnitSalePriceUsd(e.target.value); }}
+                  onChange={(e) => { clearFieldError('unitSalePriceUsd'); unitTouched.current.price = true; setUnitSalePriceUsd(e.target.value); }}
                   required
                 />
               </Field>
