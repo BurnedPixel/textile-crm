@@ -4,7 +4,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../../lib/db';
 import { useLiveQuery } from '../../lib/hooks';
-import { getClients, getSales, saveClient, usdPaid, grandTotalUsd } from '../../lib/queries';
+import { getClients, getSales, saveClient, usdPaid, grandTotalUsd, getFiscalConfig } from '../../lib/queries';
+import { waLink, buildDunningText } from '../../lib/whatsapp';
 import { getPayments, paymentsBySale, saleBalance } from '../../lib/payments';
 import {
   FIELD_MAX, validateDocumentId, validateEmail, validateName, validatePhone,
@@ -113,6 +114,8 @@ interface DetailPanelProps {
   client: ClientDoc | null;
   ledger: Ledger;
   onEdit: () => void;
+  /** Razón social, so the WhatsApp message says who is writing. */
+  businessName?: string;
 }
 
 /** The sale + payment ledgers, scanned ONCE for the page (see ClientsPage). */
@@ -126,13 +129,26 @@ interface Ledger {
  * this component used to run its own two unbounded scans keyed on `clientId`, so
  * every click on the client list re-read every sale and every payment ever made.
  */
-function ClientSales({ clientId, ledger }: { clientId: string; ledger: Ledger }) {
+function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledger: Ledger; businessName?: string }) {
+  const clientId = client._id;
   const clientSales = ledger.sales.filter((s) => s.clientId === clientId);
   const paymentsFor = paymentsBySale(ledger.payments);
   const owed = outstandingUsd(clientSales, paymentsFor);
   // Payments belong to a sale, not a client — reach the client's through their sales.
   const saleIds = new Set(clientSales.map((s) => s._id));
   const clientPayments = ledger.payments.filter((p) => saleIds.has(p.saleId));
+
+  // null when the stored number cannot become a wa.me number — passing
+  // validatePhone says nothing about that (a 7-digit local number is a valid
+  // phone and an undiallable link).
+  const unpaidCount = clientSales.filter(
+    (s) => saleBalance(s, paymentsFor.get(s._id)).owedUsd > 0.005,
+  ).length;
+  const dunningLink = owed > 0.005
+    ? waLink(client.phoneNumber, buildDunningText({
+        clientName: client.name, owedUsd: owed, saleCount: unpaidCount, businessName,
+      }))
+    : null;
 
   if (clientSales.length === 0) {
     return (
@@ -187,6 +203,30 @@ function ClientSales({ clientId, ledger }: { clientId: string; ledger: Ledger })
             <Money usd={owed} />
           </span>
         </div>
+      )}
+
+      {/* Cobro por WhatsApp — human-pressed. Hidden when the stored number
+          cannot be dialled: better no button than a chat with nobody. This is
+          the client card and not the Panel's pending list on purpose — that one
+          is per SALE (three unpaid sales would mean three buttons and three
+          messages) and capped at 90 days, so the oldest debts have no button at
+          all. Here the balance is already the client's whole ledger. */}
+      {dunningLink && (
+        <a
+          data-wa-dunning
+          href={dunningLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            alignSelf: 'flex-start', minHeight: '44px', padding: '0 16px', borderRadius: '6px',
+            border: '1.5px solid var(--color-ok)', color: 'var(--color-ok)',
+            fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 600,
+            textDecoration: 'none', backgroundColor: 'transparent',
+          }}
+        >
+          Recordar por WhatsApp
+        </a>
       )}
 
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
@@ -303,7 +343,7 @@ function ClientSales({ clientId, ledger }: { clientId: string; ledger: Ledger })
   );
 }
 
-function DetailPanel({ client, ledger, onEdit }: DetailPanelProps) {
+function DetailPanel({ client, ledger, onEdit, businessName }: DetailPanelProps) {
   if (!client) {
     return (
       <div
@@ -426,7 +466,7 @@ function DetailPanel({ client, ledger, onEdit }: DetailPanelProps) {
         >
           Ventas del cliente
         </div>
-        <ClientSales clientId={client._id} ledger={ledger} />
+        <ClientSales client={client} ledger={ledger} businessName={businessName} />
       </div>
     </div>
   );
@@ -563,7 +603,7 @@ function ClientForm({ initial, isNew, onSave, onCancel, saving, serverError }: C
         <Input
           value={form.phoneNumber}
           onChange={set('phoneNumber')}
-          placeholder="+58 412-000-0000"
+          placeholder="0412-1234567"
           type="tel"
           inputMode="tel"
           maxLength={FIELD_MAX.phoneNumber}
@@ -628,6 +668,7 @@ function ClientForm({ initial, isNew, onSave, onCancel, saving, serverError }: C
 
 export default function ClientsPage() {
   const { data: clients } = useLiveQuery<ClientDoc[]>((database) => getClients(database));
+  const { data: fiscal } = useLiveQuery((database) => getFiscalConfig(database));
   // Scanned ONCE for the page, with no deps — selecting a client filters this in
   // memory instead of re-reading both ledgers. Refreshes on DB change like every
   // other live query.
@@ -967,7 +1008,7 @@ export default function ClientsPage() {
               />
             </div>
           ) : (
-            <DetailPanel client={selectedClient} ledger={ledger} onEdit={openEdit} />
+            <DetailPanel client={selectedClient} ledger={ledger} onEdit={openEdit} businessName={fiscal?.businessName} />
           )}
         </div>
       </div>
