@@ -59,7 +59,9 @@ FABRICS = [
     (("DRY FIT", "DRYFIT"), "Dry Fit"),
     (("INTERLOCK",), "Interlock"),
     (("JERSEY",), "Jersey"),
-    (("PIQUET", "PIQUE", "PIQU"), "Piqué"),
+    # "Chemise y piqué es lo mismo" — the client's own correction (casilla 11).
+    # Without it a future INFORME creates a second catalogue of the same cloth.
+    (("PIQUET", "PIQUE", "PIQU", "CHEMISE", "CHEMIS"), "Piqué"),
     (("RIBB", "RIB", "IBB"), "Ribb"),
     (("TELA DE SEGUNDA", "SEGUNDA"), "Tela de segunda"),
 ]
