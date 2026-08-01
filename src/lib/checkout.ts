@@ -7,6 +7,7 @@ import {
   movementIdOf,
   assertAmount,
   UNIT_FOR,
+  ROLL_EMPTY_KG,
   type BatchDoc,
   type ProductDoc,
   type SaleDoc,
@@ -30,10 +31,6 @@ export interface CheckoutInput {
   lines: CartLineItem[];
   payments: { paidUsdCash: number; paidUsdTransfer: number; paidBs: number };
 }
-
-// A roll whose remaining weight falls to/under this counts as consumed (decrements
-// the batch's roll count). Guards float dust from repeated subtraction.
-const ROLL_EMPTY_KG = 0.001;
 
 export async function checkout(db: DB, input: CheckoutInput): Promise<SaleDoc> {
   const saleId = saleIdOf(input.createdAt, input.transactionId);

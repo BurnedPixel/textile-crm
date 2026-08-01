@@ -8,6 +8,7 @@ import {
   productIdOf,
   movementIdOf,
   assertAmount,
+  hasRollStock,
   FIELD_MAX,
   UNIT_FOR,
   type ProductType,
@@ -157,10 +158,21 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
 
   const counters: CounterWrite[] = [];
   const movementLines: MovementLineItem[] = [];
+  // Two different tallies that used to share one variable:
+  //   addedUnits      → currentUnits, the CACHE of "rolls with stock right now".
+  //   createdProducts → initialUnitCount, "rolls ever received", monotonic.
+  // They diverge the moment a sold-out roll is refilled: the roll doc already
+  // exists (so nothing is "created") but checkout decremented currentUnits when
+  // it hit empty, so the batch is one short until this ingress puts it back.
   let addedUnits = 0;
+  let createdProducts = 0;
 
   if (isRoll) {
     if (!input.rolls?.length) throw new Error('Debe indicar al menos un rollo.');
+    // Weight this call has already staged per roll, so two rows carrying the SAME
+    // pieceId count one transition between them instead of one each (their writes
+    // collide on the same _id and the loser re-applies its delta on a fresh rev).
+    const stagedWeight = new Map<string, number>();
     for (const roll of input.rolls) {
       // Finite, not just positive — an Infinity weight would be added into a
       // cached counter AND an append-only movement, with no way to take it back.
@@ -190,9 +202,15 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
         };
       };
       counters.push({ id: productId, doc: buildRoll(existing), rebuild: buildRoll });
-      // A newly-created roll adds 1 to the batch's roll count; refilling an
-      // existing roll doc does not (it was already counted).
-      if (!existing) addedUnits += 1;
+      // The batch's roll count is "rolls holding stock", so it moves on an
+      // empty→non-empty TRANSITION — not on "the document did not exist".
+      // Refilling a sold-out roll creates no document but does put a roll back
+      // on the shelf; topping up a roll that still has fabric on it does neither.
+      const prevWeight = stagedWeight.get(productId) ?? existing?.currentWeightKg ?? 0;
+      const nextWeight = round2(prevWeight + roll.weightKg);
+      if (!hasRollStock(prevWeight) && hasRollStock(nextWeight)) addedUnits += 1;
+      if (!existing && !stagedWeight.has(productId)) createdProducts += 1;
+      stagedWeight.set(productId, nextWeight);
       movementLines.push({
         productId,
         quantityChanged: roll.weightKg,
@@ -229,6 +247,7 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
     };
     counters.push({ id: productId, doc: buildPool(existing), rebuild: buildPool });
     addedUnits = units;
+    createdProducts = units; // COMBO/PIECE: the counter IS the unit count
     movementLines.push({
       productId,
       quantityChanged: units,
@@ -249,7 +268,7 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
       nm: input.nm.trim(),
       fabricType: input.fabricType.trim(),
       productType: input.productType,
-      initialUnitCount: (c?.initialUnitCount ?? 0) + addedUnits,
+      initialUnitCount: (c?.initialUnitCount ?? 0) + createdProducts,
       currentUnits: (c?.currentUnits ?? 0) + addedUnits,
       location: input.location ?? c?.location ?? '',
       createdAt: c?.createdAt ?? now,
@@ -265,6 +284,220 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
     movementType: 'IN',
     referenceId: batchId,
     reason: input.reason ?? 'Ingreso de inventario',
+    operatorId: input.operatorId,
+    lineItems: movementLines,
+  };
+
+  await writeMovementAndCounters(db, movement, counters);
+  return movement;
+}
+
+// ---- Devoluciones (returns) and cambios por garantía (exchanges) ----
+
+/** Movement reasons. One definition — the UI labels and the tests read these. */
+export const RETURN_REASON = 'Devolución';
+export const EXCHANGE_REASON = 'Cambio por garantía';
+
+export interface ExchangeLeg {
+  /** An existing roll with enough weight to cover the replacement. */
+  productId: string;
+  weightKg: number;
+}
+
+export interface ReturnInput {
+  /**
+   * One uuid per submission. It is BOTH the idempotency key (it seeds the
+   * movement _id) and the returned roll's id suffix. A double tap on a flaky
+   * connection therefore re-reads the same movement instead of crediting stock
+   * twice — and two offline devices returning pieces of the same roll generate
+   * different suffixes, so their documents never converge into one fat roll.
+   */
+  returnId: string;
+  /** ISO. Part of the movement _id, so it must be stable across a retry. */
+  date: string;
+  /** The roll that was sold and is coming back. Must be an existing ROLL product. */
+  productId: string;
+  weightKg: number;
+  /** Defaults to DEFECT ("Fallado") — it warns, it never blocks the resale. */
+  conditionTag?: ConditionTag;
+  operatorId: string;
+  /** The original sale's transactionId when the operator has it. */
+  referenceId?: string;
+  /** The roll going back out, deducted inside the SAME movement. */
+  replacement?: ExchangeLeg;
+}
+
+/**
+ * The pieceId of a roll that came back: the original's, plus a `-D{tag}` marker
+ * derived from the submission's uuid. NOT a sequential -D1/-D2 — a counter is
+ * recomputed identically by every offline device, and two devices returning
+ * different pieces of the same roll would then write the same _id and merge into
+ * one document holding the sum of both weights.
+ */
+export function returnPieceId(originalPieceId: string, returnId: string): string {
+  const tag = returnId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+  return `${originalPieceId}-D${tag}`;
+}
+
+/**
+ * Record a client return, optionally exchanging it for another roll. Writes ONE
+ * movement carrying both legs (returned +, replacement −) plus the touched
+ * counters, in a single atomic bulkDocs.
+ *
+ * Two movements cannot express this: a same-batch exchange has both legs
+ * touching the same batch document, and duplicate ids inside one bulk write are
+ * rejected. MovementLineItem.quantityChanged is already signed, so one document
+ * covers both directions.
+ */
+export async function returnStock(db: DB, input: ReturnInput): Promise<InventoryMovementDoc> {
+  const movementId = movementIdOf(input.date, input.returnId);
+
+  // Idempotency, exactly like checkout(): the same submission re-run returns the
+  // movement already written, with no second credit to stock.
+  const already = await getById<InventoryMovementDoc>(db, movementId);
+  if (already) return already;
+
+  assertAmount(input.weightKg, 'El peso devuelto');
+  // Weights are stored rounded to the cent of a kilo, so anything under half a
+  // gram lands as 0.000 kg: a roll document holding nothing, and the returned
+  // fabric lost. Reject it rather than write a roll that is empty on arrival.
+  if (!hasRollStock(round2(input.weightKg))) {
+    throw new Error('El peso devuelto es demasiado pequeño para registrarse.');
+  }
+
+  const original = await getById<ProductDoc>(db, input.productId);
+  if (!original) throw new Error(`Rollo no encontrado: ${input.productId}`);
+  const batch = await getById<BatchDoc>(db, original.batchId);
+  if (!batch) throw new Error(`Artículo no encontrado: ${original.batchId}`);
+  if (batch.productType !== 'ROLL') {
+    throw new Error('Solo se pueden devolver rollos; los combos y piezas se reingresan como stock.');
+  }
+
+  const now = input.date;
+  const conditionTag = input.conditionTag ?? 'DEFECT';
+  const counters: CounterWrite[] = [];
+  // Per batch: the roll-count delta and the "rolls ever received" delta. Kept in
+  // one map because an exchange inside a single batch must produce ONE counter
+  // write holding the net of both legs.
+  const batchDelta = new Map<string, { units: number; created: number }>();
+  const bump = (batchId: string, units: number, created: number) => {
+    const cur = batchDelta.get(batchId) ?? { units: 0, created: 0 };
+    batchDelta.set(batchId, { units: cur.units + units, created: cur.created + created });
+  };
+
+  // --- Leg 1: the returned fabric comes back as its own roll. ---
+  const newPieceId = returnPieceId(original.pieceId, input.returnId);
+  const returnedId = productIdOf(batch._id, newPieceId);
+  const existingReturn = await getById<ProductDoc>(db, returnedId);
+  // Prices carry from the roll it came off. Writing 0 here (a "sin costo"
+  // return) would zero the sale price of every kilo left on that roll.
+  const buildReturned = (cur: CounterDoc | null): ProductDoc => {
+    const c = cur as ProductDoc | null;
+    return {
+      _id: returnedId,
+      ...(c?._rev ? { _rev: c._rev } : {}),
+      type: 'product',
+      batchId: batch._id,
+      pieceId: newPieceId,
+      initialWeightKg: c?.initialWeightKg ?? round2(input.weightKg),
+      currentWeightKg: round2((c?.currentWeightKg ?? 0) + input.weightKg),
+      purchaseValueUsd: original.purchaseValueUsd,
+      salePriceUsd: original.salePriceUsd,
+      conditionTag,
+      createdAt: c?.createdAt ?? now,
+      ...(original.lotNumber ? { lotNumber: original.lotNumber } : {}),
+      ...(original.pantone ? { pantone: original.pantone } : {}),
+      ...(original.fiberComposition ? { fiberComposition: original.fiberComposition } : {}),
+    };
+  };
+  counters.push({ id: returnedId, doc: buildReturned(existingReturn), rebuild: buildReturned });
+  // BOTH sides of the transition, exactly as ingressStock tests it. Checking
+  // only "was it empty before" counts a roll onto the shelf that the recompute
+  // from the ledger would not count — and the cache and the ledger then disagree
+  // permanently, because nothing recomputes until a conflict happens to fire.
+  const prevReturnKg = existingReturn?.currentWeightKg ?? 0;
+  const nextReturnKg = round2(prevReturnKg + input.weightKg);
+  if (!hasRollStock(prevReturnKg) && hasRollStock(nextReturnKg)) bump(batch._id, 1, 0);
+  if (!existingReturn) bump(batch._id, 0, 1);
+
+  const movementLines: MovementLineItem[] = [
+    { productId: returnedId, quantityChanged: input.weightKg, unitOfMeasure: 'Kg', conditionTag },
+  ];
+
+  // --- Leg 2 (optional): the replacement roll goes out. ---
+  let replacementProduct: ProductDoc | null = null;
+  if (input.replacement) {
+    assertAmount(input.replacement.weightKg, 'El peso del rollo de reposición');
+    replacementProduct = await getById<ProductDoc>(db, input.replacement.productId);
+    if (!replacementProduct) {
+      throw new Error(`Rollo de reposición no encontrado: ${input.replacement.productId}`);
+    }
+    const replacementBatch =
+      replacementProduct.batchId === batch._id
+        ? batch
+        : await getById<BatchDoc>(db, replacementProduct.batchId);
+    if (!replacementBatch) {
+      throw new Error(`Artículo no encontrado: ${replacementProduct.batchId}`);
+    }
+    if (replacementBatch.productType !== 'ROLL') {
+      throw new Error('El rollo de reposición debe pertenecer a un artículo de rollos.');
+    }
+    if (replacementProduct.currentWeightKg < input.replacement.weightKg) {
+      throw new Error(
+        `Stock insuficiente en ${replacementProduct.pieceId}: quedan ${replacementProduct.currentWeightKg} kg.`,
+      );
+    }
+    const takenKg = input.replacement.weightKg;
+    const out = replacementProduct;
+    const buildReplacement = (cur: CounterDoc | null): ProductDoc => {
+      const c = (cur as ProductDoc | null) ?? out;
+      const next = round2(c.currentWeightKg - takenKg);
+      if (next < 0) throw new Error(`Stock insuficiente en ${c.pieceId}.`);
+      return { ...c, currentWeightKg: next };
+    };
+    const reduced = buildReplacement(replacementProduct);
+    counters.push({
+      id: replacementProduct._id,
+      doc: reduced,
+      rebuild: buildReplacement,
+    });
+    // Emptying the replacement takes it off the batch's roll count — the same
+    // rule checkout applies when a sale finishes a roll.
+    if (hasRollStock(replacementProduct.currentWeightKg) && !hasRollStock(reduced.currentWeightKg)) {
+      bump(replacementBatch._id, -1, 0);
+    }
+    movementLines.push({
+      productId: replacementProduct._id,
+      quantityChanged: -takenKg,
+      unitOfMeasure: 'Kg',
+      conditionTag: replacementProduct.conditionTag,
+    });
+  }
+
+  // --- Batch counters: one write per batch, holding the net of both legs. ---
+  for (const [batchId, delta] of batchDelta) {
+    if (!delta.units && !delta.created) continue;
+    const current = batchId === batch._id ? batch : await getById<BatchDoc>(db, batchId);
+    if (!current) continue;
+    const buildBatch = (cur: CounterDoc | null): BatchDoc => {
+      const c = (cur as BatchDoc | null) ?? current;
+      return {
+        ...c,
+        initialUnitCount: Math.max(0, c.initialUnitCount + delta.created),
+        currentUnits: Math.max(0, c.currentUnits + delta.units),
+      };
+    };
+    counters.push({ id: batchId, doc: buildBatch(current), rebuild: buildBatch });
+  }
+
+  const movement: InventoryMovementDoc = {
+    _id: movementId,
+    type: 'movement',
+    movementId: `return:${returnedId}:${now}`,
+    date: now,
+    movementType: 'IN',
+    referenceId: input.referenceId?.trim() || original._id,
+    reason: input.replacement ? EXCHANGE_REASON : RETURN_REASON,
     operatorId: input.operatorId,
     lineItems: movementLines,
   };
@@ -301,9 +534,10 @@ export async function adjustStock(db: DB, input: AdjustInput): Promise<Inventory
   const unitOfMeasure = UNIT_FOR[batch.productType];
   const conditionTag = input.conditionTag ?? product.conditionTag;
 
-  // The one touched counter: product weight for ROLL, batch units otherwise. The
-  // builder re-applies the delta (and its non-negative guard) onto a fresh rev.
-  let counter: CounterWrite;
+  // The touched counters: product weight for ROLL (plus the batch's roll count if
+  // this adjustment empties or un-empties the roll), batch units otherwise. Each
+  // builder re-applies its delta (and its non-negative guard) onto a fresh rev.
+  const counters: CounterWrite[] = [];
   if (batch.productType === 'ROLL') {
     const buildProduct = (cur: CounterDoc | null): ProductDoc => {
       const c = (cur as ProductDoc | null) ?? product;
@@ -311,7 +545,22 @@ export async function adjustStock(db: DB, input: AdjustInput): Promise<Inventory
       if (next < 0) throw new Error('El ajuste dejaría el peso en negativo.');
       return { ...c, currentWeightKg: next };
     };
-    counter = { id: input.productId, doc: buildProduct(product), rebuild: buildProduct };
+    const adjusted = buildProduct(product); // also validates the non-negative rule
+    counters.push({ id: input.productId, doc: adjusted, rebuild: buildProduct });
+
+    // Same empty↔non-empty transition rule ingress and checkout use — an adjust
+    // to zero, or off zero, otherwise leaves the batch's roll count permanently
+    // wrong (this path never touched it at all before).
+    const rollDelta =
+      (hasRollStock(adjusted.currentWeightKg) ? 1 : 0) -
+      (hasRollStock(product.currentWeightKg) ? 1 : 0);
+    if (rollDelta !== 0) {
+      const buildBatch = (cur: CounterDoc | null): BatchDoc => {
+        const c = (cur as BatchDoc | null) ?? batch;
+        return { ...c, currentUnits: Math.max(0, c.currentUnits + rollDelta) };
+      };
+      counters.push({ id: input.batchId, doc: buildBatch(batch), rebuild: buildBatch });
+    }
   } else {
     const buildBatch = (cur: CounterDoc | null): BatchDoc => {
       const c = (cur as BatchDoc | null) ?? batch;
@@ -319,7 +568,7 @@ export async function adjustStock(db: DB, input: AdjustInput): Promise<Inventory
       if (next < 0) throw new Error('El ajuste dejaría las unidades en negativo.');
       return { ...c, currentUnits: next };
     };
-    counter = { id: input.batchId, doc: buildBatch(batch), rebuild: buildBatch };
+    counters.push({ id: input.batchId, doc: buildBatch(batch), rebuild: buildBatch });
   }
 
   const movement: InventoryMovementDoc = {
@@ -341,6 +590,6 @@ export async function adjustStock(db: DB, input: AdjustInput): Promise<Inventory
     ],
   };
 
-  await writeMovementAndCounters(db, movement, [counter]);
+  await writeMovementAndCounters(db, movement, counters);
   return movement;
 }

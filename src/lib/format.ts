@@ -40,6 +40,19 @@ export const fmtUnits = (n: number): string => `${n} ud`;
 export const fmtLot = (lotNumber?: string): string =>
   lotNumber?.trim() ? `Lote ${lotNumber.trim()}` : 'S/L';
 
+/**
+ * A roll that came back from a client carries the pieceId of the roll it was cut
+ * from plus a `-D{tag}` marker (see `returnPieceId` in inventory.ts). The
+ * operator only needs to read "this is R3, returned" — the tag exists so two
+ * offline devices cannot write the same document, not to be looked at.
+ */
+const RETURN_PIECE_RE = /-D[0-9A-Z]+$/i;
+
+export const isReturnPiece = (pieceId: string): boolean => RETURN_PIECE_RE.test(pieceId);
+
+export const fmtPiece = (pieceId: string): string =>
+  isReturnPiece(pieceId) ? `${pieceId.replace(RETURN_PIECE_RE, '')} · devolución` : pieceId;
+
 export const fmtDate = (iso: string): string => dateFmt.format(new Date(iso));
 export const fmtDateTime = (iso: string): string => dateTimeFmt.format(new Date(iso));
 

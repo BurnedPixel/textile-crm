@@ -8,6 +8,7 @@
 // Takes `db` first; no browser imports (the watcher is started from db.ts).
 
 import {
+  hasRollStock,
   type BatchDoc,
   type ProductDoc,
   type SystemConfigDoc,
@@ -166,7 +167,7 @@ export async function recomputeBatchCounters(db: DB, batchId: string): Promise<v
     if (isRoll) {
       const weight = Math.max(0, total);
       writes.push({ ...p, currentWeightKg: weight });
-      if (weight > 0.001) batchUnits += 1; // each non-empty roll = one unit
+      if (hasRollStock(weight)) batchUnits += 1; // each non-empty roll = one unit
     } else {
       batchUnits += total; // COMBO/PIECE: units summed straight from the ledger
     }

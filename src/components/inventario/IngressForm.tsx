@@ -1,17 +1,22 @@
-// Inventory ingress island. PouchDB browser-only → client:only="react".
+// Inventory ingress pane ("Tela nueva"), mounted by InventarioPage.
 // UX: Color → NM → Tipo cascade (free entry), then ROLL/COMBO/PIECE form.
 // Language: labels SPANISH, code ENGLISH.
 
 import { useState, useEffect, useRef, type KeyboardEvent } from 'react';
 import { db } from '../../lib/db';
 import { cachedUser } from '../../lib/auth';
-import { getBatches, getBatchProducts, getMovements } from '../../lib/queries';
+import { getBatches, getBatchProducts } from '../../lib/queries';
 import { ingressStock } from '../../lib/inventory';
-import { batchIdOf, norm, type ProductType, type ConditionTag, type BatchDoc, type InventoryMovementDoc } from '../../lib/types';
-import { fmtDateTime, fmtKg, fmtUnits, CONDITION_LABEL } from '../../lib/format';
+import { useLiveQuery } from '../../lib/hooks';
+import { batchIdOf, norm, type ProductType, type ConditionTag, type BatchDoc } from '../../lib/types';
+import { fmtKg, fmtUnits, CONDITION_LABEL } from '../../lib/format';
 import {
-  Button, Input, NumberInput, Select, Field, Kbd, SwatchChip, Badge, EmptyState, Combobox,
+  Button, Input, NumberInput, Select, Field, Kbd, SwatchChip, Combobox,
 } from '../ui';
+import {
+  sectionStyle, sectionTitle, colLabel, deemphasizedInput,
+  bannerExisting, bannerNew, alertOk, alertErr,
+} from './styles';
 
 // ─── CONDITION OPTIONS ────────────────────────────────────────────────────────
 
@@ -45,11 +50,6 @@ interface BatchDefaults {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
-// Strip doc-id prefix and join segments with spaces: "batch:negro:30:franela" → "negro 30 franela"
-function humanizeRef(ref: string): string {
-  return ref.replace(/^[^:]+:/, '').replace(/:/g, ' ');
-}
-
 function emptyRoll(pieceId: string, defaults: BatchDefaults): RollRow {
   return {
     pieceId,
@@ -71,6 +71,10 @@ function freshDefaults(): BatchDefaults {
   };
 }
 
+// Stable identity for "no batches yet" — the cascade effect keys on `batches`,
+// and a fresh [] every render would re-run it every render.
+const NO_BATCHES: BatchDoc[] = [];
+
 function nextPieceLabel(existingCount: number, rowIndex: number): string {
   return `R${existingCount + rowIndex + 1}`;
 }
@@ -84,30 +88,25 @@ function maxRollNumber(pieceIds: string[]): number {
   }, 0);
 }
 
-function movementToneBadge(t: string): 'ok' | 'neutral' | 'warn' {
-  if (t === 'IN') return 'ok';
-  if (t === 'ADJUST') return 'warn';
-  return 'neutral';
-}
-
-function movementTypeLabel(t: string): string {
-  if (t === 'IN') return 'Ingreso';
-  if (t === 'OUT') return 'Venta';
-  return 'Ajuste';
-}
-
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
-export default function IngressForm() {
+interface IngressFormProps {
+  /** Told after every successful ingress so the shell can refresh the ledger. */
+  onDone?: () => void;
+}
+
+export default function IngressForm({ onDone }: IngressFormProps) {
   // ─ cascade state ─
   const [color, setColor]           = useState('');
   const [nm, setNm]                 = useState('');
   const [fabricType, setFabricType] = useState('');
 
   // ─ batch data ─
-  const [batches, setBatches]   = useState<BatchDoc[]>([]);
-  const [matchedBatch, setMatchedBatch] = useState<BatchDoc | null | undefined>(undefined);
-  // undefined = not yet resolved; null = new batch; BatchDoc = existing
+  // Through useLiveQuery, which awaits dbReady: reading the batches directly on
+  // mount races the first-load seed/sync, and losing that race makes an existing
+  // article look new — the form then offers roll id R1, which already exists.
+  const { data: loadedBatches } = useLiveQuery(() => getBatches(db), []);
+  const batches = loadedBatches ?? NO_BATCHES;
 
   // ─ new-batch fields ─
   const [productType, setProductType] = useState<ProductType>('ROLL');
@@ -141,26 +140,12 @@ export default function IngressForm() {
   const [success, setSuccess]       = useState('');
   const [error, setError]           = useState('');
 
-  // ─ recent movements ─
-  const [movements, setMovements] = useState<InventoryMovementDoc[]>([]);
-
   // ─ refs for keyboard nav ─
   const colorRef      = useRef<HTMLInputElement>(null);
   const nmRef         = useRef<HTMLInputElement>(null);
   const fabricRef     = useRef<HTMLInputElement>(null);
   // Container ref for roll rows, used to focus weight inputs by row index.
   const rollsContainerRef = useRef<HTMLDivElement>(null);
-
-  // ─── Load batches once ──────────────────────────────────────────────────────
-
-  useEffect(() => {
-    getBatches(db).then(setBatches).catch(console.error);
-    refreshMovements();
-  }, []);
-
-  function refreshMovements() {
-    getMovements(db, { limit: 20, descending: true }).then(setMovements).catch(console.error);
-  }
 
   // ─── Datalist options ────────────────────────────────────────────────────────
 
@@ -174,16 +159,23 @@ export default function IngressForm() {
     ? [...new Set(batches.filter((b) => norm(b.color) === norm(color) && norm(b.nm) === norm(nm)).map((b) => b.fabricType))].sort()
     : [...new Set(batches.map((b) => b.fabricType))].sort();
 
-  // ─── Resolve matched batch whenever cascade is complete ─────────────────────
+  // ─── Which article the cascade points at ────────────────────────────────────
+  //
+  // Derived during render, not held in state: `batches` refreshes on every DB
+  // change, and a state copy would lag a sync by one render.
+  // undefined = cascade incomplete; null = new article; BatchDoc = existing.
+
+  const cascadeComplete = Boolean(color.trim() && nm.trim() && fabricType.trim());
+  const matchedBatch: BatchDoc | null | undefined = cascadeComplete
+    ? (batches.find((b) => b._id === batchIdOf(color, nm, fabricType)) ?? null)
+    : undefined;
+  // The effect below rewrites the roll rows, so it must fire when the ARTICLE
+  // changes and at no other time. Both "no article yet" and "a new article"
+  // resolve to no id, so they get their own keys.
+  const matchKey = cascadeComplete ? (matchedBatch?._id ?? 'new') : 'none';
 
   useEffect(() => {
-    if (!color.trim() || !nm.trim() || !fabricType.trim()) {
-      setMatchedBatch(undefined);
-      return;
-    }
-    const id = batchIdOf(color, nm, fabricType);
-    const found = batches.find((b) => b._id === id) ?? null;
-    setMatchedBatch(found);
+    const found = matchedBatch ?? null;
 
     // Pre-fill rolls with next pieceId continuing past every roll ever created
     // (including sold-out ones), read from the actual product docs — not
@@ -239,8 +231,13 @@ export default function IngressForm() {
           .catch(console.error);
       }
     }
+    // Keyed on WHICH article is resolved, never on the `batches` array identity.
+    // useLiveQuery hands back a fresh array on every DB change — including one
+    // arriving over sync from another device — and this effect calls setRolls,
+    // so an array-identity dep wipes the weights the operator is typing every
+    // time anyone, anywhere, writes a document.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [color, nm, fabricType, batches]);
+  }, [matchKey]);
 
   // ─── "/" hotkey focuses color ────────────────────────────────────────────────
 
@@ -417,10 +414,7 @@ export default function IngressForm() {
       setLotNumber(''); // the next arrival is a different lot — never carry it over
       setUnits('');
       // Keep unit price/condition for COMBO/PIECE rapid re-entry too (same as ROLL).
-      // Refresh data.
-      const updated = await getBatches(db);
-      setBatches(updated);
-      refreshMovements();
+      onDone?.(); // batches refresh themselves — useLiveQuery watches the DB
     } catch (err) {
       setError((err as Error).message ?? 'Error desconocido.');
     } finally {
@@ -432,7 +426,6 @@ export default function IngressForm() {
     setColor('');
     setNm('');
     setFabricType('');
-    setMatchedBatch(undefined);
     setProductType('ROLL');
     setLocation('');
     setBatchDefaults(freshDefaults());
@@ -448,23 +441,16 @@ export default function IngressForm() {
     colorRef.current?.focus();
   }
 
-  const cascadeComplete = color.trim() && nm.trim() && fabricType.trim();
-
   // ─── RENDER ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ maxWidth: 860, margin: '0 auto' }}>
+    <div>
 
-      {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
-        <div>
-          <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: 22, fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
-            Inventario
-          </h1>
-          <p className="kbd-hints" style={{ fontFamily: 'var(--font-sans)', fontSize: 13, color: 'var(--color-thread)', margin: '4px 0 0' }}>
-            Presiona <Kbd>/</Kbd> para enfocar Color · <Kbd>Enter</Kbd> avanza al siguiente campo
-          </p>
-        </div>
+      {/* Pane header — the page title and the tabs live in InventarioPage. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20 }}>
+        <p className="kbd-hints" style={{ fontFamily: 'var(--font-sans)', fontSize: 13, color: 'var(--color-thread)', margin: 0 }}>
+          Presiona <Kbd>/</Kbd> para enfocar Color · <Kbd>Enter</Kbd> avanza al siguiente campo
+        </p>
         <Button variant="ghost" size="md" onClick={handleFullReset} type="button">
           Limpiar todo
         </Button>
@@ -815,148 +801,6 @@ export default function IngressForm() {
         )}
 
       </form>
-
-      {/* ─── STITCH DIVIDER ─────────────────────────────────────────── */}
-      <div aria-hidden="true" style={stitchDivider} />
-
-      {/* ─── RECENT MOVEMENTS ───────────────────────────────────────── */}
-      <section style={{ marginTop: 32 }}>
-        <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-thread)', marginBottom: 16 }}>
-          Movimientos recientes
-        </h2>
-
-        {movements.length === 0 ? (
-          <EmptyState title="Sin movimientos registrados aún" />
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {movements.map((m) => (
-              <div key={m._id} className="movement-row" style={movementRow}>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--color-thread)', whiteSpace: 'nowrap' }}>
-                  {fmtDateTime(m.date)}
-                </span>
-                <Badge tone={movementToneBadge(m.movementType)}>
-                  {movementTypeLabel(m.movementType)}
-                </Badge>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--color-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {humanizeRef(m.referenceId)}
-                </span>
-                <span style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-thread)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {m.reason}
-                </span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--color-thread)', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                  {m.lineItems.length} {m.lineItems.length === 1 ? 'línea' : 'líneas'} ·{' '}
-                  {m.lineItems[0]?.unitOfMeasure === 'Kg'
-                    ? fmtKg(m.lineItems.reduce((s, l) => s + Math.abs(l.quantityChanged), 0))
-                    : fmtUnits(m.lineItems.reduce((s, l) => s + Math.abs(l.quantityChanged), 0))
-                  }
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
     </div>
   );
 }
-
-// ─── STYLES (inline — no new CSS files) ─────────────────────────────────────
-
-const sectionStyle: React.CSSProperties = {
-  backgroundColor: 'var(--color-cloth)',
-  border: '1px dashed var(--color-thread)',
-  borderRadius: 8,
-  padding: '20px 24px',
-  marginBottom: 16,
-};
-
-const sectionTitle: React.CSSProperties = {
-  fontFamily: 'var(--font-sans)',
-  fontSize: 12,
-  fontWeight: 700,
-  letterSpacing: '0.07em',
-  textTransform: 'uppercase',
-  color: 'var(--color-thread)',
-  marginBottom: 16,
-  marginTop: 0,
-};
-
-const colLabel: React.CSSProperties = {
-  fontFamily: 'var(--font-sans)',
-  fontSize: 11,
-  fontWeight: 600,
-  letterSpacing: '0.05em',
-  textTransform: 'uppercase',
-  color: 'var(--color-thread)',
-};
-
-// De-emphasized style for per-row cost/price/condition overrides.
-const deemphasizedInput: React.CSSProperties = {
-  fontSize: 12,
-  color: 'var(--color-thread)',
-  minHeight: 36,
-};
-
-const bannerExisting: React.CSSProperties = {
-  marginTop: 14,
-  padding: '10px 14px',
-  borderRadius: 6,
-  backgroundColor: 'rgba(62,107,58,0.08)',
-  border: '1px solid rgba(62,107,58,0.25)',
-  fontFamily: 'var(--font-sans)',
-  fontSize: 13,
-  color: 'var(--color-ok)',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-};
-
-const bannerNew: React.CSSProperties = {
-  marginTop: 14,
-  padding: '10px 14px',
-  borderRadius: 6,
-  backgroundColor: 'rgba(185,119,24,0.08)',
-  border: '1px solid rgba(185,119,24,0.25)',
-  fontFamily: 'var(--font-sans)',
-  fontSize: 13,
-  color: 'var(--color-warn)',
-};
-
-const alertOk: React.CSSProperties = {
-  margin: '0 0 16px',
-  padding: '12px 16px',
-  borderRadius: 6,
-  backgroundColor: 'rgba(62,107,58,0.08)',
-  border: '1px solid rgba(62,107,58,0.25)',
-  fontFamily: 'var(--font-sans)',
-  fontSize: 14,
-  color: 'var(--color-ok)',
-  fontWeight: 500,
-};
-
-const alertErr: React.CSSProperties = {
-  margin: '0 0 16px',
-  padding: '12px 16px',
-  borderRadius: 6,
-  backgroundColor: 'rgba(163,46,46,0.08)',
-  border: '1px solid rgba(163,46,46,0.25)',
-  fontFamily: 'var(--font-sans)',
-  fontSize: 14,
-  color: 'var(--color-danger)',
-  fontWeight: 500,
-};
-
-const stitchDivider: React.CSSProperties = {
-  marginTop: 40,
-  height: 2,
-  backgroundImage: 'repeating-linear-gradient(to right, var(--color-thread) 0px, var(--color-thread) 8px, transparent 8px, transparent 14px)',
-  opacity: 0.4,
-};
-
-// Grid shape lives in .movement-row (global.css) so phones can reflow it
-const movementRow: React.CSSProperties = {
-  padding: '10px 14px',
-  borderRadius: 6,
-  backgroundColor: 'var(--color-cloth)',
-  border: '1px dashed var(--color-thread)',
-  marginBottom: 4,
-};
