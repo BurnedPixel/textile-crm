@@ -14,7 +14,10 @@ import {
 } from 'react';
 import { db, cartDb, dbReady } from '../../lib/db';
 import { cachedUser } from '../../lib/auth';
-import { getStockedBatches, getClients, getConfig, computePaymentStatus } from '../../lib/queries';
+import {
+  getStockedBatches, getClients, getConfig, getFiscalConfig, computePaymentStatus,
+  saleTaxes, IVA_RATE, IGTF_RATE,
+} from '../../lib/queries';
 import {
   getCart,
   addLine,
@@ -27,6 +30,7 @@ import {
 import { checkout } from '../../lib/checkout';
 import { saveClient } from '../../lib/queries';
 import { useLiveQuery } from '../../lib/hooks';
+import NotaEntrega from './NotaEntrega';
 import { isPique, suggestedCombos, companionCandidates, COMBOS_PER_KG_PIQUE } from '../../lib/companions';
 import {
   round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot, fmtPiece,
@@ -34,7 +38,8 @@ import {
 } from '../../lib/format';
 import {
   UNIT_FOR, clientIdOf, FIELD_MAX, hasRollStock, validateDocumentId, validateName, validatePhone,
-  type BatchDoc, type ProductDoc, type CartLineItem, type ClientDoc, type CartDoc, type PaymentStatus,
+  type BatchDoc, type ProductDoc, type CartLineItem, type ClientDoc, type CartDoc,
+  type PaymentStatus, type SaleDoc,
 } from '../../lib/types';
 import {
   Button,
@@ -320,6 +325,21 @@ function lineDescription(batch: BatchDoc, roll?: ProductDoc): string {
     : head;
 }
 
+/** One line of the tax breakdown. Same shape in the cart column and the panel. */
+function TaxRow({ label, usd, hint }: { label: string; usd: number; hint?: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px' }}>
+      <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>
+        {label}
+        {hint && <em style={{ fontStyle: 'normal', opacity: 0.75 }}> — {hint}</em>}
+      </span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontVariantNumeric: 'tabular-nums', color: 'var(--color-ink)' }}>
+        {fmtUsd(usd)}
+      </span>
+    </div>
+  );
+}
+
 // ── main component ────────────────────────────────────────────────────────────
 
 type View = 'terminal' | 'payment' | 'success';
@@ -477,10 +497,14 @@ export default function SaleTerminal() {
   const [payments, setPayments] = useState({ paidUsdCash: '', paidUsdTransfer: '', paidBs: '' });
   const [checkoutErr, setCheckoutErr] = useState<string | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [lastSale, setLastSale] = useState<{ totalUsd: number; status: PaymentStatus } | null>(null);
+  // The whole sale, plus the client as it was at that moment. clearCart() runs
+  // on the very next line and nulls cart.clientId, and `selectedClient` derives
+  // from it — so the nota de entrega would have no one to address.
+  const [lastSale, setLastSale] = useState<{ sale: SaleDoc; client: ClientDoc | null } | null>(null);
 
   // ── config rate (for display Bs) ──
   const { data: config } = useLiveQuery((d) => getConfig(d));
+  const { data: fiscal } = useLiveQuery((d) => getFiscalConfig(d));
   const rate = config?.currentDailyRateBCV ?? 0;
 
   // ── total ──
@@ -501,19 +525,43 @@ export default function SaleTerminal() {
   // design — no naming rule has to hold, so the picker cannot ship dead.
   const companionOptions = companion ? companionCandidates(stocked, companion.color) : [];
 
-  // ── payment status preview ──
+  // ── tax + payment status preview ──
+  //
+  // «En libros» IS «con factura» (client, casilla 12), so one flag carries both
+  // taxes. The rates here are the same constants checkout will lock onto the
+  // sale, and the arithmetic is the same pure function — the terminal must not
+  // open a second copy of the money rules.
+  const isOnTheBooks = cart?.isOnTheBooks ?? false;
+  const ivaRate = isOnTheBooks ? IVA_RATE : 0;
+  const igtfRate = isOnTheBooks ? IGTF_RATE : 0;
+
   const paidCash = parseFloat(payments.paidUsdCash) || 0;
   const paidTransfer = parseFloat(payments.paidUsdTransfer) || 0;
   const paidBsNum = parseFloat(payments.paidBs) || 0;
-  const previewStatus: PaymentStatus = computePaymentStatus(
+
+  // IGTF depends on how much of the bill is settled in divisas, so it only
+  // exists once a split has been typed. Recomputed live as the seller types.
+  const taxes = saleTaxes({
     totalUsd,
+    ivaRate,
+    igtfRate,
+    paidUsdCash: paidCash,
+    paidUsdTransfer: paidTransfer,
+  });
+  // What the cart column may show: IGTF is not knowable before the payment
+  // panel, and showing a "total" there that the payment panel then contradicts
+  // is worse than showing one line fewer.
+  const cartTotalUsd = round2(taxes.baseUsd + taxes.ivaUsd);
+
+  const previewStatus: PaymentStatus = computePaymentStatus(
+    taxes.grandTotalUsd,
     paidCash,
     paidTransfer,
     paidBsNum,
     rate,
   );
   const paidTotalUsd = paidCash + paidTransfer + (rate > 0 ? paidBsNum / rate : 0);
-  const remainingUsd = Math.max(0, totalUsd - paidTotalUsd);
+  const remainingUsd = Math.max(0, round2(taxes.grandTotalUsd - paidTotalUsd));
 
   // ── selection helpers ──
   function resetSelection(): void {
@@ -852,7 +900,7 @@ export default function SaleTerminal() {
         lines: cart.lines,
         payments: { paidUsdCash: paidCash, paidUsdTransfer: paidTransfer, paidBs: paidBsNum },
       });
-      setLastSale({ totalUsd: sale.totalUsd, status: sale.paymentStatus });
+      setLastSale({ sale, client: selectedClient });
       setCompanion(null);
       setCompanionErr(null);
       const fresh = await clearCart(cartDb);
@@ -906,18 +954,30 @@ export default function SaleTerminal() {
   // ── SUCCESS VIEW ──────────────────────────────────────────────────────────
   if (view === 'success' && lastSale) {
     return (
-      <div style={{ maxWidth: '480px', margin: '60px auto', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        <div style={{ fontSize: '40px', lineHeight: 1 }}>✓</div>
-        <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '22px', fontWeight: 700, color: 'var(--color-ink)', margin: 0 }}>
-          Venta registrada
-        </h2>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
-          <Money usd={lastSale.totalUsd} rate={rate || undefined} />
-          <Badge tone={PAYMENT_TONE[lastSale.status]}>{PAYMENT_LABEL[lastSale.status]}</Badge>
+      <div style={{ maxWidth: '620px', margin: '40px auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div className="no-print" style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ fontSize: '40px', lineHeight: 1 }}>✓</div>
+          <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '22px', fontWeight: 700, color: 'var(--color-ink)', margin: 0 }}>
+            Venta registrada
+          </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
+            <Money usd={saleTaxes(lastSale.sale).grandTotalUsd} rate={rate || undefined} />
+            <Badge tone={PAYMENT_TONE[lastSale.sale.paymentStatus]}>
+              {PAYMENT_LABEL[lastSale.sale.paymentStatus]}
+            </Badge>
+          </div>
         </div>
-        <Button size="lg" onClick={handleNewSale}>
-          Nueva venta <Kbd>N</Kbd>
-        </Button>
+
+        <NotaEntrega sale={lastSale.sale} client={lastSale.client} fiscal={fiscal ?? null} />
+
+        <div className="no-print" style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <Button variant="ghost" size="lg" onClick={() => window.print()}>
+            Imprimir nota
+          </Button>
+          <Button size="lg" onClick={handleNewSale}>
+            Nueva venta <Kbd>N</Kbd>
+          </Button>
+        </div>
       </div>
     );
   }
@@ -935,9 +995,27 @@ export default function SaleTerminal() {
           </h2>
         </div>
 
-        <div style={{ padding: '16px', border: '1px dashed var(--color-thread)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-thread)' }}>Total</span>
-          <Money usd={totalUsd} rate={rate || undefined} />
+        {/* A sale that is not «en libros» carries no tax, so it gets the plain
+            total it always had — a breakdown of one line repeated twice reads
+            as though something were being added. */}
+        <div data-tax-panel style={{ padding: '16px', border: '1px dashed var(--color-thread)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {ivaRate > 0 && (
+            <>
+              <TaxRow label="Base imponible" usd={taxes.baseUsd} />
+              <TaxRow label={`IVA ${(ivaRate * 100).toFixed(0)} %`} usd={taxes.ivaUsd} />
+              <TaxRow
+                label={`IGTF ${(igtfRate * 100).toFixed(0)} % · divisas`}
+                usd={taxes.igtfUsd}
+                hint={taxes.igtfUsd === 0 ? 'se calcula al indicar el pago en divisas' : undefined}
+              />
+            </>
+          )}
+          <div style={{ borderTop: ivaRate > 0 ? '1px dashed var(--color-thread)' : 'none', paddingTop: ivaRate > 0 ? '8px' : 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-ink)' }}>
+              Total
+            </span>
+            <Money usd={taxes.grandTotalUsd} rate={rate || undefined} />
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -1224,13 +1302,23 @@ export default function SaleTerminal() {
           </div>
         )}
 
-        {/* Total */}
+        {/* Total — IGTF is not knowable until the split is typed, so the cart
+            column stops at base + IVA rather than showing a figure the payment
+            panel would then contradict. */}
         {(cart?.lines.length ?? 0) > 0 && (
-          <div style={{ padding: '12px 16px', borderTop: '2px dashed var(--color-thread)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 700, color: 'var(--color-thread)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Total
-            </span>
-            <Money usd={totalUsd} rate={rate || undefined} />
+          <div style={{ padding: '12px 16px', borderTop: '2px dashed var(--color-thread)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {ivaRate > 0 && (
+              <>
+                <TaxRow label="Base imponible" usd={taxes.baseUsd} />
+                <TaxRow label={`IVA ${(ivaRate * 100).toFixed(0)} %`} usd={taxes.ivaUsd} />
+              </>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 700, color: 'var(--color-thread)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                {ivaRate > 0 ? 'Total s/ IGTF' : 'Total'}
+              </span>
+              <Money usd={cartTotalUsd} rate={rate || undefined} />
+            </div>
           </div>
         )}
 
@@ -1397,7 +1485,7 @@ export default function SaleTerminal() {
         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', userSelect: 'none' }}>
           <input
             type="checkbox"
-            checked={cart?.isOnTheBooks ?? true}
+            checked={isOnTheBooks}
             onChange={(e) => void handleSetOnTheBooks(e.target.checked)}
             style={{ width: '18px', height: '18px', accentColor: 'var(--color-dye)', cursor: 'pointer' }}
           />

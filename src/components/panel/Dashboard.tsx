@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { db, dbReady, onDbChange } from '../../lib/db';
 import { getConfig, getStockedBatches, getSales, getClients } from '../../lib/queries';
-import { usdPaid } from '../../lib/queries';
+import { usdPaid, grandTotalUsd } from '../../lib/queries';
 import { getPayments, paymentsBySale, recordPayment, saleBalance } from '../../lib/payments';
 import { cachedUser } from '../../lib/auth';
 import {
@@ -513,7 +513,7 @@ function SidePanel({ recentSales, pendingSales, paymentsFor, clientMap, config, 
                   >
                     {fmtDateTime(sale.date)}
                   </span>
-                  <Money usd={sale.totalUsd} rate={rate} />
+                  <Money usd={grandTotalUsd(sale)} rate={rate} />
                 </div>
               </div>
             ))}
@@ -886,9 +886,11 @@ export default function Dashboard() {
 
   // Stat: Ventas de hoy
   const todayCount = todaySales.length;
-  const todayUsd = round2(todaySales.reduce((s, sale) => s + sale.totalUsd, 0));
+  // Grand total, like every other money figure: the pre-tax total is what the
+  // document stores, never what the client owes.
+  const todayUsd = round2(todaySales.reduce((s, sale) => s + grandTotalUsd(sale), 0));
   // Sum each sale's Bs using its own locked rate (immutability rule)
-  const todayBs = todaySales.reduce((s, sale) => s + toBs(sale.totalUsd, sale.exchangeRateBCV), 0);
+  const todayBs = todaySales.reduce((s, sale) => s + toBs(grandTotalUsd(sale), sale.exchangeRateBCV), 0);
 
   // Stat: Por cobrar — derived from the ledger, not sale.paymentStatus.
   const receivableUsd = round2(

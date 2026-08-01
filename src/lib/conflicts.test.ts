@@ -38,7 +38,7 @@ describe('recomputeBatchCounters — ledger is source of truth', () => {
       transactionId: 'tx',
       createdAt: new Date().toISOString(),
       clientId: null,
-      isOnTheBooks: true,
+      isOnTheBooks: false,
       exchangeRateBCV: RATE,
       creditTerms: null,
       operatorId: 'op',

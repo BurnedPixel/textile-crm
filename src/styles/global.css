@@ -316,3 +316,25 @@
     .sync-dot-label { flex-direction: row !important; gap: 5px !important; }
   }
 }
+
+/* ── Print: the nota de entrega, and nothing else ─────────────────────────────
+   Only one page prints anything today (the /venta success view). Rather than
+   listing chrome to hide — the rail, the sync bar, the buttons, whatever gets
+   added next — everything is hidden and the nota is made visible again. New
+   chrome then stays out of the printout by default instead of by memory.
+
+   `visibility` rather than `display`: the nota lives inside the island's
+   layout, and display:none on an ancestor would take it with it. */
+@media print {
+  body { background: #fff; }
+  body * { visibility: hidden; }
+  .nota-entrega, .nota-entrega * { visibility: visible; }
+  .nota-entrega {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    border: none;
+    padding: 0;
+  }
+  .no-print { display: none !important; }
+}

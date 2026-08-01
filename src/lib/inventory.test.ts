@@ -40,7 +40,7 @@ describe('ingressStock — fresh pieceId after sellout creates a new roll', () =
     // Sell R1 to zero → currentUnits drops from 2 to 1.
     await checkout(db, {
       transactionId: 'tx', createdAt: new Date().toISOString(), clientId: null,
-      isOnTheBooks: true, exchangeRateBCV: RATE, creditTerms: null, operatorId: 'op',
+      isOnTheBooks: false, exchangeRateBCV: RATE, creditTerms: null, operatorId: 'op',
       lines: [rollLine(bid, 'R1', 20)],
       payments: { paidUsdCash: 160, paidUsdTransfer: 0, paidBs: 0 },
     });
@@ -171,7 +171,7 @@ describe('ingressStock — the batch roll count follows empty↔non-empty transi
     await ingressStock(db, { ...ROLL_ARTICLE, rolls: rollsOf(['R1', 20]) });
     await checkout(db, {
       transactionId: 'tx-empty', createdAt: new Date().toISOString(), clientId: null,
-      isOnTheBooks: true, exchangeRateBCV: RATE, creditTerms: null, operatorId: 'op',
+      isOnTheBooks: false, exchangeRateBCV: RATE, creditTerms: null, operatorId: 'op',
       lines: [rollLine(bid, 'R1', 20)],
       payments: { paidUsdCash: 160, paidUsdTransfer: 0, paidBs: 0 },
     });
@@ -254,7 +254,7 @@ describe('returnStock — a returned roll becomes its own document', () => {
     const { db, bid } = await setup();
     await checkout(db, {
       transactionId: 'tx-sold', createdAt: new Date().toISOString(), clientId: null,
-      isOnTheBooks: true, exchangeRateBCV: RATE, creditTerms: null, operatorId: 'op',
+      isOnTheBooks: false, exchangeRateBCV: RATE, creditTerms: null, operatorId: 'op',
       lines: [rollLine(bid, 'R1', 20)],
       payments: { paidUsdCash: 160, paidUsdTransfer: 0, paidBs: 0 },
     });
