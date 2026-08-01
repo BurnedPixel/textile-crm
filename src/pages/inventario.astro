@@ -1,8 +1,8 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import IngressForm from '../components/inventario/IngressForm.tsx';
+import InventarioPage from '../components/inventario/InventarioPage.tsx';
 ---
 
 <Layout title="Inventario" active="/inventario">
-  <IngressForm client:only="react" />
+  <InventarioPage client:only="react" />
 </Layout>

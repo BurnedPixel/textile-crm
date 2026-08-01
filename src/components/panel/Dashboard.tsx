@@ -24,6 +24,7 @@ import {
   NumberInput,
   normStr,
 } from '../ui';
+import { hasRollStock } from '../../lib/types';
 import type { SaleDoc, PaymentDoc, ClientDoc, BatchDoc, ProductDoc, SystemConfigDoc } from '../../lib/types';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -212,7 +213,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
   function stockLabel(batch: BatchDoc, products: ProductDoc[]): string {
     if (batch.productType === 'ROLL') {
       const totalKg = products.reduce((s, p) => s + p.currentWeightKg, 0);
-      const rolls = products.filter((p) => p.currentWeightKg > 0).length;
+      const rolls = products.filter((p) => hasRollStock(p.currentWeightKg)).length;
       return `${rolls} rollo${rolls !== 1 ? 's' : ''} · ${totalKg.toFixed(2)} kg`;
     }
     return `${batch.currentUnits} ud`;

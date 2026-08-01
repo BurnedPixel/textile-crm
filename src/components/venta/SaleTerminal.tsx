@@ -28,11 +28,11 @@ import { checkout } from '../../lib/checkout';
 import { saveClient } from '../../lib/queries';
 import { useLiveQuery } from '../../lib/hooks';
 import {
-  round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot,
+  round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot, fmtPiece,
   PAYMENT_LABEL, PAYMENT_TONE, CONDITION_SHORT, CONDITION_TONE,
 } from '../../lib/format';
 import {
-  UNIT_FOR, clientIdOf, FIELD_MAX, validateDocumentId, validateName, validatePhone,
+  UNIT_FOR, clientIdOf, FIELD_MAX, hasRollStock, validateDocumentId, validateName, validatePhone,
   type BatchDoc, type ProductDoc, type CartLineItem, type ClientDoc, type CartDoc, type PaymentStatus,
 } from '../../lib/types';
 import {
@@ -368,7 +368,7 @@ export default function SaleTerminal() {
 
   // In-stock rolls for ROLL batch
   const stockedRolls = matchedEntry?.batch.productType === 'ROLL'
-    ? (matchedEntry.products.filter((p) => p.currentWeightKg > 0.001) ?? [])
+    ? (matchedEntry.products.filter((p) => hasRollStock(p.currentWeightKg)) ?? [])
     : [];
 
   // ── quantity + price input ──
@@ -604,10 +604,12 @@ export default function SaleTerminal() {
       productId,
       batchId: batch._id,
       // Frozen into the immutable sale — the lot goes in NOW or that history is
-      // unrecoverable. (pieceId is already "R2"; the old template prepended a second R.)
+      // unrecoverable. (pieceId is already "R2"; the old template prepended a second R.
+      // fmtPiece renders a returned roll as "R2 · devolución" instead of its raw
+      // collision-proof id — and this string is frozen, so it has to be right here.)
       description: `${batch.color} · NM ${batch.nm} · ${batch.fabricType}${
         batch.productType === 'ROLL'
-          ? ` · ${productDoc?.pieceId ?? ''} · ${fmtLot(productDoc?.lotNumber)}`
+          ? ` · ${productDoc ? fmtPiece(productDoc.pieceId) : ''} · ${fmtLot(productDoc?.lotNumber)}`
           : ''
       }`,
       quantity: qtyNum,
@@ -1403,7 +1405,7 @@ function BatchProductZone({
                   }}
                 >
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-ink)', minWidth: '64px' }}>{fmtKg(roll.currentWeightKg)}</span>
-                  <span style={{ color: 'var(--color-thread)', fontSize: '11px', textTransform: 'uppercase' }}>{roll.pieceId}</span>
+                  <span style={{ color: 'var(--color-thread)', fontSize: '11px', textTransform: 'uppercase' }}>{fmtPiece(roll.pieceId)}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-thread)' }}>{fmtLot(roll.lotNumber)}</span>
                   <Badge tone={CONDITION_TONE[roll.conditionTag]}>{CONDITION_SHORT[roll.conditionTag]}</Badge>
                   {inCart

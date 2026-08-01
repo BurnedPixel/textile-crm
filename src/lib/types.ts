@@ -16,6 +16,21 @@ export const UNIT_FOR: Record<ProductType, UnitOfMeasure> = {
   PIECE: 'Units',
 };
 
+/**
+ * A roll at or below this weight counts as consumed: it stops being one of the
+ * batch's `currentUnits`. Guards the float dust left by repeated subtraction.
+ *
+ * ONE definition on purpose — checkout (a roll hitting empty), ingress (a roll
+ * coming back off empty), the conflict recompute and every "rolls with stock"
+ * list all have to agree, or the cached counter and the ledger drift apart with
+ * nothing looking wrong on screen.
+ */
+export const ROLL_EMPTY_KG = 0.001;
+
+/** A roll still holding sellable weight — the counted-in-`currentUnits` rule. */
+export const hasRollStock = (currentWeightKg: number): boolean =>
+  currentWeightKg > ROLL_EMPTY_KG;
+
 interface Doc {
   _id: string;
   _rev?: string;
