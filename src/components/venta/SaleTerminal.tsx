@@ -31,7 +31,10 @@ import { checkout } from '../../lib/checkout';
 import { saveClient } from '../../lib/queries';
 import { useLiveQuery } from '../../lib/hooks';
 import NotaEntrega from './NotaEntrega';
-import { isPique, suggestedCombos, companionCandidates, COMBOS_PER_KG_PIQUE } from '../../lib/companions';
+import {
+  suggestedCombos, suggestedKg, companionCandidates, ribbRollCandidates, companionRuleFor,
+  type CompanionRule,
+} from '../../lib/companions';
 import {
   round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot, fmtLotsLabel, fmtPiece,
   PAYMENT_LABEL, PAYMENT_TONE, CONDITION_SHORT, CONDITION_TONE,
@@ -360,7 +363,7 @@ export default function SaleTerminal() {
   // clearCart rebuild it from an explicit field list, so a flag parked there is
   // silently dropped on the next sale.
   const [companion, setCompanion] = useState<
-    { color: string; kg: number; qty: string; pick: string | null } | null
+    { rule: CompanionRule; color: string; kg: number; qty: string; pick: string | null } | null
   >(null);
   const [companionErr, setCompanionErr] = useState<string | null>(null);
 
@@ -521,9 +524,13 @@ export default function SaleTerminal() {
     inCartQty.set(l.productId, (inCartQty.get(l.productId) ?? 0) + l.quantity);
   }
 
-  // Compañero candidates: stocked unit articles, this colour first. Tolerant by
-  // design — no naming rule has to hold, so the picker cannot ship dead.
-  const companionOptions = companion ? companionCandidates(stocked, companion.color) : [];
+  // Compañero candidates: stocked unit articles or ribb rolls, this colour
+  // first. Tolerant by design — no naming rule has to hold, so the picker
+  // cannot ship dead.
+  const companionOptions = companion?.rule.companion === 'combos' ? companionCandidates(stocked, companion.color) : [];
+  const ribbOptions = companion?.rule.companion === 'ribb'
+    ? ribbRollCandidates(stocked, companion.color, inCartRollIds)
+    : [];
 
   // ── tax + payment status preview ──
   //
@@ -697,11 +704,14 @@ export default function SaleTerminal() {
     setCartErr(null);
     if (!matchedEntry) return;
     const { batch } = matchedEntry;
-    const qtyNum = parseFloat(qty);
-    const priceNum = parseFloat(unitPrice);
+    // Number(), never parseFloat, and finiteness alongside > 0: parseFloat
+    // reads '1e999' as Infinity and Infinity > 0 is true — one Infinity in a
+    // cart line renders the total as ∞ until the line is removed.
+    const qtyNum = Number(qty);
+    const priceNum = Number(unitPrice);
 
-    if (!(qtyNum > 0)) { setCartErr('Ingrese una cantidad válida.'); return; }
-    if (!(priceNum > 0)) { setCartErr('Ingrese un precio válido.'); return; }
+    if (!Number.isFinite(qtyNum) || qtyNum <= 0) { setCartErr('Ingrese una cantidad válida.'); return; }
+    if (!Number.isFinite(priceNum) || priceNum <= 0) { setCartErr('Ingrese un precio válido.'); return; }
 
     if (batch.productType !== 'ROLL') {
       const problem = await addUnitsLine(matchedEntry, qtyNum, priceNum);
@@ -733,17 +743,21 @@ export default function SaleTerminal() {
     try {
       const updated = await addLine(cartDb, line);
       setCart(updated);
-      // Clients who buy piqué normally buy the matching combos with it. Offer,
-      // never add — and offer AFTER the line lands, so a failed add suggests
-      // nothing. The panel lives out here, not in BatchProductZone, which
-      // resetSelection unmounts on the very next line.
-      if (isPique(batch.fabricType)) {
+      // Clients who buy piqué normally buy the matching combos with it, and
+      // jersey/fleece buyers normally buy ribb with it. Offer, never add —
+      // and offer AFTER the line lands, so a failed add suggests nothing. The
+      // panel lives out here, not in BatchProductZone, which resetSelection
+      // unmounts on the very next line.
+      const rule = companionRuleFor(batch.fabricType);
+      if (rule) {
         setCompanion({
+          rule,
           color: batch.color,
           kg: qtyNum,
-          qty: String(suggestedCombos(qtyNum)),
+          qty: String(rule.companion === 'combos' ? suggestedCombos(qtyNum, rule.ratio) : suggestedKg(qtyNum, rule.ratio)),
           pick: null,
         });
+        setCompanionErr(null); // a stale error from the previous suggestion must not survive under the new one
       }
       resetSelection();
     } catch (err) {
@@ -751,9 +765,40 @@ export default function SaleTerminal() {
     }
   }
 
-  /** Add the compañero combos the seller settled on. Zero means "no thanks". */
+  /** Add the compañero (combos or ribb) the seller settled on. Zero means "no thanks". */
   async function handleAddCompanion(): Promise<void> {
     if (!companion) return;
+
+    if (companion.rule.companion === 'ribb') {
+      const cand = ribbOptions.find((r) => r.roll._id === companion.pick);
+      if (!cand) { setCompanionErr('Seleccione el rollo de ribb.'); return; }
+      const kgNum = Number(companion.qty); // Number(), never parseFloat — see types.ts assertAmount
+      if (!Number.isFinite(kgNum) || kgNum <= 0) { setCompanion(null); setCompanionErr(null); return; }
+      if (kgNum > cand.roll.currentWeightKg) {
+        setCompanionErr(`Solo quedan ${fmtKg(cand.roll.currentWeightKg)} en ese rollo.`);
+        return;
+      }
+      const price = cand.roll.salePriceUsd;
+      if (!(price > 0)) { setCompanionErr('Ese rollo no tiene precio de venta.'); return; }
+      try {
+        const updated = await addLine(cartDb, {
+          productId: cand.roll._id,
+          batchId: cand.batch._id,
+          description: lineDescription(cand.batch, cand.roll),
+          quantity: kgNum,
+          unitOfMeasure: UNIT_FOR[cand.batch.productType],
+          unitPriceAtSale: price,
+          lineSubtotalUsd: round2(kgNum * price),
+        });
+        setCart(updated);
+        setCompanion(null);
+        setCompanionErr(null);
+      } catch (err) {
+        setCompanionErr((err as Error).message);
+      }
+      return;
+    }
+
     const entry = companionOptions.find((e) => e.batch._id === companion.pick);
     if (!entry) { setCompanionErr('Seleccione el artículo de combos.'); return; }
     const qtyNum = parseInt(companion.qty, 10);
@@ -1198,77 +1243,116 @@ export default function SaleTerminal() {
               Compañeros
             </div>
             <div style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>
-              {fmtKg(companion.kg)} de piqué × {COMBOS_PER_KG_PIQUE} ={' '}
-              <strong style={{ color: 'var(--color-ink)' }}>
-                {suggestedCombos(companion.kg)} combos
-              </strong>
+              {companion.rule.companion === 'combos' ? (
+                <>
+                  {fmtKg(companion.kg)} de {companion.rule.label} × {companion.rule.ratio.toLocaleString('es-VE')} ={' '}
+                  <strong style={{ color: 'var(--color-ink)' }}>
+                    {suggestedCombos(companion.kg, companion.rule.ratio)} combos
+                  </strong>
+                </>
+              ) : (
+                <>
+                  {fmtKg(companion.kg)} de {companion.rule.label} × {Math.round(companion.rule.ratio * 100)}% ={' '}
+                  <strong style={{ color: 'var(--color-ink)' }}>
+                    {fmtKg(suggestedKg(companion.kg, companion.rule.ratio))} de ribb
+                  </strong>
+                </>
+              )}
             </div>
 
-            {companionOptions.length === 0 ? (
-              <div style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>
-                No hay combos con stock para ofrecer.
-              </div>
-            ) : (
-              <>
-                <div role="listbox" aria-label="Artículos de combos" style={companionList}>
-                  {companionOptions.map((e) => {
-                    const active = e.batch._id === companion.pick;
-                    return (
-                      <div
-                        key={e.batch._id}
-                        role="option"
-                        aria-selected={active}
-                        onClick={() => { setCompanion({ ...companion, pick: e.batch._id }); setCompanionErr(null); }}
-                        style={{
-                          padding: '7px 10px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          fontFamily: 'var(--font-sans)',
-                          fontSize: '12px',
-                          backgroundColor: active ? 'rgba(181,23,92,0.10)' : 'transparent',
-                          borderLeft: active ? '3px solid var(--color-dye)' : '3px solid transparent',
-                        }}
-                      >
-                        <SwatchChip color={e.batch.color} size="sm" />
-                        <span style={{ color: 'var(--color-ink)' }}>
-                          NM {e.batch.nm} · {e.batch.fabricType}
-                        </span>
-                        <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', color: 'var(--color-thread)' }}>
-                          {fmtUnits(e.batch.currentUnits)} · {fmtUsd(e.batch.currentUnits > 0 ? (e.products[0]?.salePriceUsd ?? 0) : 0)}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
+            {(() => {
+              const options = companion.rule.companion === 'ribb'
+                ? ribbOptions.map((r) => ({
+                    id: r.roll._id,
+                    color: r.batch.color,
+                    label: `NM ${r.batch.nm} · ${r.batch.fabricType} · ${fmtPiece(r.roll.pieceId)}`,
+                    right: `${fmtKg(r.roll.currentWeightKg)} · ${fmtUsd(r.roll.salePriceUsd)}`,
+                  }))
+                : companionOptions.map((e) => ({
+                    id: e.batch._id,
+                    color: e.batch.color,
+                    label: `NM ${e.batch.nm} · ${e.batch.fabricType}`,
+                    right: `${fmtUnits(e.batch.currentUnits)} · ${fmtUsd(e.products[0]?.salePriceUsd ?? 0)}`,
+                  }));
+              const emptyMsg = companion.rule.companion === 'ribb'
+                ? 'No hay ribb con stock para ofrecer.'
+                : 'No hay combos con stock para ofrecer.';
+              const listboxLabel = companion.rule.companion === 'ribb' ? 'Rollos de ribb' : 'Artículos de combos';
 
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
-                  <div style={{ width: '96px' }}>
-                    <MicroField label="Combos">
-                      <NumberInput
-                        data-companion-qty
-                        value={companion.qty}
-                        min={0}
-                        step={1}
-                        onChange={(e) => setCompanion({ ...companion, qty: e.target.value })}
-                      />
-                    </MicroField>
+              // Descartar renders in BOTH branches: with jersey/fleece being
+              // the everyday fabrics the empty state is routine, and a panel
+              // whose only dismissal lives in the non-empty branch would squat
+              // over the cart until checkout.
+              return (
+                <>
+                  {options.length === 0 ? (
+                    <div style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>
+                      {emptyMsg}
+                    </div>
+                  ) : (
+                  <div role="listbox" aria-label={listboxLabel} style={companionList}>
+                    {options.map((o) => {
+                      const active = o.id === companion.pick;
+                      return (
+                        <div
+                          key={o.id}
+                          role="option"
+                          aria-selected={active}
+                          onClick={() => { setCompanion({ ...companion, pick: o.id }); setCompanionErr(null); }}
+                          style={{
+                            padding: '7px 10px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            fontFamily: 'var(--font-sans)',
+                            fontSize: '12px',
+                            backgroundColor: active ? 'rgba(181,23,92,0.10)' : 'transparent',
+                            borderLeft: active ? '3px solid var(--color-dye)' : '3px solid transparent',
+                          }}
+                        >
+                          <SwatchChip color={o.color} size="sm" />
+                          <span style={{ color: 'var(--color-ink)' }}>{o.label}</span>
+                          <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', color: 'var(--color-thread)' }}>
+                            {o.right}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <Button variant="primary" size="md" type="button" onClick={() => void handleAddCompanion()}>
-                    Agregar
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="md"
-                    type="button"
-                    onClick={() => { setCompanion(null); setCompanionErr(null); }}
-                  >
-                    Descartar
-                  </Button>
-                </div>
-              </>
-            )}
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
+                    {options.length > 0 && (
+                      <>
+                        <div style={{ width: '96px' }}>
+                          <MicroField label={companion.rule.companion === 'ribb' ? 'Kg' : 'Combos'}>
+                            <NumberInput
+                              data-companion-qty
+                              value={companion.qty}
+                              min={0}
+                              step={companion.rule.companion === 'ribb' ? 0.01 : 1}
+                              onChange={(e) => setCompanion({ ...companion, qty: e.target.value })}
+                            />
+                          </MicroField>
+                        </div>
+                        <Button variant="primary" size="md" type="button" onClick={() => void handleAddCompanion()}>
+                          Agregar
+                        </Button>
+                      </>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="md"
+                      type="button"
+                      onClick={() => { setCompanion(null); setCompanionErr(null); }}
+                    >
+                      Descartar
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
 
             {companionErr && (
               <div role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-danger)' }}>
