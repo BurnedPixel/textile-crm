@@ -19,6 +19,7 @@ import { useLiveQuery } from '../../lib/hooks';
 import { hasRollStock, type BatchDoc, type ConditionTag, type ProductDoc } from '../../lib/types';
 import {
   fmtKg, fmtUnits, fmtLot, fmtPiece, fmtUsd, CONDITION_LABEL, CONDITION_SHORT, CONDITION_TONE,
+  NM_LABEL,
 } from '../../lib/format';
 import { Button, Input, NumberInput, Select, Field, Kbd, SwatchChip, Badge, EmptyState } from '../ui';
 import {
@@ -78,6 +79,7 @@ export default function EditPane({ onDone }: EditPaneProps) {
           product.lotNumber ?? '',
           product.pieceId,
           batch.color,
+          batch.colorCode ?? '',
           batch.nm,
           batch.fabricType,
           product.pantone ?? '',
@@ -193,7 +195,7 @@ export default function EditPane({ onDone }: EditPaneProps) {
 
       <section style={sectionStyle} className="card">
         <h2 style={sectionTitle}>Buscar rollo</h2>
-        <Field label="Nº de lote, color, artículo o rollo">
+        <Field label="Nº de lote, color, código, artículo o rollo">
           <Input
             data-hotkey-search=""
             type="search"
@@ -222,8 +224,13 @@ export default function EditPane({ onDone }: EditPaneProps) {
                     style={rollRowStyle(active)}
                   >
                     <SwatchChip color={batch.color} size="sm" />
+                    {batch.colorCode && (
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--color-thread)' }}>
+                        {batch.colorCode}
+                      </span>
+                    )}
                     <span style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-ink)', minWidth: 150 }}>
-                      NM {batch.nm} · {batch.fabricType}
+                      {NM_LABEL} {batch.nm} · {batch.fabricType}
                     </span>
                     <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, minWidth: 90 }}>
                       {fmtPiece(product.pieceId)}
@@ -254,7 +261,8 @@ export default function EditPane({ onDone }: EditPaneProps) {
         <>
           <section style={sectionStyle} className="card">
             <h2 style={sectionTitle}>
-              Corregir datos — {selected.batch.color} · NM {selected.batch.nm} ·{' '}
+              Corregir datos — {selected.batch.color}
+              {selected.batch.colorCode ? ` (${selected.batch.colorCode})` : ''} · {NM_LABEL} {selected.batch.nm} ·{' '}
               {selected.batch.fabricType} · {fmtPiece(selected.product.pieceId)}
             </h2>
             <form onSubmit={handleSaveDetails} noValidate>

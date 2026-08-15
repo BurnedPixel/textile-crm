@@ -121,17 +121,31 @@ export interface RibbRoll {
   roll: ProductDoc;
 }
 
+/** The sold roll's identity, used to narrow its ribb companions. */
+export interface SoldRollContext {
+  color: string;
+  nm: string;
+  lotNumber?: string;
+}
+
 /**
- * The ribb rolls offered as compañeros for a jersey/fleece line of `color`,
- * narrowed to the same colour when any match — same tolerant-narrowing shape
- * as companionCandidates. `exclude` drops rolls the caller cannot add anyway
- * (already in the cart).
+ * The ribb rolls offered as compañeros for a jersey/fleece roll. Client
+ * standard (R2-3, 2026-08-15): fabric and its ribb companion share colour AND
+ * NM, and are usually from the SAME printed lot — the default suggestion is
+ * same-lot ribb, but the seller may combine fabric and ribb from different
+ * lots. Narrowing is a CASCADE, first non-empty tier wins: same colour+NM+lot
+ * → same colour+NM → same colour → every usable ribb roll. The lot tier
+ * REFINES colour+NM rather than replacing it: «lote» is the supplier's printed
+ * number, un-normalized and no identity, so the same number recurs across
+ * colours — matching on lot alone would hand an Azul Rey jersey a Negro ribb
+ * whose supplier reused the number. `exclude` drops rolls the caller cannot
+ * add anyway (already in the cart).
  *
- * Rolls are flattened and filtered for usable stock BEFORE the colour
- * narrowing: stock here lives one level deeper than the colour (per roll, not
- * per batch), so narrowing first would let a same-colour batch whose rolls are
- * all empty or all in the cart kill the fallback and report "no hay ribb"
- * while usable ribb of another colour sits in stock.
+ * Rolls are flattened and filtered for usable stock BEFORE the cascade: stock
+ * here lives one level deeper than colour/NM/lot (per roll, not per batch), so
+ * narrowing first would let a same-colour batch whose rolls are all empty or
+ * all in the cart kill the fallback and report "no hay ribb" while usable
+ * ribb of another colour sits in stock.
  *
  * Unlike companionCandidates there is deliberately NO fallback to non-ribb
  * rolls — the only other rolls in stock are jerseys/fleeces themselves, and
@@ -141,7 +155,7 @@ export interface RibbRoll {
  */
 export function ribbRollCandidates(
   stocked: StockedEntry[],
-  color: string,
+  sold: SoldRollContext,
   exclude: ReadonlySet<string> = new Set(),
 ): RibbRoll[] {
   const rolls = stocked
@@ -151,6 +165,15 @@ export function ribbRollCandidates(
         .filter((p) => hasRollStock(p.currentWeightKg) && !exclude.has(p._id))
         .map((p) => ({ batch: e.batch, roll: p })),
     );
-  const sameColor = rolls.filter((r) => norm(r.batch.color) === norm(color));
+
+  const sameColorNm = rolls.filter(
+    (r) => norm(r.batch.color) === norm(sold.color) && norm(r.batch.nm) === norm(sold.nm),
+  );
+  const lot = sold.lotNumber?.trim();
+  const sameLot = lot ? sameColorNm.filter((r) => r.roll.lotNumber?.trim() === lot) : [];
+  if (sameLot.length > 0) return sameLot;
+  if (sameColorNm.length > 0) return sameColorNm;
+
+  const sameColor = rolls.filter((r) => norm(r.batch.color) === norm(sold.color));
   return sameColor.length > 0 ? sameColor : rolls;
 }

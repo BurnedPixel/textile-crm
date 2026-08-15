@@ -51,6 +51,14 @@ export interface BatchDoc extends Doc {
   currentUnits: number;
   location: string;
   createdAt: string;
+  /**
+   * The client's colour-chart code (100s pastel / 200s mid / 300s dark), typed
+   * as-is by the operator. Batch-level, like colour itself. Optional and NOT
+   * normalized, and never part of any _id — batch identity stays
+   * color+nm+fabricType, so re-coding a colour is an ordinary write with no
+   * migration (the same thing lotNumber's design bought on the roll).
+   */
+  colorCode?: string;
 }
 
 /**
@@ -326,6 +334,8 @@ export const FIELD_MAX = {
   description: 200,
   category: 60,
   text: 60,
+  /** A colour-chart code is three digits in practice; 12 leaves room for "215-A". */
+  colorCode: 12,
 } as const;
 
 const tooLong = (label: string, max: number) => `${label} no puede superar ${max} caracteres.`;

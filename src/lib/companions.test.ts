@@ -19,19 +19,30 @@ function entry(color: string, fabricType: string, productType: BatchDoc['product
   return { batch, products };
 }
 
-/** A ROLL entry with several rolls at given weights, for ribb-candidate tests. */
-function rollEntry(color: string, fabricType: string, weights: number[]): StockedEntry {
-  const _id = batchIdOf(color, '30', fabricType);
+/**
+ * A ROLL entry with several rolls at given weights, for ribb-candidate tests.
+ * `nm` and `lots` (parallel to `weights`, one lot per roll) default to values
+ * that keep the pre-cascade tests unaffected.
+ */
+function rollEntry(
+  color: string, fabricType: string, weights: number[], nm = '30', lots: (string | undefined)[] = [],
+): StockedEntry {
+  const _id = batchIdOf(color, nm, fabricType);
   const batch: BatchDoc = {
-    _id, type: 'batch', color, nm: '30', fabricType, productType: 'ROLL',
+    _id, type: 'batch', color, nm, fabricType, productType: 'ROLL',
     initialUnitCount: weights.length, currentUnits: weights.length, location: '', createdAt: '2026-01-01T00:00:00.000Z',
   };
   const products: ProductDoc[] = weights.map((w, i) => ({
     _id: `product:${_id}:R${i + 1}`, type: 'product', batchId: _id, pieceId: `R${i + 1}`,
     initialWeightKg: w, currentWeightKg: w, purchaseValueUsd: 1, salePriceUsd: 2,
-    conditionTag: 'FIRST', createdAt: '2026-01-01T00:00:00.000Z',
+    conditionTag: 'FIRST', createdAt: '2026-01-01T00:00:00.000Z', lotNumber: lots[i],
   }));
   return { batch, products };
+}
+
+/** The sold roll's context, for ribbRollCandidates cascade tests. */
+function sold(color: string, nm = '30', lotNumber?: string) {
+  return { color, nm, lotNumber };
 }
 
 describe('isPique — chemise is a spelling of piqué, not a second cloth', () => {
@@ -169,50 +180,93 @@ describe('ribbRollCandidates — tolerant, never falling back to non-ribb rolls'
     rollEntry('Blanco', 'Fleece', [12]),
   ];
 
-  it('narrows to the sold colour when that colour has ribb', () => {
-    const found = ribbRollCandidates(stocked, 'Azul Rey');
+  it('narrows to the sold colour+NM when that colour has ribb', () => {
+    const found = ribbRollCandidates(stocked, sold('Azul Rey'));
     expect(found.map((r) => r.roll.pieceId)).toEqual(['R1']);
     expect(found.every((r) => r.batch.color === 'Azul Rey')).toBe(true);
   });
 
   it('falls back to every stocked ribb roll when the colour matches none', () => {
-    const found = ribbRollCandidates(stocked, 'Rojo Vino');
+    const found = ribbRollCandidates(stocked, sold('Rojo Vino'));
     expect(found.map((r) => r.batch.color).sort()).toEqual(['Azul Rey', 'Negro']);
   });
 
   it('excludes empty rolls', () => {
-    const found = ribbRollCandidates(stocked, 'Azul Rey');
+    const found = ribbRollCandidates(stocked, sold('Azul Rey'));
     expect(found.length).toBeGreaterThan(0); // .every() passes vacuously on []
     expect(found.every((r) => r.roll.currentWeightKg > 0.001)).toBe(true);
   });
 
   it('never offers a non-ribb ROLL batch', () => {
-    for (const found of [ribbRollCandidates(stocked, 'Azul Rey'), ribbRollCandidates(stocked, 'Rojo')]) {
+    for (const found of [ribbRollCandidates(stocked, sold('Azul Rey')), ribbRollCandidates(stocked, sold('Rojo'))]) {
       expect(found.length).toBeGreaterThan(0);
       expect(found.every((r) => r.batch.fabricType === 'Ribb')).toBe(true);
     }
   });
 
   it('falls back when the sold colour has ribb but none of it is usable', () => {
-    // Rolls are filtered BEFORE the colour narrowing — a same-colour batch
-    // whose rolls are all empty must not kill the fallback.
+    // Rolls are filtered BEFORE the cascade — a same-colour batch whose rolls
+    // are all empty must not kill the fallback.
     const s = [rollEntry('Azul Rey', 'Ribb', [0.0005]), rollEntry('Negro', 'Ribb', [8])];
-    expect(ribbRollCandidates(s, 'Azul Rey').map((r) => r.batch.color)).toEqual(['Negro']);
+    expect(ribbRollCandidates(s, sold('Azul Rey')).map((r) => r.batch.color)).toEqual(['Negro']);
   });
 
   it('falls back when every same-colour roll is excluded (already in the cart)', () => {
-    const azul = ribbRollCandidates(stocked, 'Azul Rey');
+    const azul = ribbRollCandidates(stocked, sold('Azul Rey'));
     const inCart = new Set(azul.map((r) => r.roll._id));
-    const found = ribbRollCandidates(stocked, 'Azul Rey', inCart);
+    const found = ribbRollCandidates(stocked, sold('Azul Rey'), inCart);
     expect(found.map((r) => r.batch.color)).toEqual(['Negro']);
   });
 
   it('is empty when nothing ribb is stocked', () => {
-    expect(ribbRollCandidates([rollEntry('Azul', 'Jersey', [5])], 'Azul')).toEqual([]);
+    expect(ribbRollCandidates([rollEntry('Azul', 'Jersey', [5])], sold('Azul'))).toEqual([]);
   });
 
   it('matches the colour accent- and case-insensitively', () => {
     const alt = [rollEntry('ROJO VINO', 'Ribb', [4]), ...stocked];
-    expect(ribbRollCandidates(alt, 'Rojo Vino').map((r) => r.batch.color)).toEqual(['ROJO VINO']);
+    expect(ribbRollCandidates(alt, sold('Rojo Vino')).map((r) => r.batch.color)).toEqual(['ROJO VINO']);
+  });
+
+  describe('lot/NM cascade (R2-3, 2026-08-15)', () => {
+    it('the lot tier refines colour+NM — a same-lot roll of another colour never displaces it', () => {
+      // «Lote» is the supplier's printed number, no identity: the same number
+      // recurs across colours. Lot alone must not hand an Azul Rey jersey a
+      // Negro ribb.
+      const s = [
+        rollEntry('Negro', 'Ribb', [8], '24', ['220']),
+        rollEntry('Azul Rey', 'Ribb', [5], '30', ['8890']),
+      ];
+      const found = ribbRollCandidates(s, sold('Azul Rey', '30', '220'));
+      expect(found.map((r) => r.batch.color)).toEqual(['Azul Rey']);
+    });
+
+    it('within the same colour+NM, the sold lot is the default pick', () => {
+      const s = [rollEntry('Azul Rey', 'Ribb', [5, 4], '30', ['9001', '4471'])];
+      const found = ribbRollCandidates(s, sold('Azul Rey', '30', '4471'));
+      expect(found.map((r) => r.roll.lotNumber)).toEqual(['4471']);
+    });
+
+    it('lot match is trim-exact', () => {
+      const s = [rollEntry('Negro', 'Ribb', [8], '30', [' 4471 '])];
+      expect(ribbRollCandidates(s, sold('Negro', '30', '4471')).map((r) => r.roll.pieceId)).toEqual(['R1']);
+    });
+
+    it('skips the lot tier when the sold roll has no lot — colour+NM applies instead', () => {
+      const s = [
+        rollEntry('Azul Rey', 'Ribb', [5], '30', ['4471']),
+        rollEntry('Azul Rey', 'Ribb', [3], '40', [undefined]),
+      ];
+      const found = ribbRollCandidates(s, sold('Azul Rey', '30'));
+      expect(found.map((r) => r.batch.nm)).toEqual(['30']);
+    });
+
+    it('same colour+NM beats same colour with a different NM', () => {
+      const s = [
+        rollEntry('Azul Rey', 'Ribb', [5], '30', [undefined]),
+        rollEntry('Azul Rey', 'Ribb', [3], '40', [undefined]),
+      ];
+      const found = ribbRollCandidates(s, sold('Azul Rey', '30'));
+      expect(found.map((r) => r.batch.nm)).toEqual(['30']);
+    });
   });
 });

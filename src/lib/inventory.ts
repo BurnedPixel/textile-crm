@@ -40,6 +40,8 @@ export interface IngressInput {
   fabricType: string;
   productType: ProductType;
   location?: string;
+  /** Batch-level colour-chart code. Blank on a top-up keeps whatever the batch has. */
+  colorCode?: string;
   operatorId: string;
   reason?: string;
   // Applies to every product of THIS submission (one lot arrives at a time).
@@ -144,6 +146,9 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
     if (value && value.length > FIELD_MAX.text) {
       throw new Error(`${label} no puede superar ${FIELD_MAX.text} caracteres.`);
     }
+  }
+  if (input.colorCode && input.colorCode.trim().length > FIELD_MAX.colorCode) {
+    throw new Error(`El código de color no puede superar ${FIELD_MAX.colorCode} caracteres.`);
   }
   const now = new Date().toISOString();
   const unitOfMeasure = UNIT_FOR[input.productType];
@@ -260,6 +265,14 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
   // cleanly on a fresh rev). location/productType are set once, not accumulated.
   const buildBatch = (cur: CounterDoc | null): BatchDoc => {
     const c = cur as BatchDoc | null;
+    // Named on purpose: this builder rebuilds the doc from an explicit field
+    // list with no spread, so a colour code not carried here is erased by the
+    // next top-up (the carriedMeta rule, batch-level). Absent ≠ blank: a caller
+    // that omits the field carries the stored code forward, while an explicit
+    // empty string CLEARS it — otherwise a mistyped code could never be
+    // removed, since another ingress is the only batch-level write path.
+    const colorCode =
+      input.colorCode === undefined ? c?.colorCode : input.colorCode.trim() || undefined;
     return {
       _id: batchId,
       ...(c?._rev ? { _rev: c._rev } : {}),
@@ -272,6 +285,7 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
       currentUnits: (c?.currentUnits ?? 0) + addedUnits,
       location: input.location ?? c?.location ?? '',
       createdAt: c?.createdAt ?? now,
+      ...(colorCode ? { colorCode } : {}),
     };
   };
   counters.push({ id: batchId, doc: buildBatch(existingBatch), rebuild: buildBatch });
@@ -524,6 +538,7 @@ export interface IngressFormErrors {
   color?: string;
   nm?: string;
   fabricType?: string;
+  colorCode?: string;
   lotNumber?: string;
   purchaseValueUsd?: string;
   salePriceUsd?: string;
@@ -541,6 +556,8 @@ export interface IngressFormValues {
   nm: string;
   fabricType: string;
   productType: ProductType;
+  /** Optional — an article may have no chart code. */
+  colorCode?: string;
   lotNumber: string;
   /** Batch-level defaults, used when a row leaves its own cost/price blank. */
   purchaseValueUsd: string;
@@ -573,6 +590,11 @@ export function validateIngressForm(v: IngressFormValues): IngressFormErrors {
     const value = v[key].trim();
     if (!value) errors[key] = REQUIRED;
     else if (value.length > FIELD_MAX.text) errors[key] = TOO_LONG;
+  }
+
+  // Optional, but capped short — it is a chart code, not a description.
+  if ((v.colorCode ?? '').trim().length > FIELD_MAX.colorCode) {
+    errors.colorCode = `No puede superar ${FIELD_MAX.colorCode} caracteres.`;
   }
 
   if (v.productType === 'ROLL') {

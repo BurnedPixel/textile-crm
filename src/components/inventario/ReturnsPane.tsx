@@ -18,7 +18,7 @@ import {
   type ConditionTag, type BatchDoc, type ProductDoc,
 } from '../../lib/types';
 import {
-  fmtKg, fmtLot, fmtPiece, fmtUsd, CONDITION_LABEL, CONDITION_SHORT, CONDITION_TONE,
+  fmtKg, fmtLot, fmtPiece, fmtUsd, CONDITION_LABEL, CONDITION_SHORT, CONDITION_TONE, NM_LABEL,
 } from '../../lib/format';
 import { Button, Input, NumberInput, Select, Field, Kbd, SwatchChip, Badge, Combobox } from '../ui';
 import {
@@ -311,7 +311,7 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
                 renderOption={(c) => <SwatchChip color={c} size="sm" />}
               />
             </Field>
-            <Field label="NM (métrica aguja)">
+            <Field label={`${NM_LABEL} (métrica aguja)`}>
               <Combobox
                 ref={nmRef}
                 value={nm}
@@ -493,7 +493,7 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
                         </span>
                         {c.batch._id !== matchedBatch?._id && (
                           <span style={{ fontFamily: 'var(--font-sans)', fontSize: 11, color: 'var(--color-thread)' }}>
-                            NM {c.batch.nm} · {c.batch.fabricType}
+                            {NM_LABEL} {c.batch.nm} · {c.batch.fabricType}
                           </span>
                         )}
                         <Badge tone={CONDITION_TONE[c.product.conditionTag]}>
