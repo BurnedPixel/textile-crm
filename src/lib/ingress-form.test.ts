@@ -38,6 +38,13 @@ describe('validateIngressForm — nothing gets registered blank', () => {
     expect(e.color).toMatch(/60 caracteres/);
   });
 
+  it('accepts a blank colour code but caps it short', () => {
+    expect(validateIngressForm(rollForm({ colorCode: '' })).colorCode).toBeUndefined();
+    expect(validateIngressForm(rollForm({ colorCode: '215' })).colorCode).toBeUndefined();
+    expect(validateIngressForm(rollForm({ colorCode: '2'.repeat(13) })).colorCode)
+      .toMatch(/12 caracteres/);
+  });
+
   it('refuses an arrival with no roll carrying a weight', () => {
     expect(validateIngressForm(rollForm({ rolls: [] })).rolls).toMatch(/al menos un rollo/i);
     expect(validateIngressForm(rollForm({
