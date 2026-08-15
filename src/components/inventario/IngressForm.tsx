@@ -585,8 +585,11 @@ export default function IngressForm({ onDone }: IngressFormProps) {
               />
             </Field>
 
-            {/* COLOUR CODE — optional, batch-level (100s pastel / 200s medio / 300s oscuro) */}
-            <Field label="Código de color" hint="Opcional · 100s claro · 200s medio · 300s oscuro" error={fieldErrors.colorCode}>
+            {/* COLOUR CODE — optional, batch-level. Bands per the REAL chart
+                (carta de colores, 2026-08-15): 100 blanco, 200s pasteles,
+                300s medios, 400s oscuros — the client's earlier note was off
+                by a hundred. */}
+            <Field label="Código de color" hint="Opcional · 100 blanco · 200s pastel · 300s medio · 400s oscuro" error={fieldErrors.colorCode}>
               <Input
                 data-color-code
                 aria-invalid={Boolean(fieldErrors.colorCode)}
