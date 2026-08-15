@@ -56,7 +56,11 @@ export async function resolveDocConflicts(db: DB, id: string): Promise<void> {
 
   if (id.startsWith('batch:') || id.startsWith('product:')) {
     // Counters are a cache — the ledger is truth. Drop every conflicting rev,
-    // then rebuild from movements.
+    // then rebuild from movements. But colorCode/location are NOT derivable
+    // from the ledger: fold them across every rev BEFORE the losers die, or
+    // they survive only when CouchDB's arbitrary winner happens to carry them
+    // (device B's code-less top-up beating device A's coded ingress).
+    if (id.startsWith('batch:')) await foldBatchMeta(db, id, conflicts);
     await deleteRevs(db, id, conflicts);
     const batchId = id.startsWith('batch:') ? id : (await getBatchIdOfProduct(db, id));
     if (batchId) await recomputeBatchCounters(db, batchId);
@@ -82,6 +86,36 @@ export async function resolveDocConflicts(db: DB, id: string): Promise<void> {
   // sale:/payment:/expense:/movement: are append-only with unique ids — should be impossible.
   console.warn(`[conflicts] unexpected conflict on append-only doc ${id}; keeping winner.`);
   await deleteRevs(db, id, conflicts);
+}
+
+/**
+ * Batch fields the ledger cannot rebuild (colorCode, location): keep the
+ * winner's value when it has one, otherwise adopt the first non-empty value
+ * among the conflicting revs. Revs are sorted descending so every device
+ * folding the same rev set converges on the same doc — which rev donates is
+ * arbitrary, determinism is what matters.
+ */
+async function foldBatchMeta(db: DB, id: string, conflicts: string[]): Promise<void> {
+  const winner = (await db.get(id).catch(() => null)) as BatchDoc | null;
+  if (!winner) return;
+  const revs = await Promise.all(
+    conflicts.map((rev) => (db.get(id, { rev }) as Promise<BatchDoc>).catch(() => null)),
+  );
+  const ordered = [
+    winner,
+    ...revs
+      .filter((r): r is BatchDoc => r !== null)
+      .sort((a, b) => (a._rev! < b._rev! ? 1 : -1)),
+  ];
+  const colorCode = ordered.find((r) => r.colorCode)?.colorCode;
+  const location = ordered.find((r) => r.location)?.location;
+  if (colorCode !== winner.colorCode || (location ?? '') !== (winner.location ?? '')) {
+    await db.put({
+      ...winner,
+      ...(colorCode ? { colorCode } : {}),
+      ...(location ? { location } : {}),
+    });
+  }
 }
 
 /** Delete a set of revisions of a doc (used to collapse conflicting branches). */

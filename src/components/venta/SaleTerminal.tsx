@@ -37,7 +37,7 @@ import {
 } from '../../lib/companions';
 import {
   round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot, fmtLotsLabel, fmtPiece,
-  PAYMENT_LABEL, PAYMENT_TONE, CONDITION_SHORT, CONDITION_TONE,
+  PAYMENT_LABEL, PAYMENT_TONE, CONDITION_SHORT, CONDITION_TONE, NM_LABEL,
 } from '../../lib/format';
 import {
   UNIT_FOR, clientIdOf, FIELD_MAX, hasRollStock, validateDocumentId, validateName, validatePhone,
@@ -84,6 +84,12 @@ interface ListboxProps {
   onAdvance?: () => void;
   handleRef?: Ref<ListboxHandle>;
   renderOption?: (v: string) => ReactNode;
+  /**
+   * Extra text the type-ahead should match, beyond the option value itself —
+   * the colour facet's chart code. The option VALUE is untouched: it is what
+   * drives batch filtering.
+   */
+  searchText?: (opt: string) => string;
   'data-hotkey-search'?: string;
 }
 
@@ -98,6 +104,7 @@ function Listbox({
   onAdvance,
   handleRef,
   renderOption,
+  searchText,
   ...rest
 }: ListboxProps) {
   const [typeahead, setTypeahead] = useState('');
@@ -156,7 +163,14 @@ function Listbox({
       setTypeahead(next);
       if (taTimer.current) clearTimeout(taTimer.current);
       taTimer.current = setTimeout(() => setTypeahead(''), 800);
-      const idx = options.findIndex((o) => isAvailable(o) && o.toLowerCase().startsWith(next));
+      // Matches the option name OR its extra search text (a colour's chart
+      // code), so "215" jumps to the colour just as "azu" does.
+      const idx = options.findIndex(
+        (o) =>
+          isAvailable(o) &&
+          (o.toLowerCase().startsWith(next) ||
+            (searchText?.(o) ?? '').toLowerCase().startsWith(next)),
+      );
       if (idx >= 0) setActiveIdx(idx);
     }
   }
@@ -322,7 +336,11 @@ const dividerStyle: CSSProperties = {
  * collision-proof id.)
  */
 function lineDescription(batch: BatchDoc, roll?: ProductDoc): string {
-  const head = `${batch.color} · NM ${batch.nm} · ${batch.fabricType}`;
+  // NM_LABEL and the colour code apply going forward only — descriptions freeze
+  // at checkout, so sales written before R2-4/R2-1 still read "NM {n}" and carry
+  // no code, and stay that way (S/L-style history).
+  const colour = batch.colorCode ? `${batch.color} (${batch.colorCode})` : batch.color;
+  const head = `${colour} · ${NM_LABEL} ${batch.nm} · ${batch.fabricType}`;
   return batch.productType === 'ROLL'
     ? `${head} · ${roll ? fmtPiece(roll.pieceId) : ''} · ${fmtLot(roll?.lotNumber)}`
     : head;
@@ -363,7 +381,7 @@ export default function SaleTerminal() {
   // clearCart rebuild it from an explicit field list, so a flag parked there is
   // silently dropped on the next sale.
   const [companion, setCompanion] = useState<
-    { rule: CompanionRule; color: string; kg: number; qty: string; pick: string | null } | null
+    { rule: CompanionRule; color: string; nm: string; lotNumber?: string; kg: number; qty: string; pick: string | null } | null
   >(null);
   const [companionErr, setCompanionErr] = useState<string | null>(null);
 
@@ -409,6 +427,14 @@ export default function SaleTerminal() {
   const colors = [...new Set(stocked.map((e) => e.batch.color))].sort();
   const nms = [...new Set(stocked.map((e) => e.batch.nm))].sort();
   const fabrics = [...new Set(stocked.map((e) => e.batch.fabricType))].sort();
+
+  // Colour → chart code, for the option row and the type-ahead. Keyed on the
+  // colour STRING because that is what the facet's option value is; when several
+  // articles share a colour the last code wins, which is harmless — the same
+  // colour is the same chart entry.
+  const codeByColor = new Map(
+    stocked.flatMap((e) => (e.batch.colorCode ? [[e.batch.color, e.batch.colorCode] as const] : [])),
+  );
 
   // A value is available for its facet iff some stocked batch has that value AND
   // matches the (non-null) selections of the OTHER two facets.
@@ -529,7 +555,11 @@ export default function SaleTerminal() {
   // cannot ship dead.
   const companionOptions = companion?.rule.companion === 'combos' ? companionCandidates(stocked, companion.color) : [];
   const ribbOptions = companion?.rule.companion === 'ribb'
-    ? ribbRollCandidates(stocked, companion.color, inCartRollIds)
+    ? ribbRollCandidates(
+        stocked,
+        { color: companion.color, nm: companion.nm, lotNumber: companion.lotNumber },
+        inCartRollIds,
+      )
     : [];
 
   // ── tax + payment status preview ──
@@ -753,6 +783,8 @@ export default function SaleTerminal() {
         setCompanion({
           rule,
           color: batch.color,
+          nm: batch.nm,
+          lotNumber: selRoll.lotNumber,
           kg: qtyNum,
           qty: String(rule.companion === 'combos' ? suggestedCombos(qtyNum, rule.ratio) : suggestedKg(qtyNum, rule.ratio)),
           pick: null,
@@ -1163,12 +1195,22 @@ export default function SaleTerminal() {
           onAdvance={() => advanceFrom('color')}
           handleRef={colorRef}
           data-hotkey-search=""
-          renderOption={(c) => <SwatchChip color={c} size="sm" />}
+          searchText={(c) => codeByColor.get(c) ?? ''}
+          renderOption={(c) => (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <SwatchChip color={c} size="sm" />
+              {codeByColor.get(c) && (
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-thread)' }}>
+                  · {codeByColor.get(c)}
+                </span>
+              )}
+            </span>
+          )}
         />
 
         <Listbox
           id="lb-nm"
-          label="NM (grueso)"
+          label={`${NM_LABEL} (grueso)`}
           options={nms}
           value={selNm}
           isAvailable={(n) => available('nm', n)}
@@ -1265,13 +1307,13 @@ export default function SaleTerminal() {
                 ? ribbOptions.map((r) => ({
                     id: r.roll._id,
                     color: r.batch.color,
-                    label: `NM ${r.batch.nm} · ${r.batch.fabricType} · ${fmtPiece(r.roll.pieceId)}`,
+                    label: `${NM_LABEL} ${r.batch.nm} · ${r.batch.fabricType} · ${fmtPiece(r.roll.pieceId)} · ${fmtLot(r.roll.lotNumber)}`,
                     right: `${fmtKg(r.roll.currentWeightKg)} · ${fmtUsd(r.roll.salePriceUsd)}`,
                   }))
                 : companionOptions.map((e) => ({
                     id: e.batch._id,
                     color: e.batch.color,
-                    label: `NM ${e.batch.nm} · ${e.batch.fabricType}`,
+                    label: `${NM_LABEL} ${e.batch.nm} · ${e.batch.fabricType}`,
                     right: `${fmtUnits(e.batch.currentUnits)} · ${fmtUsd(e.products[0]?.salePriceUsd ?? 0)}`,
                   }));
               const emptyMsg = companion.rule.companion === 'ribb'
@@ -1713,7 +1755,7 @@ function BatchProductZone({
         <SwatchChip color={batch.color} size="sm" />
         <div>
           <div style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 600, color: 'var(--color-ink)' }}>
-            NM {batch.nm} · {batch.fabricType}
+            {NM_LABEL} {batch.nm} · {batch.fabricType}
           </div>
           <div style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--color-thread)' }}>
             {batch.location} · Stock: {stockText} ·{' '}

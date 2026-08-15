@@ -359,18 +359,15 @@ export interface TaxableSale {
  * figures instead of re-deriving them (two derivations of one tax figure is how
  * they drift).
  *
- * ⚠️ TWO THINGS THE ACCOUNTANT STILL HAS TO CONFIRM (docs/plan.md §3, casilla 14).
- * The client's own answer names two different bases, and sales are immutable, so
- * a wrong one cannot be corrected afterwards — only annotated.
+ * Both casilla-14 pendings were answered by the client in person (2026-08-15,
+ * round R2-5 — relayed for their accountant):
  *
- *   1. The IGTF base EXCLUDES IVA here, per their written observation
- *      («sobre la base imponible, no incluyendo el IVA»). Venezuelan practice
- *      normally applies IGTF to the amount actually tendered, IVA included.
- *   2. The divisa share is measured against what is owed BEFORE IGTF
- *      (base + IVA). Measuring it against the grand total, as the checkbox
- *      wording suggests, makes the definition circular — IGTF would depend on a
- *      total that depends on IGTF — and only resolves through a quadratic that
- *      no one could explain to a tax inspector.
+ *   1. The IGTF base EXCLUDES IVA («sobre la base imponible, no incluyendo el
+ *      IVA») — as this always computed it.
+ *   2. The divisa share is measured against the BASE alone, not base + IVA.
+ *      This changed the formula on 2026-08-15; amounts are derived at read
+ *      time, so historical mixed-payment sales re-read under the confirmed
+ *      rule (their stored rates and payments are untouched).
  *
  * Also deliberate: the divisa share is read from the payments made AT CHECKOUT.
  * A later `payment:` collection in divisas incurs its own IGTF in the real
@@ -382,9 +379,8 @@ export function saleTaxes(sale: TaxableSale): SaleTaxes {
   // Absent rates read as 0 — every sale written before tax existed keeps a
   // grand total equal to its net total, which is what its history says.
   const ivaUsd = round2(baseUsd * (sale.ivaRate ?? 0));
-  const owedBeforeIgtf = round2(baseUsd + ivaUsd);
   const divisaUsd = sale.paidUsdCash + sale.paidUsdTransfer;
-  const divisaShare = owedBeforeIgtf > 0 ? Math.min(1, divisaUsd / owedBeforeIgtf) : 0;
+  const divisaShare = baseUsd > 0 ? Math.min(1, divisaUsd / baseUsd) : 0;
   const igtfUsd = round2(baseUsd * divisaShare * (sale.igtfRate ?? 0));
   return { baseUsd, ivaUsd, igtfUsd, grandTotalUsd: round2(baseUsd + ivaUsd + igtfUsd) };
 }

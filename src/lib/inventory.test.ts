@@ -151,6 +151,77 @@ describe('ingressStock — optional lot metadata survives a later ingress', () =
   });
 });
 
+// The same builder-erasure finding, one level up: colorCode lives on the BATCH,
+// and ingressStock's buildBatch is the one batch builder that rebuilds from an
+// explicit field list. Everything else that writes a batch (returnStock,
+// adjustStock, recomputeBatchCounters) spreads the current doc — these tests are
+// what would catch any of them being rewritten as a rebuild later.
+describe('ingressStock — the colour-chart code survives every batch rewrite', () => {
+  const ARTICLE = { color: 'Rosa Pastel', nm: '30', fabricType: 'Jersey', productType: 'ROLL' as const, operatorId: 'op' };
+  const bid = batchIdOf(ARTICLE.color, ARTICLE.nm, ARTICLE.fabricType);
+  const roll = (pieceId: string, weightKg: number) =>
+    [{ pieceId, weightKg, purchaseValueUsd: 5, salePriceUsd: 8 }];
+
+  it('stores the code, carries it through a later ingress, and lets a new code win', async () => {
+    const db = makeTestDb();
+    await ingressStock(db, { ...ARTICLE, colorCode: '115', lotNumber: '4471', rolls: roll('R1', 20) });
+    expect(((await db.get(bid)) as BatchDoc).colorCode).toBe('115');
+
+    // A top-up with the field left blank must not erase it.
+    await ingressStock(db, { ...ARTICLE, rolls: roll('R2', 10) });
+    expect(((await db.get(bid)) as BatchDoc).colorCode).toBe('115');
+
+    // A corrected code wins.
+    await ingressStock(db, { ...ARTICLE, colorCode: '215', rolls: roll('R3', 10) });
+    expect(((await db.get(bid)) as BatchDoc).colorCode).toBe('215');
+  });
+
+  it('an explicit empty string CLEARS a stored code — absent ≠ blank', async () => {
+    // Another ingress is the only batch-level write path, so a mistyped code
+    // that a blank could not clear would be permanent.
+    const db = makeTestDb();
+    await ingressStock(db, { ...ARTICLE, colorCode: '115', rolls: roll('R1', 20) });
+    await ingressStock(db, { ...ARTICLE, colorCode: '', rolls: roll('R2', 10) });
+    expect(((await db.get(bid)) as BatchDoc).colorCode).toBeUndefined();
+  });
+
+  it('stores nothing for a blank code (articles with no chart entry)', async () => {
+    const db = makeTestDb();
+    await ingressStock(db, { ...ARTICLE, colorCode: '   ', rolls: roll('R1', 10) });
+    expect(((await db.get(bid)) as BatchDoc).colorCode).toBeUndefined();
+  });
+
+  it('rejects an over-long code at the module boundary, in Spanish', async () => {
+    const db = makeTestDb();
+    await expect(
+      ingressStock(db, { ...ARTICLE, colorCode: '1'.repeat(13), rolls: roll('R1', 10) }),
+    ).rejects.toThrow(/código de color no puede superar 12 caracteres/i);
+  });
+
+  it('survives adjustStock, returnStock and a rebuild from the ledger', async () => {
+    const db = makeTestDb();
+    await ingressStock(db, { ...ARTICLE, colorCode: '315', lotNumber: '9001', rolls: roll('R1', 20) });
+
+    await adjustStock(db, {
+      batchId: bid, productId: productIdOf(bid, 'R1'), quantityChanged: -20,
+      operatorId: 'op', reason: 'merma',
+    });
+    expect(((await db.get(bid)) as BatchDoc).colorCode).toBe('315');
+
+    await returnStock(db, {
+      returnId: 'cccc1111-2222-3333-4444-555555555555',
+      date: new Date().toISOString(),
+      productId: productIdOf(bid, 'R1'),
+      weightKg: 3,
+      operatorId: 'op',
+    });
+    expect(((await db.get(bid)) as BatchDoc).colorCode).toBe('315');
+
+    await recomputeBatchCounters(db, bid);
+    expect(((await db.get(bid)) as BatchDoc).colorCode).toBe('315');
+  });
+});
+
 // ─── The counter guard: currentUnits tracks empty→non-empty TRANSITIONS ───────
 //
 // The old rule was "the product document did not exist". That is a different

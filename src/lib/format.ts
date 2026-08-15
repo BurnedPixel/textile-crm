@@ -128,6 +128,9 @@ export const CONDITION_TONE: Record<ConditionTag, Tone> = {
   DEFECT: 'danger',
 };
 
+/** Thickness label — the field holds NM (cotton/PC) or Dtex (textured poly) counts alike (client, R2-4). */
+export const NM_LABEL = 'NM/Dtex';
+
 export const PRODUCT_TYPE_LABEL: Record<ProductType, string> = {
   ROLL: 'Rollo',
   COMBO: 'Combo',

@@ -12,7 +12,7 @@ import {
 import { useLiveQuery } from '../../lib/hooks';
 import { clientsWhoBought, waLink, buildArrivalText } from '../../lib/whatsapp';
 import { batchIdOf, norm, type ProductType, type ConditionTag, type BatchDoc, type ClientDoc, type ProductDoc } from '../../lib/types';
-import { fmtKg, fmtUnits, fmtLotsLabel, CONDITION_LABEL } from '../../lib/format';
+import { fmtKg, fmtUnits, fmtLotsLabel, CONDITION_LABEL, NM_LABEL } from '../../lib/format';
 import {
   Button, Input, NumberInput, Select, Field, Kbd, SwatchChip, Combobox,
 } from '../ui';
@@ -124,6 +124,12 @@ export default function IngressForm({ onDone }: IngressFormProps) {
   const [productType, setProductType] = useState<ProductType>('ROLL');
   const [location, setLocation]       = useState('');
 
+  // ─ colour-chart code: batch-level, optional ─
+  // Prefilled from the matched article behind a touched guard, exactly like the
+  // price/pantone defaults: the prefill must never overwrite what was just typed.
+  const [colorCode, setColorCode] = useState('');
+  const colorCodeTouched = useRef(false);
+
   // ─ batch-level defaults for ROLL mode ─
   const [batchDefaults, setBatchDefaults] = useState<BatchDefaults>(freshDefaults);
 
@@ -202,6 +208,10 @@ export default function IngressForm({ onDone }: IngressFormProps) {
 
   useEffect(() => {
     const found = matchedBatch ?? null;
+
+    // Batch-level, so it prefills off the batch itself — not off a product, and
+    // for every productType (the price prefills below are ROLL/COMBO-specific).
+    if (!colorCodeTouched.current) setColorCode(found?.colorCode ?? '');
 
     // Pre-fill rolls with next pieceId continuing past every roll ever created
     // (including sold-out ones), read from the actual product docs — not
@@ -374,6 +384,7 @@ export default function IngressForm({ onDone }: IngressFormProps) {
     const problems = validateIngressForm({
       color, nm, fabricType,
       productType: resolvedTypeForCheck,
+      colorCode,
       lotNumber,
       purchaseValueUsd: batchDefaults.purchaseValueUsd,
       salePriceUsd: batchDefaults.salePriceUsd,
@@ -431,6 +442,9 @@ export default function IngressForm({ onDone }: IngressFormProps) {
           fabricType: fabricType.trim(),
           productType: resolvedType,
           location: location.trim() || matchedBatch?.location,
+          // Only when the operator touched the field this submission: absent
+          // carries the stored code, an explicit '' clears it (see buildBatch).
+          colorCode: colorCodeTouched.current ? colorCode.trim() : undefined,
           operatorId,
           reason: 'Ingreso de inventario',
           lotNumber: lotNumber.trim() || undefined,
@@ -447,6 +461,7 @@ export default function IngressForm({ onDone }: IngressFormProps) {
           fabricType: fabricType.trim(),
           productType: resolvedType,
           location: location.trim() || matchedBatch?.location,
+          colorCode: colorCodeTouched.current ? colorCode.trim() : undefined,
           operatorId,
           reason: 'Ingreso de inventario',
           units: Number(units),
@@ -461,6 +476,11 @@ export default function IngressForm({ onDone }: IngressFormProps) {
       const nextMax = existingRollCount + rolls.filter((r) => r.weightKg !== '').length;
       setRolls([emptyRoll(nextPieceLabel(nextMax, 0), batchDefaults)]);
       setLotNumber(''); // the next arrival is a different lot — never carry it over
+      // Un-stick the code's touched guard: what was just typed is now the
+      // STORED code, so from here on the prefill owns the field again — a code
+      // left "touched" would stamp this article's code onto the next article
+      // the operator switches to (the lot-number hazard, batch-level).
+      colorCodeTouched.current = false;
       setUnits('');
       // Keep unit price/condition for COMBO/PIECE rapid re-entry too (same as ROLL).
       setFieldErrors({});
@@ -512,6 +532,8 @@ export default function IngressForm({ onDone }: IngressFormProps) {
     setFabricType('');
     setProductType('ROLL');
     setLocation('');
+    setColorCode('');
+    colorCodeTouched.current = false;
     setBatchDefaults(freshDefaults());
     setRolls([emptyRoll('R1', freshDefaults())]);
     setLotNumber('');
@@ -563,8 +585,25 @@ export default function IngressForm({ onDone }: IngressFormProps) {
               />
             </Field>
 
+            {/* COLOUR CODE — optional, batch-level (100s pastel / 200s medio / 300s oscuro) */}
+            <Field label="Código de color" hint="Opcional · 100s claro · 200s medio · 300s oscuro" error={fieldErrors.colorCode}>
+              <Input
+                data-color-code
+                aria-invalid={Boolean(fieldErrors.colorCode)}
+                value={colorCode}
+                placeholder="215"
+                maxLength={12}
+                onChange={(e) => {
+                  clearFieldError('colorCode');
+                  colorCodeTouched.current = true;
+                  setColorCode(e.target.value);
+                }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); nmRef.current?.focus(); } }}
+              />
+            </Field>
+
             {/* NM */}
-            <Field label="NM (métrica aguja)" error={fieldErrors.nm}>
+            <Field label={`${NM_LABEL} (métrica aguja)`} error={fieldErrors.nm}>
               <Combobox
                 ref={nmRef}
                 aria-invalid={Boolean(fieldErrors.nm)}

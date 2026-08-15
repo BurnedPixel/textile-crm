@@ -97,6 +97,42 @@ describe('resolveDocConflicts — counters resolve via the ledger', () => {
     expect(resolved._conflicts ?? []).toHaveLength(0); // conflicts gone
     expect(resolved.currentWeightKg).toBe(20); // rebuilt from ledger, not the bogus rev
   });
+
+  it('folds colorCode across revs — the arbitrary winner must not lose it', async () => {
+    // Device A registers the code; device B, forked from a pre-code rev, tops
+    // the batch up without one. colorCode is not derivable from the ledger, so
+    // whichever rev wins, the code must survive the resolution.
+    const db = makeTestDb();
+    await ingressStock(db, {
+      color: 'Azul Rey',
+      nm: '30',
+      fabricType: 'Jersey',
+      productType: 'ROLL',
+      colorCode: '215',
+      operatorId: 'op',
+      rolls: [{ pieceId: 'R1', weightKg: 20, purchaseValueUsd: 5, salePriceUsd: 8 }],
+    });
+    const bid = batchIdOf('Azul Rey', '30', 'Jersey');
+
+    // Inject device B's code-less fork with a rev id that SORTS ABOVE the
+    // stored one, so CouchDB's deterministic winner rule picks the fork.
+    const codeless = { ...((await db.get(bid)) as Record<string, unknown>) };
+    delete codeless.colorCode;
+    codeless._rev = '2-' + 'f'.repeat(32);
+    await db.bulkDocs([codeless], { new_edits: false } as never);
+
+    const winner = (await db.get(bid)) as { colorCode?: string };
+    expect(winner.colorCode).toBeUndefined(); // the code-less fork won — the hazard is real
+
+    await resolveDocConflicts(db, bid);
+
+    const resolved = (await db.get(bid, { conflicts: true })) as {
+      _conflicts?: string[];
+      colorCode?: string;
+    };
+    expect(resolved._conflicts ?? []).toHaveLength(0);
+    expect(resolved.colorCode).toBe('215'); // folded from the losing rev
+  });
 });
 
 // A new config document that falls through this resolver lands in the

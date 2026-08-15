@@ -10,7 +10,7 @@ import { getPayments, paymentsBySale, recordPayment, saleBalance } from '../../l
 import { cachedUser } from '../../lib/auth';
 import {
   fmtUsd, fmtBs, fmtDateTime, toBs, round2, fmtLots,
-  PAYMENT_LABEL, PAYMENT_TONE, PRODUCT_TYPE_LABEL,
+  PAYMENT_LABEL, PAYMENT_TONE, PRODUCT_TYPE_LABEL, NM_LABEL,
 } from '../../lib/format';
 import {
   Badge,
@@ -174,6 +174,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
         const q = normStr(filter);
         return (
           normStr(batch.color).includes(q) ||
+          (batch.colorCode ? normStr(batch.colorCode).includes(q) : false) ||
           normStr(batch.nm).includes(q) ||
           normStr(batch.fabricType).includes(q) ||
           (batch.location ? normStr(batch.location).includes(q) : false) ||
@@ -239,7 +240,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
           ref={inputRef}
           data-hotkey-search
           type="search"
-          placeholder="Filtrar artículos… Color, NM, tipo, nº de lote…"
+          placeholder={`Filtrar artículos… Color, código, ${NM_LABEL}, tipo, nº de lote…`}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -285,7 +286,7 @@ function InventoryTable({ stocked }: InventoryTableProps) {
         >
           <thead>
             <tr>
-              {['Color', 'NM', 'Tipo', 'Categoría', 'Stock', 'Lote', 'Ubicación'].map((h) => (
+              {['Color', NM_LABEL, 'Tipo', 'Categoría', 'Stock', 'Lote', 'Ubicación'].map((h) => (
                 <th
                   key={h}
                   style={{
@@ -325,6 +326,11 @@ function InventoryTable({ stocked }: InventoryTableProps) {
               >
                 <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                   <SwatchChip color={batch.color} size="sm" />
+                  {batch.colorCode && (
+                    <span style={{ marginLeft: '6px', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-thread)' }}>
+                      {batch.colorCode}
+                    </span>
+                  )}
                 </td>
                 <td
                   style={{

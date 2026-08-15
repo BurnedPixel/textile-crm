@@ -36,10 +36,11 @@ describe('saleTaxes — the one definition of the money rules', () => {
   });
 
   it('charges IGTF on the pre-IVA base, in proportion to what is paid in divisas', () => {
-    // The whole bill before IGTF is 116; paying 58 in cash settles half of it.
+    // The divisa share is measured against the BASE alone (client, R2-5):
+    // $58 in cash against a $100 base is a 58% share.
     const half = saleTaxes(sale({ ivaRate: IVA_RATE, igtfRate: IGTF_RATE, paidUsdCash: 58 }));
-    expect(half.igtfUsd).toBe(1.5); // 100 base × 0.5 × 3%
-    expect(half.grandTotalUsd).toBe(117.5);
+    expect(half.igtfUsd).toBe(1.74); // 100 base × 0.58 × 3%
+    expect(half.grandTotalUsd).toBe(117.74);
 
     // Paying the lot in divisas taxes the whole base.
     const all = saleTaxes(sale({ ivaRate: IVA_RATE, igtfRate: IGTF_RATE, paidUsdTransfer: 116 }));
@@ -78,9 +79,9 @@ describe('saleBalance — what is owed is the GRAND total', () => {
     const s = sale({ ivaRate: IVA_RATE, igtfRate: IGTF_RATE, paidUsdCash: 100 });
     const b = saleBalance(s);
     expect(b.status).toBe('PARTIAL');
-    // $100 against a $116 bill is an 86.2% divisa share, so IGTF is
-    // 100 × 0.862 × 3% = 2.59 and the grand total is 118.59.
-    expect(b.owedUsd).toBe(18.59);
+    // $100 in divisas covers the whole $100 base (share capped at 1), so IGTF
+    // is 100 × 1 × 3% = 3 and the grand total is 119.
+    expect(b.owedUsd).toBe(19);
   });
 
   it('leaves an untaxed sale balance exactly where it was', () => {
