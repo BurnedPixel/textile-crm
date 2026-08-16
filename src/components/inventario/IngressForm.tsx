@@ -14,6 +14,7 @@ import {
   getColorChart, getCatalog, getPriceList,
   chartColorByName, catalogFabricByName, suggestedSalePriceUsd,
 } from '../../lib/catalog';
+import { companionRuleFor } from '../../lib/companions';
 import { clientsWhoBought, waLink, buildArrivalText } from '../../lib/whatsapp';
 import { batchIdOf, norm, type ProductType, type ConditionTag, type BatchDoc, type ClientDoc, type ProductDoc } from '../../lib/types';
 import { fmtKg, fmtUnits, fmtLotsLabel, CONDITION_LABEL, NM_LABEL } from '../../lib/format';
@@ -151,6 +152,18 @@ export default function IngressForm({ onDone }: IngressFormProps) {
   // the previous arrival would silently stamp the wrong lot onto the next rolls.
   const [lotNumber, setLotNumber] = useState('');
 
+  // ─ compañeros del mismo lote (client, 2026-08-16) ─
+  // The arrival usually brings the companion in the SAME lot: ribb rolls (kg)
+  // with jersey/fleece, combos (units) with piqué. Filled here they register as
+  // the companion's OWN article — same colour, NM, lote and código — in the
+  // same submission. Left empty, nothing happens; registering the companion
+  // separately keeps working exactly as before.
+  const [compRolls, setCompRolls] = useState<string[]>(['']);
+  const [compUnits, setCompUnits] = useState('');
+  const [compCost, setCompCost] = useState('');
+  const [compSale, setCompSale] = useState('');
+  const [compErr, setCompErr] = useState('');
+
   // ─ roll rows ─
   const [rolls, setRolls] = useState<RollRow[]>(() => [emptyRoll('R1', freshDefaults())]);
   // Highest existing roll number for the matched ROLL batch. Sequencing new
@@ -233,12 +246,35 @@ export default function IngressForm({ onDone }: IngressFormProps) {
   // resolve to no id, so they get their own keys.
   const matchKey = cascadeComplete ? (matchedBatch?._id ?? 'new') : 'none';
 
+  // ─── Compañero del mismo lote (derived) ─────────────────────────────────────
+  // Only ROLL fabrics have one (jersey/fleece → ribb, piqué → combos); the
+  // companion's catalogue name keeps ids converging on one batch per article.
+  const companionRule = cascadeComplete ? companionRuleFor(fabricType) : null;
+  const compFabricName = companionRule
+    ? (catalogFabricByName(catalog, companionRule.companion === 'ribb' ? 'Ribb' : 'Combo')?.name ??
+       (companionRule.companion === 'ribb' ? 'Ribb' : 'Combo'))
+    : '';
+  const compSalePrefill = companionRule
+    ? suggestedSalePriceUsd(priceList, compFabricName, nm, colorCode)
+    : null;
+  const compHasData = companionRule
+    ? (companionRule.companion === 'ribb'
+      ? compRolls.some((w) => w.trim() !== '')
+      : compUnits.trim() !== '')
+    : false;
+
   useEffect(() => {
     const found = matchedBatch ?? null;
 
     // Batch-level, so it prefills off the batch itself — not off a product, and
     // for every productType (the price prefills below are ROLL/COMBO-specific).
     if (!colorCodeTouched.current) setColorCode(found?.colorCode ?? '');
+
+    // Companion rows belong to ONE arrival: a weight left over from the
+    // previous article would register ribb/combos onto the wrong lot.
+    setCompRolls(['']);
+    setCompUnits('');
+    setCompErr('');
 
     // Pre-fill rolls with next pieceId continuing past every roll ever created
     // (including sold-out ones), read from the actual product docs — not
@@ -460,6 +496,32 @@ export default function IngressForm({ onDone }: IngressFormProps) {
       return;
     }
 
+    // Companion pre-flight: catch its problems BEFORE the fabric is written,
+    // so a typo here never leaves a half-done arrival.
+    setCompErr('');
+    if (companionRule && compHasData) {
+      const cost = Number(compCost);
+      const sale = compSale.trim() !== '' ? Number(compSale) : (compSalePrefill ?? NaN);
+      const weights = compRolls.filter((w) => w.trim() !== '').map(Number);
+      const u = Number(compUnits);
+      let problem = '';
+      if (companionRule.companion === 'ribb' &&
+          (weights.length === 0 || weights.some((w) => !Number.isFinite(w) || w <= 0))) {
+        problem = 'Cada rollo del compañero necesita un peso válido.';
+      } else if (companionRule.companion === 'combos' && (!Number.isInteger(u) || u <= 0)) {
+        problem = 'Ingresa una cantidad válida de combos.';
+      } else if (!Number.isFinite(cost) || cost <= 0) {
+        problem = 'Ingresa el costo del compañero.';
+      } else if (!Number.isFinite(sale) || sale <= 0) {
+        problem = 'Ingresa el precio de venta del compañero.';
+      }
+      if (problem) {
+        setCompErr(problem);
+        setError('Faltan datos — revisa el compañero del mismo lote.');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const operatorId = cachedUser()?.name ?? 'desconocido';
@@ -507,7 +569,68 @@ export default function IngressForm({ onDone }: IngressFormProps) {
           rolls: parsedRolls,
         });
         const rollWord = parsedRolls.length === 1 ? 'rollo' : 'rollos';
-        setSuccess(`Ingreso registrado — ${parsedRolls.length} ${rollWord} (${fmtKg(totalKg)}).`);
+        let msg = `Ingreso registrado — ${parsedRolls.length} ${rollWord} (${fmtKg(totalKg)}).`;
+
+        // Companion of the same lot, as its own article. Runs AFTER the fabric
+        // landed; if it fails the fabric must not be re-submitted, so the
+        // operator is told to register the companion separately instead.
+        if (companionRule && compHasData) {
+          try {
+            const compCostNum = Number(compCost);
+            const compSaleNum = compSale.trim() !== '' ? Number(compSale) : (compSalePrefill ?? NaN);
+            const common = {
+              color: color.trim(),
+              nm: nm.trim(),
+              fabricType: compFabricName,
+              location: location.trim() || matchedBatch?.location,
+              // The resolved chart code travels to the companion article too —
+              // it is the same colour of the same lot.
+              colorCode: colorCode.trim() || undefined,
+              operatorId,
+              reason: 'Ingreso de inventario — compañero del mismo lote',
+              lotNumber: lotNumber.trim() || undefined,
+              pantone: batchDefaults.pantone.trim() || undefined,
+            };
+            if (companionRule.companion === 'ribb') {
+              const weights = compRolls.filter((w) => w.trim() !== '').map(Number);
+              // Piece ids continue past every roll the companion batch ever had.
+              const compBatchId = batchIdOf(common.color, common.nm, compFabricName);
+              const base = maxRollNumber(
+                (await getBatchProducts(db, compBatchId).catch(() => [])).map((p) => p.pieceId),
+              );
+              await ingressStock(db, {
+                ...common,
+                productType: 'ROLL',
+                rolls: weights.map((weightKg, i) => ({
+                  pieceId: nextPieceLabel(base, i),
+                  weightKg,
+                  purchaseValueUsd: compCostNum,
+                  salePriceUsd: compSaleNum,
+                  conditionTag: 'FIRST' as const,
+                })),
+              });
+              msg += ` + ${weights.length} de ${compFabricName.toLowerCase()} (${fmtKg(weights.reduce((a, b) => a + b, 0))}).`;
+            } else {
+              await ingressStock(db, {
+                ...common,
+                productType: 'COMBO',
+                units: Number(compUnits),
+                unitPurchaseValueUsd: compCostNum,
+                unitSalePriceUsd: compSaleNum,
+                unitConditionTag: 'FIRST',
+              });
+              msg += ` + ${fmtUnits(Number(compUnits))} de combos.`;
+            }
+            setCompRolls(['']);
+            setCompUnits('');
+            setCompErr('');
+          } catch (err) {
+            setCompErr(
+              `La tela quedó registrada, pero el compañero falló: ${(err as Error).message} — regístralo por separado.`,
+            );
+          }
+        }
+        setSuccess(msg);
       } else {
         await ingressStock(db, {
           color: color.trim(),
@@ -988,6 +1111,94 @@ export default function IngressForm({ onDone }: IngressFormProps) {
             <p className="kbd-hints" style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-thread)', margin: '8px 0 0' }}>
               <Kbd>↹</Kbd> / <Kbd>↵</Kbd> siguiente rollo · costo/precio/condición se heredan de arriba y se ajustan con el ratón
             </p>
+          </section>
+        )}
+
+        {/* ─── COMPAÑERO DEL MISMO LOTE (optional, one submission) ─────── */}
+        {cascadeComplete && effectiveProductType === 'ROLL' && matchedBatch !== undefined && companionRule && (
+          <section style={sectionStyle} className="card">
+            <h2 style={sectionTitle}>
+              Compañero del mismo lote — {compFabricName}
+            </h2>
+            <p style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-thread)', margin: '0 0 12px' }}>
+              Opcional · se registra como su propio artículo con el mismo color, lote y código
+              {companionRule.companion === 'ribb' ? ` (${NM_LABEL} ${nm})` : ''}. Dejarlo vacío no registra nada;
+              también se puede seguir ingresando por separado.
+            </p>
+
+            {companionRule.companion === 'ribb' ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end', marginBottom: 12 }}>
+                {compRolls.map((w, i) => (
+                  <div key={i} style={{ width: 110 }}>
+                    <Field label={`Rollo ${i + 1} · kg`}>
+                      <NumberInput
+                        data-comp-weight
+                        value={w}
+                        min={0}
+                        step={0.001}
+                        placeholder="0.000"
+                        onChange={(e) => setCompRolls((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))}
+                      />
+                    </Field>
+                  </div>
+                ))}
+                <Button variant="ghost" size="md" type="button" onClick={() => setCompRolls((prev) => [...prev, ''])}>
+                  + Rollo de {compFabricName.toLowerCase()}
+                </Button>
+                {compRolls.length > 1 && (
+                  <Button variant="ghost" size="md" type="button" onClick={() => setCompRolls((prev) => prev.slice(0, -1))}>
+                    − Quitar último
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div style={{ maxWidth: 180, marginBottom: 12 }}>
+                <Field label="Combos (unidades)">
+                  <NumberInput
+                    data-comp-units
+                    value={compUnits}
+                    min={0}
+                    step={1}
+                    placeholder="0"
+                    onChange={(e) => setCompUnits(e.target.value)}
+                  />
+                </Field>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ width: 140 }}>
+                <Field label={companionRule.companion === 'ribb' ? 'Costo · $/kg' : 'Costo · $/combo'}>
+                  <NumberInput
+                    value={compCost}
+                    min={0}
+                    step={0.01}
+                    placeholder="0.00"
+                    onChange={(e) => setCompCost(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <div style={{ width: 140 }}>
+                <Field
+                  label={companionRule.companion === 'ribb' ? 'Venta · $/kg' : 'Venta · $/combo'}
+                  hint={compSalePrefill !== null && compSale.trim() === '' ? 'De la lista de precios' : undefined}
+                >
+                  <NumberInput
+                    value={compSale}
+                    min={0}
+                    step={0.01}
+                    placeholder={compSalePrefill !== null ? String(compSalePrefill) : '0.00'}
+                    onChange={(e) => setCompSale(e.target.value)}
+                  />
+                </Field>
+              </div>
+            </div>
+
+            {compErr && (
+              <div role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: 13, color: 'var(--color-danger)', marginTop: 10 }}>
+                {compErr}
+              </div>
+            )}
           </section>
         )}
 
