@@ -525,7 +525,7 @@ export const CATALOG_DOCS = [
   {
     "_id": "config:catalog",
     "type": "config",
-    "note": "Catálogo cerrado de telas y grosores (cliente, 2026-08-15: «ya tiene todas las telas, colores y NM's»). counts vacío = grosor libre (sin dato). productType sugiere la categoría al ingresar. Fuente: tablas NM/Dtex de las notas del cliente + lista de precios junio 2026.",
+    "note": "Catálogo cerrado de telas y grosores (cliente, 2026-08-15: «ya tiene todas las telas, colores y NM's»). counts vacío = grosor libre (sin dato). productType sugiere la categoría al ingresar. Fuente: tablas NM/Dtex de las notas del cliente + lista de precios junio 2026. compositions = mezclas de fibra estándar (cliente): únicas opciones al ingresar; el campo sigue siendo opcional. Pendiente confirmar si el poliéster texturizado (Dtex) necesita «100% poliéster» como cuarta opción.",
     "fabrics": [
       {
         "name": "Jersey",
@@ -649,7 +649,12 @@ export const CATALOG_DOCS = [
       }
     ],
     "source": "docs/fabric-standards.md §3 + LISTA DE PRECIOS JUNIO 2026.pdf",
-    "lastUpdate": "2026-08-15T00:00:00.000Z"
+    "lastUpdate": "2026-08-15T23:00:00.000Z",
+    "compositions": [
+      "65% poliéster / 35% algodón",
+      "48% poliéster / 52% algodón",
+      "100% algodón"
+    ]
   },
   {
     "_id": "config:pricelist:tiendas",

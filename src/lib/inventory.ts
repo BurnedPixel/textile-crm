@@ -540,6 +540,7 @@ export interface IngressFormErrors {
   nm?: string;
   fabricType?: string;
   colorCode?: string;
+  fiberComposition?: string;
   lotNumber?: string;
   purchaseValueUsd?: string;
   salePriceUsd?: string;
@@ -559,6 +560,8 @@ export interface IngressFormValues {
   productType: ProductType;
   /** Optional — an article may have no chart code. */
   colorCode?: string;
+  /** Optional — validated against the standard blends when the catalogue is loaded. */
+  fiberComposition?: string;
   lotNumber: string;
   /** Batch-level defaults, used when a row leaves its own cost/price blank. */
   purchaseValueUsd: string;
@@ -596,6 +599,8 @@ export interface CatalogContext {
   chartColors?: string[] | null;
   /** Catalogue fabrics with their allowed counts. null/absent = no restriction. */
   fabrics?: Array<{ name: string; counts: string[] }> | null;
+  /** Standard fibre blends. null/absent = no restriction. */
+  compositions?: string[] | null;
 }
 
 export function validateIngressForm(
@@ -635,6 +640,16 @@ export function validateIngressForm(
   // Optional, but capped short — it is a chart code, not a description.
   if ((v.colorCode ?? '').trim().length > FIELD_MAX.colorCode) {
     errors.colorCode = `No puede superar ${FIELD_MAX.colorCode} caracteres.`;
+  }
+
+  // Composition is optional, but when present it must be one of the client's
+  // standard blends (65/35 · 48/52 · 100% algodón).
+  const composition = (v.fiberComposition ?? '').trim();
+  if (composition && catalog?.compositions?.length) {
+    const c = norm(composition);
+    if (!catalog.compositions.some((blend) => norm(blend) === c)) {
+      errors.fiberComposition = 'Fuera de las mezclas estándar.';
+    }
   }
 
   if (v.productType === 'ROLL') {
