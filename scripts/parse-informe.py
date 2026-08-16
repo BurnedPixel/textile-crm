@@ -37,8 +37,11 @@ LAYOUT = {
     "LUNES":     dict(n0=1, cli=3, prod=4, kg=5, ud=6, pu=7, tot=8, transf=9, efect=10, bs=11, obs=13),
     "MARTES":    dict(n0=0, cli=2, prod=3, kg=4, ud=5, pu=6, tot=7, efect=8, bs=9, obs=11),
     "MIERCOLES": dict(n0=0, cli=2, prod=3, kg=4, ud=5, pu=6, tot=7, efect=8, bs=9, obs=12),
-    "JUEVES":    dict(n0=0, cli=1, prod=2, kg=3, ud=4, pu=5, tot=6, bs=7, obs=9),
-    "VIERNES":   dict(n0=1, cli=2, prod=3, kg=4, ud=5, pu=6, tot=7, bs=8, obs=10),
+    # JUEVES/VIERNES head their cash column "USD" (not "EFECTIVO") — it was
+    # missed on the first pass and every DIVISAS sale of those two days parsed
+    # as unpaid, which the VIERNES CSV re-sent by the client exposed.
+    "JUEVES":    dict(n0=0, cli=1, prod=2, kg=3, ud=4, pu=5, tot=6, bs=7, efect=8, obs=9),
+    "VIERNES":   dict(n0=1, cli=2, prod=3, kg=4, ud=5, pu=6, tot=7, bs=8, efect=9, obs=10),
     "SABADO":    dict(n0=0, cli=1, prod=2, kg=3, ud=4, pu=5, tot=6, efect=7, bs=8, obs=11),
 }
 # "TASA BCV" as written on each sheet. SABADO has none (no trading) — carry Friday's.
