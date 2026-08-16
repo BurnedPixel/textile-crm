@@ -41,7 +41,7 @@ import {
 } from '../../lib/format';
 import {
   UNIT_FOR, clientIdOf, FIELD_MAX, hasRollStock, validateDocumentId, validateName, validatePhone,
-  validateEmail,
+  validateEmail, normalizeDocumentId,
   type BatchDoc, type ProductDoc, type CartLineItem, type ClientDoc, type CartDoc,
   type PaymentStatus, type SaleDoc,
 } from '../../lib/types';
@@ -934,9 +934,18 @@ export default function SaleTerminal() {
 
   function startCreatingClient(): void {
     setCreatingClient(true);
-    setNewClientName(clientSearch);
-    setNewClientDocId('');
-    setNewClientPhone('');
+    // The search box takes a name OR an id — prefill whichever field the typed
+    // text actually looks like, so the operator doesn't retype it.
+    const trimmed = clientSearch.trim();
+    const normalized = normalizeDocumentId(trimmed);
+    if (normalized || /^\d{5,}$/.test(trimmed)) {
+      setNewClientDocId(normalized ?? trimmed.toUpperCase());
+      setNewClientName('');
+    } else {
+      setNewClientName(trimmed);
+      setNewClientDocId('');
+    }
+    setNewClientPhone('+58 ');
     setNewClientAddress('');
     setNewClientErr(null);
     setClientOpen(false);
@@ -984,7 +993,7 @@ export default function SaleTerminal() {
   function startCompletingClient(): void {
     if (!selectedClient) return;
     setCompletingClient(true);
-    setCompletePhone(selectedClient.phoneNumber ?? '');
+    setCompletePhone(selectedClient.phoneNumber || '+58 ');
     setCompleteAddress(selectedClient.address ?? '');
     setCompleteEmail(selectedClient.email ?? '');
     setCompleteErr(null);
@@ -1619,7 +1628,7 @@ export default function SaleTerminal() {
                             autoFocus
                             type="tel"
                             inputMode="tel"
-                            placeholder="+58 412-000-0000"
+                            placeholder="+58 412-1234567"
                             maxLength={FIELD_MAX.phoneNumber}
                             value={completePhone}
                             onChange={(e) => setCompletePhone(e.target.value)}
@@ -1687,6 +1696,8 @@ export default function SaleTerminal() {
                   autoFocus
                   placeholder="Nombre completo"
                   maxLength={FIELD_MAX.name}
+                  style={{ textTransform: 'uppercase' }}
+                  autoCapitalize="characters"
                   value={newClientName}
                   onChange={(e) => setNewClientName(e.target.value)}
                   onKeyDown={(e) => {
@@ -1698,8 +1709,9 @@ export default function SaleTerminal() {
               </Field>
               <Field label="Cédula / RIF">
                 <Input
-                  placeholder="V-12345678 o J-12345678"
+                  placeholder="V-12345678 · E-84123456 · J-…-9"
                   maxLength={FIELD_MAX.documentId}
+                  style={{ textTransform: 'uppercase' }}
                   autoCapitalize="characters"
                   value={newClientDocId}
                   onChange={(e) => setNewClientDocId(e.target.value)}
@@ -1714,7 +1726,7 @@ export default function SaleTerminal() {
                 <Input
                   type="tel"
                   inputMode="tel"
-                  placeholder="+58 412-000-0000"
+                  placeholder="+58 412-1234567"
                   maxLength={FIELD_MAX.phoneNumber}
                   value={newClientPhone}
                   onChange={(e) => setNewClientPhone(e.target.value)}

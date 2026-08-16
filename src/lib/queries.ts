@@ -9,6 +9,8 @@ import {
   assertAmount,
   clientIdOf,
   expenseIdOf,
+  normalizeDocumentId,
+  normalizePhone,
   validateDocumentId,
   validateEmail,
   validateName,
@@ -207,7 +209,6 @@ export async function saveClient(
 ): Promise<ClientDoc> {
   // The forms call these too, for field-level errors — but THIS is the contract.
   for (const problem of [
-    validateDocumentId(input.documentId ?? ''),
     validateName(input.name ?? ''),
     validatePhone(input.phoneNumber ?? ''),
     validateEmail(input.email ?? ''),
@@ -220,18 +221,40 @@ export async function saveClient(
   if (input.specialty?.some((s) => s.length > FIELD_MAX.specialty)) {
     throw new Error(`Cada especialidad no puede superar ${FIELD_MAX.specialty} caracteres.`);
   }
-  const _id = clientIdOf(input.documentId);
-  const existing = await getById<ClientDoc>(db, _id);
+  // The documentId builds the `_id`. A typed id is normalized to its canonical
+  // shape (V-12345678) BEFORE keying, so sloppy variants of one document
+  // converge on one doc. An UPDATE keeps the stored id verbatim — normalizing
+  // it would re-key the client and orphan every sale pointing at the old `_id`
+  // (norm() keeps dashes) — so the strict format rule applies to CREATE only
+  // and legacy ids can never block an edit.
+  const typed = (input.documentId ?? '').trim();
+  const asStored = typed ? await getById<ClientDoc>(db, clientIdOf(typed)) : null;
+  let documentId: string;
+  if (asStored) {
+    if (typed.length > FIELD_MAX.documentId) {
+      throw new Error(`La cédula o RIF no puede superar ${FIELD_MAX.documentId} caracteres.`);
+    }
+    documentId = typed;
+  } else {
+    const problem = validateDocumentId(typed);
+    if (problem) throw new Error(problem);
+    documentId = normalizeDocumentId(typed) as string;
+  }
+  const _id = clientIdOf(documentId);
+  const existing = asStored ?? (await getById<ClientDoc>(db, _id));
   if (opts.createOnly && existing) throw new Error('Ya existe un cliente con ese documento.');
+  // Caps-only names (user rule 2026-08-16) and +cc phones are enforced HERE,
+  // not per-form: whatever a form lets through, the stored doc is canonical.
+  const rawPhone = input.phoneNumber ?? existing?.phoneNumber ?? '';
   const doc: ClientDoc = {
     _id,
     ...(existing?._rev ? { _rev: existing._rev } : {}),
     type: 'client',
-    documentId: input.documentId.trim(),
+    documentId,
     entityType: input.entityType ?? existing?.entityType ?? 'PERSON',
-    name: input.name.trim(),
+    name: input.name.trim().toUpperCase(),
     address: input.address ?? existing?.address ?? '',
-    phoneNumber: input.phoneNumber ?? existing?.phoneNumber ?? '',
+    phoneNumber: normalizePhone(rawPhone) ?? rawPhone,
     email: input.email ?? existing?.email ?? '',
     // Capped: an unbounded array on a doc that syncs to every device is a
     // payload the client controls.

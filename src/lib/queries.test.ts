@@ -63,6 +63,6 @@ describe('saveClient — createOnly guard', () => {
       saveClient(db, { documentId: 'v-1000001', name: 'Impostor' }, { createOnly: true }),
     ).rejects.toThrow(/Ya existe/);
     const stored = await saveClient(db, { documentId: 'V-1000001', name: 'Edited' }); // upsert still works
-    expect(stored.name).toBe('Edited');
+    expect(stored.name).toBe('EDITED'); // boundary stores caps
   });
 });

@@ -29,12 +29,14 @@ describe('toWaNumber — a stored phone becomes a wa.me number, or nothing', () 
     }
   });
 
-  it('is stricter than validatePhone, on purpose', () => {
-    // validatePhone accepts a 7-digit local number; wa.me cannot dial one, so
-    // the button has to hide rather than open a chat with nobody. Passing
-    // validation tells you nothing about wa.me usability.
-    expect(validatePhone('7654321')).toBeNull(); // valid as a stored phone
-    expect(toWaNumber('7654321')).toBeNull();    // but not a WhatsApp number
+  it('agrees with validatePhone — one definition of a normalizable number', () => {
+    // Since the +cc rule (2026-08-16) both sides reject a 7-digit local number:
+    // it cannot carry a country code, so it is neither a valid stored phone nor
+    // a wa.me number. What validates, links.
+    expect(validatePhone('7654321')).not.toBeNull();
+    expect(toWaNumber('7654321')).toBeNull();
+    expect(validatePhone('+58 412 1234567')).toBeNull();
+    expect(toWaNumber('+58 412 1234567')).toBe('584121234567');
   });
 });
 

@@ -8,7 +8,7 @@ import { getClients, getSales, saveClient, usdPaid, grandTotalUsd, getFiscalConf
 import { waLink, buildDunningText, toWaNumber } from '../../lib/whatsapp';
 import { getPayments, paymentsBySale, saleBalance } from '../../lib/payments';
 import {
-  FIELD_MAX, validateDocumentId, validateEmail, validateName, validatePhone,
+  FIELD_MAX, validateDocumentId, validateEmail, validateName, validatePhone, normalizePhone,
   type ClientDoc, type SaleDoc, type PaymentDoc, type EntityType,
 } from '../../lib/types';
 import { fmtDate, fmtUsd, PAYMENT_LABEL, PAYMENT_TONE } from '../../lib/format';
@@ -75,7 +75,7 @@ function blankForm(): ClientFormState {
     entityType: 'PERSON',
     name: '',
     address: '',
-    phoneNumber: '',
+    phoneNumber: '+58 ',
     email: '',
     specialty: '',
   };
@@ -87,7 +87,9 @@ function clientToForm(c: ClientDoc): ClientFormState {
     entityType: c.entityType,
     name: c.name,
     address: c.address,
-    phoneNumber: c.phoneNumber,
+    // Legacy numbers display canonically; un-normalizable ones show raw so the
+    // operator can fix them (normalizePhone returns null, not '', on those).
+    phoneNumber: normalizePhone(c.phoneNumber) ?? c.phoneNumber,
     email: c.email,
     specialty: c.specialty.join(', '),
   };
@@ -578,10 +580,10 @@ function ClientForm({ initial, isNew, onSave, onCancel, saving, serverError }: C
           <Input
             value={form.documentId}
             onChange={set('documentId')}
-            placeholder="V-12345678 / J-12345678-9"
+            placeholder="V-12345678 · E-84123456 · J-12345678-9"
             maxLength={FIELD_MAX.documentId}
             autoCapitalize="characters"
-            style={{ fontFamily: 'var(--font-mono)', fontSize: '14px' }}
+            style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', textTransform: 'uppercase' }}
             autoFocus
           />
         ) : (
@@ -615,6 +617,8 @@ function ClientForm({ initial, isNew, onSave, onCancel, saving, serverError }: C
           placeholder="Nombre completo o razón social"
           maxLength={FIELD_MAX.name}
           autoComplete="name"
+          autoCapitalize="characters"
+          style={{ textTransform: 'uppercase' }}
         />
       </Field>
 
@@ -622,7 +626,7 @@ function ClientForm({ initial, isNew, onSave, onCancel, saving, serverError }: C
         <Input
           value={form.phoneNumber}
           onChange={set('phoneNumber')}
-          placeholder="0412-1234567"
+          placeholder="+58 412-1234567"
           type="tel"
           inputMode="tel"
           maxLength={FIELD_MAX.phoneNumber}

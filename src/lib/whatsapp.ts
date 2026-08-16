@@ -12,7 +12,7 @@
 // human pressing the button, the operator IS the filter.
 
 import { fmtUsd } from './format';
-import { norm, type SaleDoc } from './types';
+import { norm, normalizePhone, type SaleDoc } from './types';
 
 /**
  * A phone number as wa.me wants it: digits only, country code included, no `+`.
@@ -25,19 +25,10 @@ import { norm, type SaleDoc } from './types';
  * only the operator can know that.
  */
 export function toWaNumber(phone: string | undefined | null): string | null {
-  if (!phone) return null;
-  const digits = phone.replace(/\D/g, '');
-  if (!digits) return null;
-
-  // 0412… → 58412…  (the local trunk prefix is not part of the international number)
-  let e164 = digits.startsWith('0') ? `58${digits.slice(1)}` : digits;
-  // A bare 412... typed without either prefix.
-  if (e164.length === 10 && !e164.startsWith('58')) e164 = `58${e164}`;
-
-  // E.164 is 7–15 digits including the country code. Anything outside that is a
-  // typo, not a number, and must not become a link.
-  if (e164.length < 10 || e164.length > 15) return null;
-  return e164;
+  // One definition of "what is this number internationally": normalizePhone in
+  // types.ts (the input-boundary rule). wa.me just wants it without the `+`.
+  const canonical = phone ? normalizePhone(phone) : '';
+  return canonical ? canonical.slice(1) : null;
 }
 
 /** The full wa.me URL, or null when the number is unusable. */

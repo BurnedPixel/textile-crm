@@ -3,6 +3,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   assertAmount,
+  normalizeDocumentId,
+  normalizePhone,
   validateDocumentId,
   validateEmail,
   validateName,
@@ -13,7 +15,7 @@ import { makeTestDb } from './testdb';
 
 describe('validateDocumentId', () => {
   it('accepts the real Venezuelan shapes', () => {
-    for (const ok of ['V-12345678', 'v12345678', '12345678', 'J-40123456-7', 'E-81234567', 'G-200012345', 'V-9876543']) {
+    for (const ok of ['V-12345678', 'v12345678', 'J-40123456-7', 'E-81234567', 'G-200012345', 'V-9876543', 'P-1234567']) {
       expect(validateDocumentId(ok), ok).toBeNull();
     }
   });
@@ -23,7 +25,9 @@ describe('validateDocumentId', () => {
   });
 
   it('rejects what cannot be a document', () => {
-    for (const bad of ['', 'hola', 'V-', '1234', 'V-123456789012345', '12345678@', 'V 12 AB']) {
+    // The prefix letter is REQUIRED now (user rule 2026-08-16) — a bare cédula
+    // number without V/E/J/G/P is no longer a valid id to type.
+    for (const bad of ['', 'hola', 'V-', '1234', '12345678', 'Z-12345678', 'V-123456789012345', '12345678@', 'V 12 AB']) {
       expect(validateDocumentId(bad), bad).not.toBeNull();
     }
   });
@@ -60,8 +64,34 @@ describe('validatePhone', () => {
   });
 
   it('rejects text and impossible lengths', () => {
-    for (const bad of ['llámame', '0412-ABCDEFG', '123', '+', '12345678901234567890']) {
+    for (const bad of ['llámame', '0412-ABCDEFG', '123', '7654321', '12345678901234567890']) {
       expect(validatePhone(bad), bad).not.toBeNull();
+    }
+  });
+
+  it('treats a bare «+58» autofill (or a lone +) as empty, not as an error', () => {
+    expect(validatePhone('+58 ')).toBeNull();
+    expect(validatePhone('+')).toBeNull();
+  });
+});
+
+describe('normalizePhone', () => {
+  it('canonicalizes to +<cc><digits>', () => {
+    expect(normalizePhone('0412-1234567')).toBe('+584121234567');
+    expect(normalizePhone('4121234567')).toBe('+584121234567');
+    expect(normalizePhone('+58 412 1234567')).toBe('+584121234567');
+    expect(normalizePhone('+1 (305) 555-0100')).toBe('+13055550100');
+  });
+
+  it('empty and untouched-autofill inputs mean «no phone»', () => {
+    expect(normalizePhone('')).toBe('');
+    expect(normalizePhone('+58 ')).toBe('');
+    expect(normalizePhone('+')).toBe('');
+  });
+
+  it('what cannot be a phone is null, never a guess', () => {
+    for (const bad of ['abc', '123', '7654321', '+58abc']) {
+      expect(normalizePhone(bad), bad).toBeNull();
     }
   });
 });
@@ -132,6 +162,34 @@ describe('saveClient — the same rules apply at the module boundary', () => {
       email: 'ventas@textiles.co',
     });
     expect(saved.documentId).toBe('J-40123456-7');
-    expect(saved.phoneNumber).toBe('+58 412 1234567');
+    // Stored canonically: caps name, +cc phone (user rule 2026-08-16).
+    expect(saved.name).toBe('TEXTILES 2000 C.A.');
+    expect(saved.phoneNumber).toBe('+584121234567');
+  });
+
+  it('normalizes a sloppy documentId when CREATING', async () => {
+    const db = makeTestDb();
+    const saved = await saveClient(db, { documentId: ' v12345678 ', name: 'Ana' });
+    expect(saved.documentId).toBe('V-12345678');
+    expect(saved._id).toBe('client:v-12345678');
+    // ...and a later variant of the same document converges on the same doc.
+    const again = await saveClient(db, { documentId: 'V-12.345.678', name: 'Ana María' });
+    expect(again._id).toBe(saved._id);
+  });
+
+  it('rejects a prefix-less id on create, but never re-keys a legacy doc', async () => {
+    const db = makeTestDb();
+    await expect(saveClient(db, { documentId: '12345678', name: 'Ana' })).rejects.toThrow(/V\/E\/J\/G\/P/);
+    // A legacy doc whose stored id predates the format rule stays editable and
+    // keeps its _id verbatim — normalizing it would orphan its sales.
+    await db.put({
+      _id: 'client:v42042069', type: 'client', documentId: 'V42042069',
+      entityType: 'PERSON', name: 'Legacy', address: '', phoneNumber: '', email: '',
+      specialty: [], updatedAt: new Date().toISOString(),
+    });
+    const edited = await saveClient(db, { documentId: 'V42042069', name: 'Legacy Edited', address: 'Calle 1' });
+    expect(edited._id).toBe('client:v42042069');
+    expect(edited.documentId).toBe('V42042069');
+    expect(edited.name).toBe('LEGACY EDITED');
   });
 });
