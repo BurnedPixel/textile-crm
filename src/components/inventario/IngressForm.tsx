@@ -10,6 +10,10 @@ import {
   ingressStock, validateIngressForm, ingressFormIsValid, type IngressFormErrors,
 } from '../../lib/inventory';
 import { useLiveQuery } from '../../lib/hooks';
+import {
+  getColorChart, getCatalog, getPriceList,
+  chartColorByName, catalogFabricByName, suggestedSalePriceUsd,
+} from '../../lib/catalog';
 import { clientsWhoBought, waLink, buildArrivalText } from '../../lib/whatsapp';
 import { batchIdOf, norm, type ProductType, type ConditionTag, type BatchDoc, type ClientDoc, type ProductDoc } from '../../lib/types';
 import { fmtKg, fmtUnits, fmtLotsLabel, CONDITION_LABEL, NM_LABEL } from '../../lib/format';
@@ -115,6 +119,15 @@ export default function IngressForm({ onDone }: IngressFormProps) {
   const { data: loadedBatches } = useLiveQuery(() => getBatches(db), []);
   const batches = loadedBatches ?? NO_BATCHES;
 
+  // ─ the closed catalogue (client, 2026-08-15): chart colours and catalogued
+  //   fabrics/counts are the ONLY options for now. Read from config: docs so an
+  //   updated chart or list syncs in without a redeploy; when a doc is absent
+  //   (fresh offline device) the form degrades to free entry rather than
+  //   locking the operator out.
+  const { data: chart = null } = useLiveQuery(() => getColorChart(db), []);
+  const { data: catalog = null } = useLiveQuery(() => getCatalog(db), []);
+  const { data: priceList = null } = useLiveQuery(() => getPriceList(db), []);
+
   // The matched article's products, kept so the banner can name the lots it
   // already holds — the operator needs to know whether this arrival is the same
   // lot as what is on the shelf before they type the number.
@@ -180,16 +193,30 @@ export default function IngressForm({ onDone }: IngressFormProps) {
   const rollsContainerRef = useRef<HTMLDivElement>(null);
 
   // ─── Datalist options ────────────────────────────────────────────────────────
+  //
+  // Catalogue first: the chart's colours in chart order (grouped by band) and
+  // the catalogue's fabrics/counts. Only when a reference doc is missing does
+  // the form fall back to the batch-derived free lists it started with.
 
-  const colorOptions = [...new Set(batches.map((b) => b.color))].sort();
+  const colorOptions = chart?.colors.length
+    ? chart.colors.map((c) => c.name)
+    : [...new Set(batches.map((b) => b.color))].sort();
+  const codeByColorName = new Map((chart?.colors ?? []).map((c) => [norm(c.name), c.code]));
 
-  const nmOptions = color
-    ? [...new Set(batches.filter((b) => norm(b.color) === norm(color)).map((b) => b.nm))].sort()
-    : [...new Set(batches.map((b) => b.nm))].sort();
+  const catalogFabric = catalogFabricByName(catalog, fabricType);
+  const fabricOptions = catalog?.fabrics.length
+    ? catalog.fabrics.map((f) => f.name)
+    : (color && nm
+      ? [...new Set(batches.filter((b) => norm(b.color) === norm(color) && norm(b.nm) === norm(nm)).map((b) => b.fabricType))].sort()
+      : [...new Set(batches.map((b) => b.fabricType))].sort());
 
-  const fabricOptions = color && nm
-    ? [...new Set(batches.filter((b) => norm(b.color) === norm(color) && norm(b.nm) === norm(nm)).map((b) => b.fabricType))].sort()
-    : [...new Set(batches.map((b) => b.fabricType))].sort();
+  const nmOptions = catalog?.fabrics.length
+    ? (catalogFabric && catalogFabric.counts.length
+      ? catalogFabric.counts
+      : [...new Set(catalog.fabrics.flatMap((f) => f.counts))])
+    : (color
+      ? [...new Set(batches.filter((b) => norm(b.color) === norm(color)).map((b) => b.nm))].sort()
+      : [...new Set(batches.map((b) => b.nm))].sort());
 
   // ─── Which article the cascade points at ────────────────────────────────────
   //
@@ -255,6 +282,19 @@ export default function IngressForm({ onDone }: IngressFormProps) {
       setMaxExistingRoll(0);
       if (!found && productType === 'ROLL') {
         setRolls([emptyRoll('R1', batchDefaults)]);
+      }
+
+      // NEW article: prefill the sale price straight off the printed price
+      // list (group by fabric+NM, band by the chart code). A suggestion behind
+      // the same touched guards as every other default — an existing article's
+      // stored prices always win over the list (the branch above).
+      if (!found && cascadeComplete) {
+        const listPrice = suggestedSalePriceUsd(priceList, fabricType, nm, colorCode);
+        if (listPrice !== null) {
+          setBatchDefaults((prev) =>
+            prev.touched.price ? prev : { ...prev, salePriceUsd: String(listPrice) });
+          if (!unitTouched.current.price) setUnitSalePriceUsd(String(listPrice));
+        }
       }
 
       // Prefill COMBO/PIECE prices from existing batch product.
@@ -392,6 +432,9 @@ export default function IngressForm({ onDone }: IngressFormProps) {
       units,
       unitPurchaseValueUsd,
       unitSalePriceUsd,
+    }, {
+      chartColors: chart?.colors.map((c) => c.name) ?? null,
+      fabrics: catalog?.fabrics ?? null,
     });
     setFieldErrors(problems);
     if (!ingressFormIsValid(problems)) {
@@ -579,9 +622,30 @@ export default function IngressForm({ onDone }: IngressFormProps) {
                 value={color}
                 placeholder="Azul rey"
                 options={colorOptions}
-                onChange={(v) => { clearFieldError('color'); setColor(v); }}
+                onChange={(v) => {
+                  clearFieldError('color');
+                  setColor(v);
+                  // A chart colour DEFINES its code — set it the moment the
+                  // typed/picked name resolves, and mark it touched so the
+                  // submit sends it (a new article must not lose its code).
+                  const entry = chartColorByName(chart, v);
+                  if (entry) {
+                    setColorCode(entry.code);
+                    colorCodeTouched.current = true;
+                    clearFieldError('colorCode');
+                  }
+                }}
                 onKeyDown={(e) => { if (e.key === 'Escape') { setColor(''); return; } advanceCascade(e, nmRef); }}
-                renderOption={(c) => <SwatchChip color={c} size="sm" />}
+                renderOption={(c) => (
+                  <>
+                    <SwatchChip color={c} size="sm" />
+                    {codeByColorName.get(norm(c)) && (
+                      <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-thread)' }}>
+                        {codeByColorName.get(norm(c))}
+                      </span>
+                    )}
+                  </>
+                )}
               />
             </Field>
 
@@ -626,7 +690,14 @@ export default function IngressForm({ onDone }: IngressFormProps) {
                 value={fabricType}
                 placeholder="Jersey"
                 options={fabricOptions}
-                onChange={(v) => { clearFieldError('fabricType'); setFabricType(v); }}
+                onChange={(v) => {
+                  clearFieldError('fabricType');
+                  setFabricType(v);
+                  // The catalogue knows the category: Combo counts in units,
+                  // cloth weighs in kg — one selector the operator can skip.
+                  const f = catalogFabricByName(catalog, v);
+                  if (f) setProductType(f.productType);
+                }}
                 onKeyDown={(e) => { if (e.key === 'Escape') setFabricType(''); }}
               />
             </Field>

@@ -31,7 +31,7 @@ export const ROLL_EMPTY_KG = 0.001;
 export const hasRollStock = (currentWeightKg: number): boolean =>
   currentWeightKg > ROLL_EMPTY_KG;
 
-interface Doc {
+export interface Doc {
   _id: string;
   _rev?: string;
 }

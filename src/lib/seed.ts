@@ -4,6 +4,7 @@
 // validation + ledger writes production uses. Never raw puts. Takes `db` first.
 
 import { batchIdOf, productIdOf, type CartLineItem } from './types';
+import { CATALOG_DOCS } from './seed-catalog';
 import { saveDailyRate, saveClient, addExpense } from './queries';
 import { ingressStock } from './inventory';
 import { checkout } from './checkout';
@@ -40,6 +41,12 @@ const ROLL_BATCHES: RollSpec[] = [
 
 export async function seedDemoData(db: DB): Promise<void> {
   await saveDailyRate(db, RATE);
+
+  // The closed-catalogue reference docs, same as production — the ingress
+  // restrictions and the price prefill are live in dev too. (Seed batches are
+  // written through ingressStock, which the catalogue deliberately does not
+  // constrain, so legacy colours like «Rojo Vino» still exist on screen.)
+  await db.bulkDocs(CATALOG_DOCS.map((d) => ({ ...d })) as never[]);
 
   // --- Inventory: ROLL batches (each roll a distinct piece, weight-tracked). ---
   for (const spec of ROLL_BATCHES) {
