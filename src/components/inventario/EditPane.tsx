@@ -14,15 +14,15 @@ import { useState, useEffect, useMemo } from 'react';
 import { db } from '../../lib/db';
 import { cachedUser } from '../../lib/auth';
 import { getProductsWithBatch } from '../../lib/queries';
-import { getCatalog } from '../../lib/catalog';
+import { getCatalog, getColorChart } from '../../lib/catalog';
 import { updateRollDetails, adjustStock } from '../../lib/inventory';
 import { useLiveQuery } from '../../lib/hooks';
-import { hasRollStock, type BatchDoc, type ConditionTag, type ProductDoc } from '../../lib/types';
+import { hasRollStock, norm, type BatchDoc, type ConditionTag, type ProductDoc } from '../../lib/types';
 import {
   fmtKg, fmtUnits, fmtLot, fmtPiece, fmtUsd, CONDITION_LABEL, CONDITION_SHORT, CONDITION_TONE,
   NM_LABEL,
 } from '../../lib/format';
-import { Button, Input, NumberInput, Select, Field, Kbd, SwatchChip, Badge, EmptyState } from '../ui';
+import { Button, Input, NumberInput, Select, Field, Kbd, SwatchChip, Badge, EmptyState, Combobox } from '../ui';
 import {
   sectionStyle, sectionTitle, alertOk, alertErr, rollListBox, rollRowStyle,
 } from './styles';
@@ -46,7 +46,13 @@ interface EditPaneProps {
 }
 
 export default function EditPane({ onDone }: EditPaneProps) {
-  const [query, setQuery] = useState('');
+  // ─ filters — optional, AND-combined; this is a lookup over historical data,
+  // so filters narrow independently (no cross-narrowing like /venta's facets).
+  const [fColor, setFColor] = useState('');
+  const [fNm, setFNm] = useState('');
+  const [fFabric, setFFabric] = useState('');
+  const [fLot, setFLot] = useState('');
+  const [fComposition, setFComposition] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // details form
@@ -65,39 +71,51 @@ export default function EditPane({ onDone }: EditPaneProps) {
 
   const { data: rows } = useLiveQuery(() => getProductsWithBatch(db), []);
   const { data: catalog = null } = useLiveQuery(() => getCatalog(db), []);
+  const { data: chart = null } = useLiveQuery(() => getColorChart(db), []);
   const all = useMemo<Row[]>(() => rows ?? [], [rows]);
 
   const selected = all.find((r) => r.product._id === selectedId) ?? null;
 
+  // Distinct option lists across ALL batches — corrections target any roll,
+  // not just stocked ones.
+  const colorOptions = [...new Set(all.map((r) => r.batch.color))].sort();
+  const nmOptions = [...new Set(all.map((r) => r.batch.nm))].sort();
+  const fabricOptions = [...new Set(all.map((r) => r.batch.fabricType))].sort();
+  const lotOptions = [...new Set(
+    all.map((r) => r.product.lotNumber?.trim()).filter((v): v is string => Boolean(v)),
+  )].sort();
+  const compositionOptions = [...new Set(
+    all.map((r) => r.product.fiberComposition?.trim()).filter((v): v is string => Boolean(v)),
+  )].sort();
+  // «405» surfaces «Azul rey» in the dropdown — same code-search rule as ingress.
+  const codeByColorName = new Map((chart?.colors ?? []).map((c) => [norm(c.name), c.code]));
+
   // Lot number first — it is the number printed on the bundle and the one the
-  // operator has in hand. Everything else on the row is searchable too so the
-  // same box works when they only remember the colour.
+  // operator has in hand. All five filters are optional and AND-combined.
   const results = useMemo(() => {
-    const q = fold(query.trim());
-    if (!q) return [];
+    const filters: [string, (r: Row) => string][] = [
+      [fColor, (r) => r.batch.color],
+      [fNm, (r) => r.batch.nm],
+      [fFabric, (r) => r.batch.fabricType],
+      [fLot, (r) => r.product.lotNumber ?? ''],
+      [fComposition, (r) => r.product.fiberComposition ?? ''],
+    ];
+    const active = filters.filter(([v]) => v.trim());
+    if (active.length === 0) return [];
+    const lotQ = fold(fLot.trim());
     return all
-      .filter(({ batch, product }) =>
-        [
-          product.lotNumber ?? '',
-          product.pieceId,
-          batch.color,
-          batch.colorCode ?? '',
-          batch.nm,
-          batch.fabricType,
-          product.pantone ?? '',
-          // «65» finds every 65/35 roll — the blends are standard, so the
-          // polyester percentage is a real search key (client, 2026-08-15).
-          product.fiberComposition ?? '',
-        ].some((field) => fold(field).includes(q)),
-      )
+      .filter((r) => active.every(([v, getField]) => fold(getField(r)).includes(fold(v.trim()))))
       .sort((a, b) => {
+        if (!lotQ) return a.batch.color.localeCompare(b.batch.color);
         // Exact lot matches first — that is what was typed.
-        const aLot = fold(a.product.lotNumber ?? '') === q ? 0 : 1;
-        const bLot = fold(b.product.lotNumber ?? '') === q ? 0 : 1;
+        const aLot = fold(a.product.lotNumber ?? '') === lotQ ? 0 : 1;
+        const bLot = fold(b.product.lotNumber ?? '') === lotQ ? 0 : 1;
         return aLot - bLot || a.batch.color.localeCompare(b.batch.color);
       })
       .slice(0, 60);
-  }, [all, query]);
+  }, [all, fColor, fNm, fFabric, fLot, fComposition]);
+
+  const anyFilter = Boolean(fColor.trim() || fNm.trim() || fFabric.trim() || fLot.trim() || fComposition.trim());
 
   // Seed the form from the roll the operator picked. Keyed on the id, not the
   // document: the live query refreshes on every DB change and re-seeding then
@@ -195,25 +213,52 @@ export default function EditPane({ onDone }: EditPaneProps) {
   return (
     <div>
       <p className="kbd-hints" style={{ fontFamily: 'var(--font-sans)', fontSize: 13, color: 'var(--color-thread)', margin: '0 0 20px' }}>
-        Presiona <Kbd>/</Kbd> para buscar · escribe el nº de lote impreso en el bulto
+        Presiona <Kbd>/</Kbd> para buscar · filtra por color, {NM_LABEL.toLowerCase()}, tela, lote o composición
       </p>
 
       <section style={sectionStyle} className="card">
         <h2 style={sectionTitle}>Buscar rollo</h2>
-        <Field label="Nº de lote, color, código, NM/Dtex, tela o composición">
-          <Input
-            data-hotkey-search=""
-            type="search"
-            value={query}
-            placeholder="4471 · Azul rey · 405 · 65%…"
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </Field>
+        <div className="form-grid-3">
+          <Field label="Color" hint={codeByColorName.get(norm(fColor)) ? `Código ${codeByColorName.get(norm(fColor))}` : undefined}>
+            <Combobox
+              data-hotkey-search=""
+              value={fColor}
+              placeholder="Azul rey · 405"
+              options={colorOptions}
+              searchText={(c) => codeByColorName.get(norm(c)) ?? ''}
+              onChange={setFColor}
+              renderOption={(c) => (
+                <>
+                  <SwatchChip color={c} size="sm" />
+                  {codeByColorName.get(norm(c)) && (
+                    <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-thread)' }}>
+                      {codeByColorName.get(norm(c))}
+                    </span>
+                  )}
+                </>
+              )}
+            />
+          </Field>
+          <Field label={NM_LABEL}>
+            <Combobox value={fNm} placeholder="30" options={nmOptions} onChange={setFNm} />
+          </Field>
+          <Field label="Tipo de tela">
+            <Combobox value={fFabric} placeholder="Jersey" options={fabricOptions} onChange={setFFabric} />
+          </Field>
+        </div>
+        <div className="form-grid-2" style={{ marginTop: 16 }}>
+          <Field label="Nº de lote">
+            <Combobox value={fLot} placeholder="4471" options={lotOptions} onChange={setFLot} />
+          </Field>
+          <Field label="Composición">
+            <Combobox value={fComposition} placeholder="65% poliéster / 35% algodón" options={compositionOptions} onChange={setFComposition} />
+          </Field>
+        </div>
 
-        {query.trim() && (
+        {anyFilter && (
           results.length === 0 ? (
             <p style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--color-thread)', marginTop: 12, marginBottom: 0 }}>
-              Ningún rollo coincide con «{query.trim()}».
+              Ningún rollo coincide con los filtros.
             </p>
           ) : (
             <div role="listbox" aria-label="Resultados" style={{ ...rollListBox, marginTop: 12 }}>
@@ -259,7 +304,7 @@ export default function EditPane({ onDone }: EditPaneProps) {
             </div>
           )
         )}
-        {!query.trim() && <EmptyState title="Escribe un nº de lote para empezar" />}
+        {!anyFilter && <EmptyState title="Elige al menos un filtro para empezar" />}
       </section>
 
       {selected && (

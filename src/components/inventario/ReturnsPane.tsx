@@ -47,6 +47,9 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
   const [color, setColor] = useState('');
   const [nm, setNm] = useState('');
   const [fabricType, setFabricType] = useState('');
+  // Refines the roll list within the matched article — never a substitute for
+  // color/NM/fabric, since the same supplier lot recurs across colors.
+  const [lotFilter, setLotFilter] = useState('');
 
   // ─ selection ─
   const [selRoll, setSelRoll] = useState<ProductDoc | null>(null);
@@ -72,6 +75,7 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
   const colorRef = useRef<HTMLInputElement>(null);
   const nmRef = useRef<HTMLInputElement>(null);
   const fabricRef = useRef<HTMLInputElement>(null);
+  const lotRef = useRef<HTMLInputElement>(null);
   const rollListRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -109,7 +113,15 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
     [matchedBatch?._id],
   );
   // Newest roll first — a return is usually of something recently shipped.
-  const rolls = [...(batchRolls ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const articleRolls = [...(batchRolls ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // Lot options are scoped to the CURRENT article (color+NM+fabric already
+  // picked) — the facet refines, it never substitutes.
+  const lotOptions = [...new Set(
+    articleRolls.map((r) => r.lotNumber?.trim()).filter((v): v is string => Boolean(v)),
+  )].sort();
+  const rolls = lotFilter.trim()
+    ? articleRolls.filter((r) => (r.lotNumber ?? '').trim() === lotFilter.trim())
+    : articleRolls;
 
   // The same query /venta runs. No sale scan, no date window.
   const { data: stocked } = useLiveQuery(() => getStockedBatches(db), []);
@@ -148,10 +160,25 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidates.map((c) => c.product._id).join('|'), replacementId]);
 
-  // Reset the roll pick whenever the article changes.
+  // Reset the roll pick whenever the article changes or the lot filter
+  // narrows the list to something the current selection isn't in.
   useEffect(() => {
     setSelRoll(null);
     setRollActiveIdx(0);
+  }, [matchedBatch?._id]);
+
+  useEffect(() => {
+    if (selRoll && !rolls.some((r) => r._id === selRoll._id)) {
+      setSelRoll(null);
+      setRollActiveIdx(0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lotFilter]);
+
+  // Clear the lot filter when the article changes — a lot left over from the
+  // previous article would silently narrow (or empty) the new one.
+  useEffect(() => {
+    setLotFilter('');
   }, [matchedBatch?._id]);
 
   useEffect(() => {
@@ -266,6 +293,7 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
     setColor('');
     setNm('');
     setFabricType('');
+    setLotFilter('');
     setSelRoll(null);
     setWeightKg('');
     setConditionTag('DEFECT');
@@ -328,7 +356,17 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
                 placeholder="Jersey"
                 options={fabricOptions}
                 onChange={setFabricType}
-                onKeyDown={(e) => { if (e.key === 'Escape') setFabricType(''); }}
+                onKeyDown={(e) => { if (e.key === 'Escape') { setFabricType(''); return; } advanceCascade(e, lotRef); }}
+              />
+            </Field>
+            <Field label="Nº de lote" hint="Refina la lista de rollos — nunca sustituye color, NM o tela">
+              <Combobox
+                ref={lotRef}
+                value={lotFilter}
+                placeholder="4471"
+                options={lotOptions}
+                onChange={setLotFilter}
+                onKeyDown={(e) => { if (e.key === 'Escape') setLotFilter(''); }}
               />
             </Field>
           </div>
