@@ -19,408 +19,508 @@ export const CATALOG_DOCS = [
     "colors": [
       {
         "code": "100",
-        "name": "Blanco"
+        "name": "Blanco",
+        "hex": "#f3f1ec"
       },
       {
         "code": "200",
-        "name": "Amarillo"
+        "name": "Amarillo",
+        "hex": "#f9d66d"
       },
       {
         "code": "201",
-        "name": "Amarillo maiz"
+        "name": "Amarillo maiz",
+        "hex": "#f4bf5a"
       },
       {
         "code": "202",
-        "name": "Amarillo colegial"
+        "name": "Amarillo colegial",
+        "hex": "#f3dc8c"
       },
       {
         "code": "203",
-        "name": "Crudo"
+        "name": "Crudo",
+        "hex": "#ecdcce"
       },
       {
         "code": "204",
-        "name": "Perla"
+        "name": "Perla",
+        "hex": "#cec3a3"
       },
       {
         "code": "205",
-        "name": "Verde boa"
+        "name": "Verde boa",
+        "hex": "#6f6e50"
       },
       {
         "code": "206",
-        "name": "Beige colegial"
+        "name": "Beige colegial",
+        "hex": "#aa9378"
       },
       {
         "code": "207",
-        "name": "Kaki"
+        "name": "Kaki",
+        "hex": "#877569"
       },
       {
         "code": "208",
-        "name": "Azul cielo"
+        "name": "Azul cielo",
+        "hex": "#09b5dd"
       },
       {
         "code": "209",
-        "name": "Celeste"
+        "name": "Celeste",
+        "hex": "#59a2cf"
       },
       {
         "code": "210",
-        "name": "Celeste colegial"
+        "name": "Celeste colegial",
+        "hex": "#426ea3"
       },
       {
         "code": "211",
-        "name": "Gris lindo"
+        "name": "Gris lindo",
+        "hex": "#737a8c"
       },
       {
         "code": "212",
-        "name": "Rosa vieja"
+        "name": "Rosa vieja",
+        "hex": "#d85473"
       },
       {
         "code": "213",
-        "name": "Rosado"
+        "name": "Rosado",
+        "hex": "#ec7c90"
       },
       {
         "code": "214",
-        "name": "Guayaba"
+        "name": "Guayaba",
+        "hex": "#de6366"
       },
       {
         "code": "215",
-        "name": "Melon"
+        "name": "Melon",
+        "hex": "#e3906b"
       },
       {
         "code": "216",
-        "name": "Salmon"
+        "name": "Salmon",
+        "hex": "#e27a76"
       },
       {
         "code": "217",
-        "name": "Lila"
+        "name": "Lila",
+        "hex": "#735a93"
       },
       {
         "code": "218",
-        "name": "Verde agua"
+        "name": "Verde agua",
+        "hex": "#8cd7c0"
       },
       {
         "code": "219",
-        "name": "Rosado bebe"
+        "name": "Rosado bebe",
+        "hex": "#ed97a5"
       },
       {
         "code": "220",
-        "name": "Verde agua bebe"
+        "name": "Verde agua bebe",
+        "hex": "#a6e0c3"
       },
       {
         "code": "221",
-        "name": "Lila bebe"
+        "name": "Lila bebe",
+        "hex": "#8f89a2"
       },
       {
         "code": "222",
-        "name": "Celeste bebe"
+        "name": "Celeste bebe",
+        "hex": "#99aecb"
       },
       {
         "code": "223",
-        "name": "Amarillo bebe"
+        "name": "Amarillo bebe",
+        "hex": "#f5e394"
       },
       {
         "code": "300",
-        "name": "Azul medio"
+        "name": "Azul medio",
+        "hex": "#024f93"
       },
       {
         "code": "301",
-        "name": "Azul italo"
+        "name": "Azul italo",
+        "hex": "#294d88"
       },
       {
         "code": "302",
-        "name": "Azul belmont"
+        "name": "Azul belmont",
+        "hex": "#1c5283"
       },
       {
         "code": "303",
-        "name": "Verde humo"
+        "name": "Verde humo",
+        "hex": "#584e4c"
       },
       {
         "code": "304",
-        "name": "Kaki oscuro"
+        "name": "Kaki oscuro",
+        "hex": "#877569"
       },
       {
         "code": "305",
-        "name": "Melocoton"
+        "name": "Melocoton",
+        "hex": "#eb8971"
       },
       {
         "code": "306",
-        "name": "Amarillo mantequilla"
+        "name": "Amarillo mantequilla",
+        "hex": "#f6ce77"
       },
       {
         "code": "307",
-        "name": "Verde musgo"
+        "name": "Verde musgo",
+        "hex": "#355b63"
       },
       {
         "code": "308",
-        "name": "Azul oceano"
+        "name": "Azul oceano",
+        "hex": "#274d6c"
       },
       {
         "code": "309",
-        "name": "Gris cemento"
+        "name": "Gris cemento",
+        "hex": "#494d59"
       },
       {
         "code": "310",
-        "name": "Verde oregano"
+        "name": "Verde oregano",
+        "hex": "#516c65"
       },
       {
         "code": "311",
-        "name": "Morado"
+        "name": "Morado",
+        "hex": "#242e61"
       },
       {
         "code": "312",
-        "name": "Amarillo fortiplan"
+        "name": "Amarillo fortiplan",
+        "hex": "#7c5e3c"
       },
       {
         "code": "313",
-        "name": "Marron claro"
+        "name": "Marron claro",
+        "hex": "#4e4442"
       },
       {
         "code": "314",
-        "name": "Oro"
+        "name": "Oro",
+        "hex": "#0795cd"
       },
       {
         "code": "315",
-        "name": "Amatista"
+        "name": "Amatista",
+        "hex": "#ac6e85"
       },
       {
         "code": "316",
-        "name": "Amarillo oro"
+        "name": "Amarillo oro",
+        "hex": "#e9a74e"
       },
       {
         "code": "317",
-        "name": "Verde pistacho"
+        "name": "Verde pistacho",
+        "hex": "#647843"
       },
       {
         "code": "318",
-        "name": "Verde fluorescente"
+        "name": "Verde fluorescente",
+        "hex": "#83fa81"
       },
       {
         "code": "319",
-        "name": "Amarillo fluorescente"
+        "name": "Amarillo fluorescente",
+        "hex": "#d3fd8e"
       },
       {
         "code": "320",
-        "name": "Fucsia fluorescente"
+        "name": "Fucsia fluorescente",
+        "hex": "#fe748e"
       },
       {
         "code": "321",
-        "name": "Naranja fluorescente"
+        "name": "Naranja fluorescente",
+        "hex": "#fd766b"
       },
       {
         "code": "322",
-        "name": "Chiclets"
+        "name": "Chiclets",
+        "hex": "#9d1945"
       },
       {
         "code": "323",
-        "name": "Verde manzana medio"
+        "name": "Verde manzana medio",
+        "hex": "#89c66a"
       },
       {
         "code": "324",
-        "name": "Verde acadia"
+        "name": "Verde acadia",
+        "hex": "#068d99"
       },
       {
         "code": "400",
-        "name": "Amarillo citrico"
+        "name": "Amarillo citrico",
+        "hex": "#f6b233"
       },
       {
         "code": "401",
-        "name": "Amarillo bandera"
+        "name": "Amarillo bandera",
+        "hex": "#f8b42e"
       },
       {
         "code": "402",
-        "name": "Amarillo caterpillar"
+        "name": "Amarillo caterpillar",
+        "hex": "#f48e22"
       },
       {
         "code": "403",
-        "name": "Mostaza"
+        "name": "Mostaza",
+        "hex": "#c27a31"
       },
       {
         "code": "404",
-        "name": "Azul royal"
+        "name": "Azul royal",
+        "hex": "#2a3470"
       },
       {
         "code": "405",
-        "name": "Azul rey"
+        "name": "Azul rey",
+        "hex": "#022b7f"
       },
       {
         "code": "406",
-        "name": "Turqueza"
+        "name": "Turqueza",
+        "hex": "#0268aa"
       },
       {
         "code": "407",
-        "name": "Aguas profundas"
+        "name": "Aguas profundas",
+        "hex": "#034f96"
       },
       {
         "code": "408",
-        "name": "Azul petroleo"
+        "name": "Azul petroleo",
+        "hex": "#223247"
       },
       {
         "code": "409",
-        "name": "Azul marino"
+        "name": "Azul marino",
+        "hex": "#313445"
       },
       {
         "code": "410",
-        "name": "Azul piedra"
+        "name": "Azul piedra",
+        "hex": "#323953"
       },
       {
         "code": "411",
-        "name": "Verde benettone"
+        "name": "Verde benettone",
+        "hex": "#02665c"
       },
       {
         "code": "412",
-        "name": "Verde menta"
+        "name": "Verde menta",
+        "hex": "#036e6f"
       },
       {
         "code": "413",
-        "name": "Verde botella"
+        "name": "Verde botella",
+        "hex": "#243f48"
       },
       {
         "code": "414",
-        "name": "Verde manzana"
+        "name": "Verde manzana",
+        "hex": "#49b332"
       },
       {
         "code": "415",
-        "name": "Verde militar"
+        "name": "Verde militar",
+        "hex": "#343537"
       },
       {
         "code": "416",
-        "name": "Vinotinto"
+        "name": "Vinotinto",
+        "hex": "#54202f"
       },
       {
         "code": "417",
-        "name": "Rojo"
+        "name": "Rojo",
+        "hex": "#991427"
       },
       {
         "code": "418",
-        "name": "Fucsia"
+        "name": "Fucsia",
+        "hex": "#a10d42"
       },
       {
         "code": "419",
-        "name": "Ladrillo"
+        "name": "Ladrillo",
+        "hex": "#b83226"
       },
       {
         "code": "420",
-        "name": "Naranja"
+        "name": "Naranja",
+        "hex": "#c73f0c"
       },
       {
         "code": "421",
-        "name": "Melange"
+        "name": "Melange",
+        "hex": "#6f7387"
       },
       {
         "code": "422",
-        "name": "Gris plomo"
+        "name": "Gris plomo",
+        "hex": "#383a51"
       },
       {
         "code": "423",
-        "name": "Gris raton"
+        "name": "Gris raton",
+        "hex": "#313541"
       },
       {
         "code": "424",
-        "name": "Negro"
+        "name": "Negro",
+        "hex": "#262b32"
       },
       {
         "code": "425",
-        "name": "Chocolate"
+        "name": "Chocolate",
+        "hex": "#3e2924"
       },
       {
         "code": "426",
-        "name": "Avellana"
+        "name": "Avellana",
+        "hex": "#7f4b36"
       },
       {
         "code": "427",
-        "name": "Cimarron"
+        "name": "Cimarron",
+        "hex": "#5e3926"
       },
       {
         "code": "428",
-        "name": "Amarillo mostaza"
+        "name": "Amarillo mostaza",
+        "hex": "#fbb962"
       },
       {
         "code": "429",
-        "name": "Terracota"
+        "name": "Terracota",
+        "hex": "#8f4539"
       },
       {
         "code": "430",
-        "name": "Coral"
+        "name": "Coral",
+        "hex": "#d4414e"
       },
       {
         "code": "431",
-        "name": "Cidra"
+        "name": "Cidra",
+        "hex": "#868644"
       },
       {
         "code": "432",
-        "name": "Tabaco"
+        "name": "Tabaco",
+        "hex": "#343031"
       },
       {
         "code": "433",
-        "name": "Verde charllot"
+        "name": "Verde charllot",
+        "hex": "#04637c"
       },
       {
         "code": "434",
-        "name": "Nazareno"
+        "name": "Nazareno",
+        "hex": "#2a1e44"
       },
       {
         "code": "435",
-        "name": "Naranja fuego"
+        "name": "Naranja fuego",
+        "hex": "#c34129"
       },
       {
         "code": "436",
-        "name": "Rojo cayena"
+        "name": "Rojo cayena",
+        "hex": "#c0393b"
       },
       {
         "code": "437",
-        "name": "Verde loro"
+        "name": "Verde loro",
+        "hex": "#057b6a"
       },
       {
         "code": "438",
-        "name": "Gris oscuro"
+        "name": "Gris oscuro",
+        "hex": "#212130"
       },
       {
         "code": "439",
-        "name": "Pink"
+        "name": "Pink",
+        "hex": "#d94b71"
       },
       {
         "code": "440",
-        "name": "Rojo manzana"
+        "name": "Rojo manzana",
+        "hex": "#720226"
       },
       {
         "code": "441",
-        "name": "Menta oscuro"
+        "name": "Menta oscuro",
+        "hex": "#045973"
       },
       {
         "code": "442",
-        "name": "Chili red"
+        "name": "Chili red",
+        "hex": "#690b20"
       },
       {
         "code": "443",
-        "name": "Verde esmeralda"
+        "name": "Verde esmeralda",
+        "hex": "#067e7e"
       },
       {
         "code": "444",
-        "name": "Azul principe"
+        "name": "Azul principe",
+        "hex": "#043f87"
       },
       {
         "code": "445",
-        "name": "Negro chocolate"
+        "name": "Negro chocolate",
+        "hex": "#111226"
       },
       {
         "code": "446",
-        "name": "Chile papa"
+        "name": "Chile papa",
+        "hex": "#7e3d35"
       },
       {
         "code": "447",
-        "name": "Azul zafiro"
+        "name": "Azul zafiro",
+        "hex": "#021c41"
       },
       {
         "code": "448",
-        "name": "Verde forest"
+        "name": "Verde forest",
+        "hex": "#012731"
       },
       {
         "code": "449",
-        "name": "Azul noche"
+        "name": "Azul noche",
+        "hex": "#092037"
       }
     ],
-    "notes": "Transcrito de fotos de la carta física (docs/carta de colores.pdf, 2026-08-15). Etiquetas parcialmente cortadas en la foto — confirmar con el cliente: 444 «Azul principe», 446 «Chile papa», 448 «Verde forest», 449 «Azul noche». MELANGE (421) lleva código de oscuro pero la lista de precios lo agrupa con los medios («MEDIOS Y MELANGE»).",
+    "notes": "Transcrito de fotos de la carta física (docs/carta de colores.pdf, 2026-08-15). Etiquetas parcialmente cortadas en la foto — confirmar con el cliente: 444 «Azul principe», 446 «Chile papa», 448 «Verde forest», 449 «Azul noche». MELANGE (421) lleva código de oscuro pero la lista de precios lo agrupa con los medios («MEDIOS Y MELANGE»). Hex por color muestreado de las fotos de la carta (mediana del cuerpo de cada franela, 2026-08-15); 100 Blanco neutralizado a casi-blanco por el tinte de la foto. OJO: en la carta física la franela sobre «314 ORO» es AZUL — posible etiqueta corrida, confirmar con el cliente.",
     "source": "carta de colores.pdf",
-    "lastUpdate": "2026-08-15T00:00:00.000Z"
+    "lastUpdate": "2026-08-15T22:00:00.000Z"
   },
   {
     "_id": "config:catalog",

@@ -4,6 +4,8 @@
 
 import { useState, useRef, useEffect, useCallback, type ReactNode, type Ref, type InputHTMLAttributes, type SelectHTMLAttributes, type ButtonHTMLAttributes, type KeyboardEvent } from 'react';
 import { fmtUsd, fmtBs, toBs } from '../lib/format';
+import { norm } from '../lib/types';
+import { CHART_HEX } from '../lib/chart-hex';
 
 // ─── SWATCH CHIP ────────────────────────────────────────────────────────────
 
@@ -33,8 +35,15 @@ const COLOR_WORDS: Array<[RegExp, [number, number, number]]> = [
   [/rosad|rosa/, [340, 55, 70]],
 ];
 
-/** Deterministic HSL from a color name string. The identity element of the design. */
+/**
+ * Deterministic hue from a color name. The physical colour chart is the
+ * reference (client, 2026-08-15): a chart colour renders its REAL sampled
+ * fabric hue; only legacy names outside the chart fall back to the old
+ * word-heuristic below.
+ */
 export function colorFor(name: string): string {
+  const chartHex = CHART_HEX[norm(name)];
+  if (chartHex) return chartHex;
   const n = name
     .toLowerCase()
     .normalize('NFD')
