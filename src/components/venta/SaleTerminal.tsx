@@ -600,6 +600,17 @@ export default function SaleTerminal() {
   const paidTotalUsd = paidCash + paidTransfer + (rate > 0 ? paidBsNum / rate : 0);
   const remainingUsd = Math.max(0, round2(taxes.grandTotalUsd - paidTotalUsd));
 
+  // Reference figure asked by the client: what the bill comes to if settled
+  // ENTIRELY in divisas, visible before any amount is typed. Same pure function,
+  // hypothetical split — the share caps at 1, so "the whole base" is enough.
+  const allDivisasTotalUsd = saleTaxes({
+    totalUsd,
+    ivaRate,
+    igtfRate,
+    paidUsdCash: totalUsd,
+    paidUsdTransfer: 0,
+  }).grandTotalUsd;
+
   // ── selection helpers ──
   function resetSelection(): void {
     selRef.current = { color: null, nm: null, fabric: null };
@@ -1093,6 +1104,16 @@ export default function SaleTerminal() {
             </span>
             <Money usd={taxes.grandTotalUsd} rate={rate || undefined} />
           </div>
+          {igtfRate > 0 && (
+            <div data-all-divisas style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px' }}>
+              <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>
+                Si paga todo en divisas <em style={{ fontStyle: 'normal', opacity: 0.75 }}>— IGTF incluido</em>
+              </span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontVariantNumeric: 'tabular-nums', color: 'var(--color-ink)' }}>
+                {fmtUsd(allDivisasTotalUsd)}
+              </span>
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
