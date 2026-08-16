@@ -152,10 +152,15 @@ function StatCard({ label, primary, secondary }: { label: string; primary: strin
 
 // ─── INVENTORY TABLE ──────────────────────────────────────────────────────────
 
-/** /venta with the batch's facets preselected (SaleTerminal reads these on mount). */
+/**
+ * /venta with the batch's facets preselected (SaleTerminal reads these on
+ * mount). Trailing slash on purpose: it is the canonical static URL, so the
+ * service worker serves the precached venta page instead of falling back to
+ * the panel — without it, clicking a row on an installed PWA went nowhere.
+ */
 function ventaUrl(batch: BatchDoc): string {
   const p = new URLSearchParams({ color: batch.color, nm: batch.nm, fabric: batch.fabricType });
-  return `/venta?${p}`;
+  return `/venta/?${p}`;
 }
 
 interface InventoryTableProps {
