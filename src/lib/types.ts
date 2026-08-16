@@ -341,21 +341,29 @@ export const FIELD_MAX = {
 const tooLong = (label: string, max: number) => `${label} no puede superar ${max} caracteres.`;
 
 /**
- * Cédula or RIF. Venezuelan documents are an optional letter prefix (V/E/J/G/P/C)
- * plus digits, with RIF carrying a check digit: V-12345678, J-40123456-7,
- * E81234567, or a bare cédula. Separators and dots are cosmetic and ignored.
+ * Cédula or RIF. Venezuelan documents are a letter prefix — V (venezolano),
+ * E (extranjero), J (jurídico/RIF), G (gobierno), P (pasaporte) — plus digits,
+ * with RIF carrying a check digit: V-12345678, E-84123456, J-40123456-7.
+ * Separators and dots are cosmetic and ignored; case is folded to upper.
  *
- * Deliberately not stricter: this value is the client's natural key, so a rule
- * that rejects a legacy-but-real document would make an existing client
- * uneditable. It rejects what cannot be a document, not what looks unusual.
+ * The prefix is REQUIRED (user rule 2026-08-16): the id is the client's
+ * natural key, so every new client is typed in one canonical shape. Existing
+ * docs are never re-validated against this — saveClient enforces it on CREATE
+ * only, because the stored id builds the `_id` and must stay untouched.
  */
+export function normalizeDocumentId(value: string): string | null {
+  const compact = value.trim().toUpperCase().replace(/[\s.]/g, '');
+  const m = compact.match(/^([VEJGP])-?(\d{5,9})(?:-?(\d))?$/);
+  if (!m) return null;
+  return m[3] !== undefined ? `${m[1]}-${m[2]}-${m[3]}` : `${m[1]}-${m[2]}`;
+}
+
 export function validateDocumentId(value: string): string | null {
   const v = value.trim();
   if (!v) return 'La cédula o RIF es obligatoria.';
   if (v.length > FIELD_MAX.documentId) return tooLong('La cédula o RIF', FIELD_MAX.documentId);
-  const compact = v.replace(/[\s.]/g, '');
-  if (!/^[A-Za-z]?-?\d{5,12}(-\d)?$/.test(compact)) {
-    return 'Cédula o RIF inválido. Ej.: V-12345678 o J-40123456-7.';
+  if (!normalizeDocumentId(v)) {
+    return 'Cédula o RIF inválido — letra V/E/J/G/P y números. Ej.: V-12345678, E-84123456 o J-40123456-7.';
   }
   return null;
 }
@@ -378,13 +386,40 @@ export function validateName(value: string): string | null {
  * `+`: 0412-1234567, +58 412 1234567, (0243) 765-4321. 7 digits covers a local
  * landline; 15 is the E.164 maximum, so anything longer is a typo.
  */
+/**
+ * Canonical phone: `+<country code><digits>` (user rule 2026-08-16 — numbers
+ * must carry their country code; the forms autofill «+58 »). Legacy local
+ * shapes still normalize instead of rejecting — 0412-1234567 and a bare
+ * 4121234567 become +58412…, so touching an old client canonicalizes its
+ * number rather than blocking the save. Returns '' for empty input or an
+ * untouched «+58» autofill, null for what cannot be a phone.
+ */
+export function normalizePhone(value: string): string | null {
+  const v = value.trim();
+  if (!v) return '';
+  const compact = v.replace(/[\s().-]/g, '');
+  if (compact === '+') return '';
+  if (compact.startsWith('+')) {
+    const d = compact.slice(1);
+    if (!/^\d+$/.test(d)) return null;
+    if (d === '58') return ''; // the autofill, nothing typed after it
+    if (d.length < 10 || d.length > 15) return null;
+    return `+${d}`;
+  }
+  if (!/^\d+$/.test(compact)) return null;
+  // Legacy local: the trunk 0 is not part of the international number.
+  let e164 = compact.startsWith('0') ? `58${compact.slice(1)}` : compact;
+  if (e164.length === 10 && !e164.startsWith('58')) e164 = `58${e164}`;
+  if (e164.length < 10 || e164.length > 15) return null;
+  return `+${e164}`;
+}
+
 export function validatePhone(value: string): string | null {
   const v = value.trim();
   if (!v) return null;
   if (v.length > FIELD_MAX.phoneNumber) return tooLong('El teléfono', FIELD_MAX.phoneNumber);
-  const compact = v.replace(/[\s().-]/g, '');
-  if (!/^\+?\d{7,15}$/.test(compact)) {
-    return 'Teléfono inválido. Ej.: 0412-1234567 o +58 412 1234567.';
+  if (normalizePhone(v) === null) {
+    return 'Teléfono inválido — incluye el código de país. Ej.: +58 412-1234567.';
   }
   return null;
 }
