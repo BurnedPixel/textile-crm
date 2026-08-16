@@ -41,6 +41,7 @@ import {
 } from '../../lib/format';
 import {
   UNIT_FOR, clientIdOf, FIELD_MAX, hasRollStock, validateDocumentId, validateName, validatePhone,
+  validateEmail,
   type BatchDoc, type ProductDoc, type CartLineItem, type ClientDoc, type CartDoc,
   type PaymentStatus, type SaleDoc,
 } from '../../lib/types';
@@ -507,6 +508,15 @@ export default function SaleTerminal() {
   const [newClientAddress, setNewClientAddress] = useState('');
   const [newClientErr, setNewClientErr] = useState<string | null>(null);
 
+  // Incomplete-client nudge: never blocks the sale, just offers to fix it.
+  // Dismissed per client doc id — reappears on a later selection/reload.
+  const [dismissedIncomplete, setDismissedIncomplete] = useState<Set<string>>(new Set());
+  const [completingClient, setCompletingClient] = useState(false);
+  const [completePhone, setCompletePhone] = useState('');
+  const [completeAddress, setCompleteAddress] = useState('');
+  const [completeEmail, setCompleteEmail] = useState('');
+  const [completeErr, setCompleteErr] = useState<string | null>(null);
+
   // Accent-insensitive fold (same logic as colorFor uses).
   const fold = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
@@ -517,6 +527,16 @@ export default function SaleTerminal() {
   const selectedClient = cart?.clientId
     ? clients.find((c) => c._id === cart.clientId) ?? null
     : null;
+
+  const MISSING_LABEL: Record<'phoneNumber' | 'address' | 'email', string> = {
+    phoneNumber: 'Teléfono', address: 'Dirección', email: 'Correo',
+  };
+  const missingFields = selectedClient
+    ? (['phoneNumber', 'address', 'email'] as const).filter((f) => !(selectedClient[f] ?? '').trim())
+    : [];
+  // "A", "A y B", "A, B y C" — natural Spanish list join.
+  const joinSpanish = (items: string[]) =>
+    items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}`;
 
   // ── credit terms ──
   const [creditTerms, setCreditTerms] = useState('');
@@ -957,6 +977,51 @@ export default function SaleTerminal() {
       setClientSearch('');
     } catch (err) {
       setNewClientErr((err as Error).message);
+    }
+  }
+
+  function startCompletingClient(): void {
+    if (!selectedClient) return;
+    setCompletingClient(true);
+    setCompletePhone(selectedClient.phoneNumber ?? '');
+    setCompleteAddress(selectedClient.address ?? '');
+    setCompleteEmail(selectedClient.email ?? '');
+    setCompleteErr(null);
+  }
+
+  function cancelCompletingClient(): void {
+    setCompletingClient(false);
+    setCompleteErr(null);
+  }
+
+  function dismissIncomplete(): void {
+    if (!selectedClient) return;
+    setDismissedIncomplete((prev) => new Set(prev).add(selectedClient._id));
+    setCompletingClient(false);
+  }
+
+  async function handleSaveCompleteClient(): Promise<void> {
+    if (!selectedClient) return;
+    setCompleteErr(null);
+    const phone = completePhone.trim();
+    const email = completeEmail.trim();
+    const problem = validatePhone(phone) ?? validateEmail(email);
+    if (problem) { setCompleteErr(problem); return; }
+    try {
+      // Document builders erase what they don't name — every field named
+      // explicitly, editable ones from this form, the rest carried as-is.
+      await saveClient(db, {
+        documentId: selectedClient.documentId,
+        entityType: selectedClient.entityType,
+        name: selectedClient.name,
+        specialty: selectedClient.specialty,
+        phoneNumber: phone || selectedClient.phoneNumber,
+        address: completeAddress.trim() || selectedClient.address,
+        email: email || selectedClient.email,
+      });
+      setCompletingClient(false);
+    } catch (err) {
+      setCompleteErr((err as Error).message);
     }
   }
 
@@ -1473,19 +1538,101 @@ export default function SaleTerminal() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={stepLabelStyle}>Cliente</div>
           {selectedClient ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', border: '1.5px solid var(--color-dye)', borderRadius: '6px', backgroundColor: 'var(--color-cloth)' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 600, color: 'var(--color-ink)' }}>{selectedClient.name}</div>
-                <div style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--color-thread)' }}>{selectedClient.documentId}</div>
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', border: '1.5px solid var(--color-dye)', borderRadius: '6px', backgroundColor: 'var(--color-cloth)' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 600, color: 'var(--color-ink)' }}>{selectedClient.name}</div>
+                  <div style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--color-thread)' }}>{selectedClient.documentId}</div>
+                </div>
+                <button
+                  onClick={() => void handleSetClient(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-thread)', fontSize: '16px', padding: '4px', lineHeight: 1 }}
+                  title="Quitar cliente"
+                >
+                  ×
+                </button>
               </div>
-              <button
-                onClick={() => void handleSetClient(null)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-thread)', fontSize: '16px', padding: '4px', lineHeight: 1 }}
-                title="Quitar cliente"
-              >
-                ×
-              </button>
-            </div>
+              {missingFields.length > 0 && !dismissedIncomplete.has(selectedClient._id) && (
+                <div
+                  data-client-incomplete
+                  style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 14px', border: '1px solid rgba(185,119,24,0.25)', borderRadius: '6px', backgroundColor: 'rgba(185,119,24,0.08)' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: '#8a5a10' }}>
+                      Datos incompletos: falta {joinSpanish(missingFields.map((f) => MISSING_LABEL[f]))}.
+                    </span>
+                    {!completingClient && (
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                        <Button size="md" variant="ghost" onClick={startCompletingClient}>Completar</Button>
+                        <Button size="md" variant="ghost" onClick={dismissIncomplete}>Omitir</Button>
+                      </div>
+                    )}
+                  </div>
+                  {completingClient && (
+                    <div data-complete-form style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {missingFields.includes('phoneNumber') && (
+                        <Field label="Teléfono">
+                          <Input
+                            autoFocus
+                            type="tel"
+                            inputMode="tel"
+                            placeholder="+58 412-000-0000"
+                            maxLength={FIELD_MAX.phoneNumber}
+                            value={completePhone}
+                            onChange={(e) => setCompletePhone(e.target.value)}
+                            onKeyDown={(e) => {
+                              e.stopPropagation();
+                              if (e.key === 'Enter') { e.preventDefault(); void handleSaveCompleteClient(); }
+                              if (e.key === 'Escape') { e.preventDefault(); cancelCompletingClient(); }
+                            }}
+                          />
+                        </Field>
+                      )}
+                      {missingFields.includes('address') && (
+                        <Field label="Dirección">
+                          <Input
+                            placeholder="Dirección"
+                            maxLength={FIELD_MAX.address}
+                            value={completeAddress}
+                            onChange={(e) => setCompleteAddress(e.target.value)}
+                            onKeyDown={(e) => {
+                              e.stopPropagation();
+                              if (e.key === 'Enter') { e.preventDefault(); void handleSaveCompleteClient(); }
+                              if (e.key === 'Escape') { e.preventDefault(); cancelCompletingClient(); }
+                            }}
+                          />
+                        </Field>
+                      )}
+                      {missingFields.includes('email') && (
+                        <Field label="Correo electrónico">
+                          <Input
+                            type="email"
+                            inputMode="email"
+                            autoCapitalize="none"
+                            placeholder="correo@ejemplo.com"
+                            maxLength={FIELD_MAX.email}
+                            value={completeEmail}
+                            onChange={(e) => setCompleteEmail(e.target.value)}
+                            onKeyDown={(e) => {
+                              e.stopPropagation();
+                              if (e.key === 'Enter') { e.preventDefault(); void handleSaveCompleteClient(); }
+                              if (e.key === 'Escape') { e.preventDefault(); cancelCompletingClient(); }
+                            }}
+                          />
+                        </Field>
+                      )}
+                      {completeErr && (
+                        <div style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }} role="alert">{completeErr}</div>
+                      )}
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <Button size="md" onClick={() => void handleSaveCompleteClient()}>Guardar</Button>
+                        <Button size="md" variant="ghost" onClick={cancelCompletingClient}>Cancelar</Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           ) : creatingClient ? (
             /* Inline creation form */
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '12px 14px', border: '1.5px dashed var(--color-dye)', borderRadius: '6px', backgroundColor: 'var(--color-cloth)' }}>
