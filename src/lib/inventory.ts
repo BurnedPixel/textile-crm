@@ -9,6 +9,7 @@ import {
   movementIdOf,
   assertAmount,
   hasRollStock,
+  norm,
   FIELD_MAX,
   UNIT_FOR,
   type ProductType,
@@ -583,13 +584,52 @@ const REQUIRED = 'Obligatorio.';
 const NOT_A_NUMBER = 'Debe ser un número.';
 const TOO_LONG = `No puede superar ${FIELD_MAX.text} caracteres.`;
 
-export function validateIngressForm(v: IngressFormValues): IngressFormErrors {
+/**
+ * The closed catalogue the form validates against (client, 2026-08-15: chart
+ * colours and catalogued fabrics/counts are the ONLY options for now). Like
+ * the lot-number rule, this constrains what an operator may TYPE — it lives
+ * here and not in ingressStock, because imported history and legacy batches
+ * legitimately carry colours and cloths outside today's catalogue.
+ */
+export interface CatalogContext {
+  /** Chart colour names. null/absent = chart not loaded, no restriction. */
+  chartColors?: string[] | null;
+  /** Catalogue fabrics with their allowed counts. null/absent = no restriction. */
+  fabrics?: Array<{ name: string; counts: string[] }> | null;
+}
+
+export function validateIngressForm(
+  v: IngressFormValues,
+  catalog?: CatalogContext,
+): IngressFormErrors {
   const errors: IngressFormErrors = {};
 
   for (const key of ['color', 'nm', 'fabricType', 'lotNumber'] as const) {
     const value = v[key].trim();
     if (!value) errors[key] = REQUIRED;
     else if (value.length > FIELD_MAX.text) errors[key] = TOO_LONG;
+  }
+
+  // Closed catalogue — accent/case-insensitive, and only when the reference
+  // docs are actually loaded (an offline-fresh device without them must not
+  // lock the operator out of registering fabric).
+  if (!errors.color && catalog?.chartColors?.length) {
+    const c = norm(v.color);
+    if (!catalog.chartColors.some((name) => norm(name) === c)) {
+      errors.color = 'El color no está en la carta de colores.';
+    }
+  }
+  if (!errors.fabricType && catalog?.fabrics?.length) {
+    const f = norm(v.fabricType);
+    const fabric = catalog.fabrics.find((x) => norm(x.name) === f);
+    if (!fabric) {
+      errors.fabricType = 'Tela fuera del catálogo.';
+    } else if (!errors.nm && fabric.counts.length) {
+      const n = norm(v.nm);
+      if (!fabric.counts.some((count) => norm(count) === n)) {
+        errors.nm = `Esa tela se teje en: ${fabric.counts.join(' · ')}.`;
+      }
+    }
   }
 
   // Optional, but capped short — it is a chart code, not a description.
