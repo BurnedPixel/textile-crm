@@ -54,7 +54,7 @@ interface DashboardData {
   todaySales: SaleDoc[];
   recentSales: SaleDoc[];
   pendingSales: SaleDoc[];
-  /** Sales the business owes change on («saldo a favor del cliente»), same 90-day window. */
+  /** Sales the business owes change on («saldo a favor del cliente»), unwindowed like pendings. */
   creditSales: SaleDoc[];
   /** Collections indexed by saleId — every payment read on this page goes through it. */
   paymentsFor: Map<string, PaymentDoc[]>;
@@ -67,21 +67,19 @@ interface DashboardData {
 
 async function fetchAll(): Promise<DashboardData> {
   const todayStart = isoToday();
-  // ponytail: scanning ~90d of sales is acceptable for typical factory volume
-  // (<10k sales/yr). Upgrade to a Mango index if perf becomes an issue.
-  const cutoff = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
 
-  const [config, stocked, historicSales, recentSales, allClients, payments, refunds, chart] = await Promise.all([
+  // ponytail: one full sale scan per load is acceptable for typical factory
+  // volume (<10k sales/yr). Upgrade to a Mango index if perf becomes an issue.
+  // UNWINDOWED on purpose (2026-08-16): the INFORME import carries real
+  // January dates, and a 90-day window hid those debts from «Cobros
+  // pendientes» while /clientes (full ledger) showed them.
+  const [config, stocked, allSales, allClients, payments, refunds, chart] = await Promise.all([
     getConfig(db),
     getStockedBatches(db),
-    getSales(db, { startDate: cutoff, descending: true }),
-    // Separate from the window above on purpose: after a quiet stretch the last
-    // 8 sales can all be older than 90 days, and this list must not go blank.
-    // `limit` stops the scan at 8 rows, so it is not a second full read.
-    getSales(db, { limit: 8, descending: true }),
+    getSales(db, { descending: true }),
     getClients(db),
     // Every payment, not a windowed slice: a collection made today can settle a
-    // sale older than the window, and missing it would show a debt that is gone.
+    // sale from any date, and missing it would show a debt that is gone.
     getPayments(db),
     getRefunds(db),
     getColorChart(db),
@@ -89,15 +87,15 @@ async function fetchAll(): Promise<DashboardData> {
   const paymentsFor = paymentsBySale(payments);
   const refundsFor = refundsBySale(refunds);
 
-  // Today's sales are the head of the 90-day window — filtering beats a third scan.
-  const todaySales = historicSales.filter((s) => s.date.slice(0, 10) === todayStart);
+  const todaySales = allSales.filter((s) => s.date.slice(0, 10) === todayStart);
+  const recentSales = allSales.slice(0, 8);
 
   // DERIVED, not sale.paymentStatus — a sale settled by a later collection must
   // drop out of this list, and the sale doc itself can never be updated to say so.
-  const pendingSales = historicSales.filter(
+  const pendingSales = allSales.filter(
     (s) => saleBalance(s, paymentsFor.get(s._id) ?? [], refundsFor.get(s._id) ?? []).status !== 'PAID',
   );
-  const creditSales = historicSales.filter(
+  const creditSales = allSales.filter(
     (s) => saleBalance(s, paymentsFor.get(s._id) ?? [], refundsFor.get(s._id) ?? []).creditUsd > SETTLED_EPSILON,
   );
 
