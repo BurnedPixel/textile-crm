@@ -1,0 +1,8 @@
+---
+import Layout from '../layouts/Layout.astro';
+import VentasIsland from '../components/ventas/VentasIsland.tsx';
+---
+
+<Layout title="Ventas" active="/ventas">
+  <VentasIsland client:only="react" />
+</Layout>

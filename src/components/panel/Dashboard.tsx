@@ -180,6 +180,11 @@ function ventaUrl(batch: BatchDoc): string {
   return `/venta?${p}`;
 }
 
+/** /ventas with the sale preselected — same bare-path, no-trailing-slash rule as ventaUrl. */
+function ventaHistorialUrl(sale: SaleDoc): string {
+  return `/ventas?${new URLSearchParams({ sale: sale._id })}`;
+}
+
 interface InventoryTableProps {
   stocked: Array<{ batch: BatchDoc; products: ProductDoc[] }>;
 }
@@ -508,6 +513,11 @@ function SidePanel({
             {recentSales.map((sale) => (
               <div
                 key={sale._id}
+                data-sale-row={sale._id}
+                role="button"
+                tabIndex={0}
+                onClick={() => { window.location.href = ventaHistorialUrl(sale); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') window.location.href = ventaHistorialUrl(sale); }}
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -516,6 +526,7 @@ function SidePanel({
                   background: 'var(--color-cloth)',
                   border: '1px dashed var(--color-thread)',
                   borderRadius: '6px',
+                  cursor: 'pointer',
                 }}
               >
                 <div

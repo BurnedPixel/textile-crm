@@ -296,7 +296,12 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
             return (
               <tr
                 key={sale._id}
-                style={{ borderBottom: '1px solid rgba(138,131,113,0.12)' }}
+                data-sale-row={sale._id}
+                role="button"
+                tabIndex={0}
+                onClick={() => { window.location.href = `/ventas?${new URLSearchParams({ sale: sale._id })}`; }}
+                onKeyDown={(e) => { if (e.key === 'Enter') window.location.href = `/ventas?${new URLSearchParams({ sale: sale._id })}`; }}
+                style={{ borderBottom: '1px solid rgba(138,131,113,0.12)', cursor: 'pointer' }}
               >
                 <td
                   style={{
