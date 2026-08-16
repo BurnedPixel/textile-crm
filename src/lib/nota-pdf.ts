@@ -21,6 +21,7 @@ export function buildNotaPdf(
   const rate = sale.exchangeRateBCV;
   const paidUsd = usdPaid(sale.paidUsdCash, sale.paidUsdTransfer, sale.paidBs, rate);
   const owedUsd = Math.max(0, +(taxes.grandTotalUsd - paidUsd).toFixed(2));
+  const creditSnapshotUsd = Math.max(0, +(paidUsd - taxes.grandTotalUsd).toFixed(2));
 
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
   let y = MARGIN;
@@ -138,6 +139,9 @@ export function buildNotaPdf(
   totalRow(`Pagado (${PAYMENT_LABEL[sale.paymentStatus]})`, paidUsd);
   if (owedUsd > 0.005) {
     totalRow('Saldo pendiente', owedUsd, { strong: true });
+  }
+  if (creditSnapshotUsd > 0.005) {
+    totalRow('Vuelto pendiente', creditSnapshotUsd, { strong: true });
   }
 
   if (sale.creditTerms) {

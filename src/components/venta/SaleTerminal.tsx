@@ -16,8 +16,9 @@ import { db, cartDb, dbReady } from '../../lib/db';
 import { cachedUser } from '../../lib/auth';
 import {
   getStockedBatches, getClients, getConfig, getFiscalConfig, computePaymentStatus,
-  saleTaxes, IVA_RATE, IGTF_RATE,
+  saleTaxes, IVA_RATE, IGTF_RATE, SETTLED_EPSILON,
 } from '../../lib/queries';
+import { saleBalance } from '../../lib/payments';
 import {
   getCart,
   addLine,
@@ -1162,6 +1163,27 @@ export default function SaleTerminal() {
               {PAYMENT_LABEL[lastSale.sale.paymentStatus]}
             </Badge>
           </div>
+          {/* Fresh checkout — no payment/refund docs exist yet, so [] [] is
+              correct here (not a refund-blind read site). */}
+          {saleBalance(lastSale.sale, [], []).creditUsd > SETTLED_EPSILON && (
+            <p
+              data-vuelto-pendiente
+              className="no-print"
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '13px',
+                fontWeight: 600,
+                color: 'var(--color-warn)',
+                background: 'rgba(200,140,0,0.10)',
+                border: '1px solid rgba(200,140,0,0.30)',
+                borderRadius: '6px',
+                padding: '8px 14px',
+                margin: 0,
+              }}
+            >
+              Vuelto pendiente: {fmtUsd(saleBalance(lastSale.sale, [], []).creditUsd)} — entregar al cliente
+            </p>
+          )}
         </div>
 
         <NotaEntrega sale={lastSale.sale} client={lastSale.client} fiscal={fiscal ?? null} />

@@ -25,6 +25,9 @@ export default function NotaEntrega({ sale, client, fiscal }: NotaEntregaProps) 
   const rate = sale.exchangeRateBCV;
   const paidUsd = usdPaid(sale.paidUsdCash, sale.paidUsdTransfer, sale.paidBs, rate);
   const owedUsd = Math.max(0, +(taxes.grandTotalUsd - paidUsd).toFixed(2));
+  // Symmetric snapshot: money received beyond the grand total, AT CHECKOUT.
+  // The nota is a snapshot of the sale doc alone — no payments/refunds here.
+  const creditSnapshotUsd = Math.max(0, +(paidUsd - taxes.grandTotalUsd).toFixed(2));
 
   return (
     <section className="nota-entrega" aria-label="Nota de entrega" style={sheet}>
@@ -92,6 +95,7 @@ export default function NotaEntrega({ sale, client, fiscal }: NotaEntregaProps) 
         </div>
         <Row label={`Pagado (${PAYMENT_LABEL[sale.paymentStatus]})`} usd={paidUsd} rate={rate} />
         {owedUsd > 0.005 && <Row label="Saldo pendiente" usd={owedUsd} rate={rate} strong />}
+        {creditSnapshotUsd > 0.005 && <Row label="Vuelto pendiente" usd={creditSnapshotUsd} rate={rate} strong />}
       </div>
 
       {sale.creditTerms && (

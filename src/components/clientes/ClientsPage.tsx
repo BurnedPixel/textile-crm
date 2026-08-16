@@ -6,10 +6,14 @@ import { db } from '../../lib/db';
 import { useLiveQuery } from '../../lib/hooks';
 import { getClients, getSales, saveClient, usdPaid, grandTotalUsd, getFiscalConfig } from '../../lib/queries';
 import { waLink, buildDunningText, toWaNumber } from '../../lib/whatsapp';
-import { getPayments, paymentsBySale, saleBalance } from '../../lib/payments';
+import {
+  getPayments, paymentsBySale, saleBalance,
+  getRefunds, refundsBySale, clientBalance,
+} from '../../lib/payments';
+import { SETTLED_EPSILON } from '../../lib/queries';
 import {
   FIELD_MAX, validateDocumentId, validateEmail, validateName, validatePhone, normalizePhone,
-  type ClientDoc, type SaleDoc, type PaymentDoc, type EntityType,
+  type ClientDoc, type SaleDoc, type PaymentDoc, type RefundDoc, type EntityType,
 } from '../../lib/types';
 import { fmtDate, fmtUsd, PAYMENT_LABEL, PAYMENT_TONE } from '../../lib/format';
 import {
@@ -95,21 +99,6 @@ function clientToForm(c: ClientDoc): ClientFormState {
   };
 }
 
-// ─── OUTSTANDING BALANCE ─────────────────────────────────────────────────────
-
-/**
- * Sum of USD owed across this client's sales. Display-only; derived.
- * Counts later `payment:` collections — `sale.paymentStatus` is frozen at
- * checkout and would keep showing a debt that has since been paid.
- */
-function outstandingUsd(sales: SaleDoc[], paymentsFor: Map<string, PaymentDoc[]>): number {
-  let total = 0;
-  for (const s of sales) {
-    total += saleBalance(s, paymentsFor.get(s._id)).owedUsd;
-  }
-  return total;
-}
-
 // ─── DETAIL PANEL ────────────────────────────────────────────────────────────
 
 interface DetailPanelProps {
@@ -120,10 +109,11 @@ interface DetailPanelProps {
   businessName?: string;
 }
 
-/** The sale + payment ledgers, scanned ONCE for the page (see ClientsPage). */
+/** The sale + payment + refund ledgers, scanned ONCE for the page (see ClientsPage). */
 interface Ledger {
   sales: SaleDoc[];
   payments: PaymentDoc[];
+  refunds: RefundDoc[];
 }
 
 /**
@@ -135,17 +125,20 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
   const clientId = client._id;
   const clientSales = ledger.sales.filter((s) => s.clientId === clientId);
   const paymentsFor = paymentsBySale(ledger.payments);
-  const owed = outstandingUsd(clientSales, paymentsFor);
-  // Payments belong to a sale, not a client — reach the client's through their sales.
+  const refundsFor = refundsBySale(ledger.refunds);
+  const { owedToBusinessUsd: owed, owedToClientUsd: credit } = clientBalance(clientSales, paymentsFor, refundsFor);
+  // Payments/refunds belong to a sale, not a client — reach the client's through their sales.
   const saleIds = new Set(clientSales.map((s) => s._id));
   const clientPayments = ledger.payments.filter((p) => saleIds.has(p.saleId));
+  const clientRefunds = ledger.refunds.filter((r) => saleIds.has(r.saleId));
 
   // null when the stored number cannot become a wa.me number — passing
   // validatePhone says nothing about that (a 7-digit local number is a valid
   // phone and an undiallable link).
   const unpaidCount = clientSales.filter(
-    (s) => saleBalance(s, paymentsFor.get(s._id)).owedUsd > 0.005,
+    (s) => saleBalance(s, paymentsFor.get(s._id) ?? [], refundsFor.get(s._id) ?? []).owedUsd > 0.005,
   ).length;
+  // Dunning is gated ONLY on owed-to-business — a saldo a favor never blocks it.
   const dunningLink = owed > 0.005
     ? waLink(client.phoneNumber, buildDunningText({
         clientName: client.name, owedUsd: owed, saleCount: unpaidCount, businessName,
@@ -207,6 +200,45 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
         </div>
       )}
 
+      {credit > SETTLED_EPSILON && (
+        <div
+          data-credit-banner
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 14px',
+            borderRadius: '6px',
+            background: 'rgba(62,107,58,0.08)',
+            border: '1px solid rgba(62,107,58,0.20)',
+          }}
+        >
+          <span
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: 'var(--color-ok)',
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}
+          >
+            A favor del cliente
+          </span>
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '14px',
+              fontWeight: 700,
+              color: 'var(--color-ok)',
+              fontFeatureSettings: '"tnum" 1',
+            }}
+          >
+            <Money usd={credit} />
+          </span>
+        </div>
+      )}
+
       {/* Cobro por WhatsApp — human-pressed. Hidden when the stored number
           cannot be dialled: better no button than a chat with nobody. This is
           the client card and not the Panel's pending list on purpose — that one
@@ -260,7 +292,7 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
         <tbody>
           {clientSales.map((sale) => {
             // Derived — never sale.paymentStatus, which is the checkout snapshot.
-            const status = saleBalance(sale, paymentsFor.get(sale._id)).status;
+            const status = saleBalance(sale, paymentsFor.get(sale._id) ?? [], refundsFor.get(sale._id) ?? []).status;
             return (
               <tr
                 key={sale._id}
@@ -288,9 +320,11 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
         </tbody>
       </table>
 
-      {/* Collections recorded after checkout — otherwise the note captured with
-          each one would be written and never readable anywhere. */}
-      {clientPayments.length > 0 && (
+      {/* Collections + refunds recorded after checkout — otherwise the note
+          captured with each one would be written and never readable anywhere.
+          Merged into one list, oldest note first stays newest-first here (dates
+          are ISO, so string sort matches time order). */}
+      {(clientPayments.length > 0 || clientRefunds.length > 0) && (
         <div style={{ marginTop: '4px' }}>
           <h3
             style={{
@@ -303,42 +337,75 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
               margin: '8px 0 6px',
             }}
           >
-            Cobros registrados
+            Cobros y vueltos
           </h3>
-          {clientPayments.map((p) => (
-            <div
-              key={p._id}
-              style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                justifyContent: 'space-between',
-                gap: '10px',
-                padding: '5px 0',
-                borderBottom: '1px solid rgba(138,131,113,0.12)',
-              }}
-            >
-              <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ink)' }}>
-                {fmtDate(p.date)}
-              </span>
-              <span
+          {[
+            ...clientPayments.map((p) => ({
+              kind: 'payment' as const,
+              id: p._id,
+              date: p.date,
+              note: p.note,
+              amountUsd: usdPaid(p.paidUsdCash, p.paidUsdTransfer, p.paidBs, p.exchangeRateBCV),
+            })),
+            ...clientRefunds.map((r) => ({
+              kind: 'refund' as const,
+              id: r._id,
+              date: r.date,
+              note: r.note,
+              amountUsd: usdPaid(r.givenUsdCash, r.givenUsdTransfer, r.givenBs, r.exchangeRateBCV),
+            })),
+          ]
+            .sort((a, b) => b.date.localeCompare(a.date))
+            .map((entry) => (
+              <div
+                key={entry.id}
+                data-ledger-entry={entry.kind}
                 style={{
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: '12px',
-                  color: 'var(--color-thread)',
-                  flex: 1,
-                  minWidth: 0,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                  padding: '5px 0',
+                  borderBottom: '1px solid rgba(138,131,113,0.12)',
                 }}
               >
-                {p.note}
-              </span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontFeatureSettings: '"tnum" 1' }}>
-                {fmtUsd(usdPaid(p.paidUsdCash, p.paidUsdTransfer, p.paidBs, p.exchangeRateBCV))}
-              </span>
-            </div>
-          ))}
+                <span
+                  style={{
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '13px',
+                    color: entry.kind === 'refund' ? 'var(--color-ok)' : 'var(--color-ink)',
+                  }}
+                >
+                  {fmtDate(entry.date)}
+                  {entry.kind === 'refund' ? ' · Vuelto entregado' : ''}
+                </span>
+                <span
+                  style={{
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '12px',
+                    color: 'var(--color-thread)',
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {entry.note}
+                </span>
+                <span
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '13px',
+                    fontFeatureSettings: '"tnum" 1',
+                    color: entry.kind === 'refund' ? 'var(--color-ok)' : undefined,
+                  }}
+                >
+                  {entry.kind === 'refund' ? '− ' : ''}
+                  {fmtUsd(entry.amountUsd)}
+                </span>
+              </div>
+            ))}
         </div>
       )}
     </div>
@@ -696,13 +763,14 @@ export default function ClientsPage() {
   // memory instead of re-reading both ledgers. Refreshes on DB change like every
   // other live query.
   const { data: ledgerData } = useLiveQuery<Ledger>(async (database) => {
-    const [sales, payments] = await Promise.all([
+    const [sales, payments, refunds] = await Promise.all([
       getSales(database, { descending: true }),
       getPayments(database),
+      getRefunds(database),
     ]);
-    return { sales, payments };
+    return { sales, payments, refunds };
   });
-  const ledger: Ledger = ledgerData ?? { sales: [], payments: [] };
+  const ledger: Ledger = ledgerData ?? { sales: [], payments: [], refunds: [] };
 
   const [filter, setFilter] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);

@@ -3,7 +3,7 @@
 //   batch:/product:  → delete ALL conflicting revs, recompute counters from the ledger.
 //   config:            → newest lastUpdate wins (system AND fiscal).
 //   client:          → newest updatedAt wins.
-//   sale:/payment:/expense:/movement: → append-only unique ids; must not conflict.
+//   sale:/payment:/refund:/expense:/movement: → append-only unique ids; must not conflict.
 //                              If they somehow do, keep the winner and warn.
 // Takes `db` first; no browser imports (the watcher is started from db.ts).
 
@@ -83,7 +83,7 @@ export async function resolveDocConflicts(db: DB, id: string): Promise<void> {
     return;
   }
 
-  // sale:/payment:/expense:/movement: are append-only with unique ids — should be impossible.
+  // sale:/payment:/refund:/expense:/movement: are append-only with unique ids — should be impossible.
   console.warn(`[conflicts] unexpected conflict on append-only doc ${id}; keeping winner.`);
   await deleteRevs(db, id, conflicts);
 }
