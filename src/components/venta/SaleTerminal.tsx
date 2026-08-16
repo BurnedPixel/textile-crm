@@ -550,6 +550,7 @@ export default function SaleTerminal() {
   // on the very next line and nulls cart.clientId, and `selectedClient` derives
   // from it — so the nota de entrega would have no one to address.
   const [lastSale, setLastSale] = useState<{ sale: SaleDoc; client: ClientDoc | null } | null>(null);
+  const [sharingPdf, setSharingPdf] = useState(false);
 
   // ── config rate (for display Bs) ──
   const { data: config } = useLiveQuery((d) => getConfig(d));
@@ -1074,6 +1075,39 @@ export default function SaleTerminal() {
     resetSelection();
   }
 
+  /** Builds the nota as a PDF and hands it to the OS share sheet, or downloads it. */
+  async function handleSharePdf(): Promise<void> {
+    if (!lastSale) return;
+    setSharingPdf(true);
+    try {
+      const { buildNotaPdf } = await import('../../lib/nota-pdf');
+      const buf = buildNotaPdf(lastSale.sale, lastSale.client, fiscal ?? null);
+      const file = new File([buf], `nota-${lastSale.sale.transactionId.slice(0, 8)}.pdf`, {
+        type: 'application/pdf',
+      });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'Nota de entrega' });
+        } catch (err) {
+          if ((err as Error).name !== 'AbortError') throw err;
+        }
+      } else {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      // Share sheets fail for environment reasons (no handler, revoked
+      // permission) — nothing the seller can fix mid-sale; print still works.
+      console.error('nota PDF', err);
+    } finally {
+      setSharingPdf(false);
+    }
+  }
+
   // Focus first payment input when payment view opens.
   useEffect(() => {
     if (view === 'payment') {
@@ -1126,6 +1160,15 @@ export default function SaleTerminal() {
         <div className="no-print" style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
           <Button variant="ghost" size="lg" onClick={() => window.print()}>
             Imprimir nota
+          </Button>
+          <Button
+            variant="ghost"
+            size="lg"
+            data-share-pdf
+            disabled={sharingPdf}
+            onClick={handleSharePdf}
+          >
+            {sharingPdf ? 'Generando…' : 'Compartir PDF'}
           </Button>
           <Button size="lg" onClick={handleNewSale}>
             Nueva venta <Kbd>N</Kbd>
