@@ -29,6 +29,7 @@ import {
   clearCart,
 } from '../../lib/cart';
 import { checkout } from '../../lib/checkout';
+import { getColorChart, chartColorByName } from '../../lib/catalog';
 import { saveClient } from '../../lib/queries';
 import { useLiveQuery } from '../../lib/hooks';
 import NotaEntrega from './NotaEntrega';
@@ -372,6 +373,7 @@ export default function SaleTerminal() {
   // ── stocked inventory ──
   const { data: stocked = [] } = useLiveQuery<StockedEntry[]>((d) => getStockedBatches(d));
   const { data: clients = [] } = useLiveQuery<ClientDoc[]>((d) => getClients(d));
+  const { data: chart = null } = useLiveQuery((d) => getColorChart(d));
 
   // ── cart state (read from cartDb on mount + after mutations) ──
   const [cart, setCart] = useState<CartDoc | null>(null);
@@ -433,9 +435,13 @@ export default function SaleTerminal() {
   // Colour → chart code, for the option row and the type-ahead. Keyed on the
   // colour STRING because that is what the facet's option value is; when several
   // articles share a colour the last code wins, which is harmless — the same
-  // colour is the same chart entry.
+  // colour is the same chart entry. Batches that predate colorCode (INFORME
+  // import, legacy) resolve theirs from the chart by name; stored code wins.
   const codeByColor = new Map(
-    stocked.flatMap((e) => (e.batch.colorCode ? [[e.batch.color, e.batch.colorCode] as const] : [])),
+    stocked.flatMap((e) => {
+      const code = e.batch.colorCode ?? chartColorByName(chart, e.batch.color)?.code;
+      return code ? [[e.batch.color, code] as const] : [];
+    }),
   );
 
   // A value is available for its facet iff some stocked batch has that value AND
