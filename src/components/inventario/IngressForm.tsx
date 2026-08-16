@@ -421,10 +421,20 @@ export default function IngressForm({ onDone }: IngressFormProps) {
     setSuccess('');
 
     const resolvedTypeForCheck = matchedBatch ? matchedBatch.productType : productType;
+    // The allowed blends mirror EXACTLY what the Select offers: the standards
+    // plus, for an existing article, its stored legacy value — so the form can
+    // never show an option that validation then refuses.
+    const legacyBlend =
+      catalog?.compositions?.length &&
+      batchDefaults.fiberComposition &&
+      !catalog.compositions.includes(batchDefaults.fiberComposition)
+        ? [batchDefaults.fiberComposition]
+        : [];
     const problems = validateIngressForm({
       color, nm, fabricType,
       productType: resolvedTypeForCheck,
       colorCode,
+      fiberComposition: batchDefaults.fiberComposition,
       lotNumber,
       purchaseValueUsd: batchDefaults.purchaseValueUsd,
       salePriceUsd: batchDefaults.salePriceUsd,
@@ -435,6 +445,7 @@ export default function IngressForm({ onDone }: IngressFormProps) {
     }, {
       chartColors: chart?.colors.map((c) => c.name) ?? null,
       fabrics: catalog?.fabrics ?? null,
+      compositions: catalog?.compositions ? [...catalog.compositions, ...legacyBlend] : null,
     });
     setFieldErrors(problems);
     if (!ingressFormIsValid(problems)) {
@@ -613,26 +624,39 @@ export default function IngressForm({ onDone }: IngressFormProps) {
           <h2 style={sectionTitle}>Identificación del artículo</h2>
 
           <div className="form-grid-3">
-            {/* COLOR */}
-            <Field label="Color" error={fieldErrors.color}>
+            {/* COLOR — ONE field for name AND chart code (client, 2026-08-15):
+                typing «215» resolves to «Melon» the moment it matches, and the
+                dropdown filters by either. The code itself is no longer typed —
+                the chart defines it, so it rides along invisibly. Bands per the
+                REAL chart: 100 blanco · 200s pasteles · 300s medios · 400s
+                oscuros. */}
+            <Field
+              label="Color"
+              hint={colorCode ? `Código ${colorCode}` : 'Nombre o código de la carta'}
+              error={fieldErrors.color ?? fieldErrors.colorCode}
+            >
               <Combobox
                 ref={colorRef}
                 data-hotkey-search=""
                 aria-invalid={Boolean(fieldErrors.color)}
                 value={color}
-                placeholder="Azul rey"
+                placeholder="Azul rey · 405"
                 options={colorOptions}
+                searchText={(c) => codeByColorName.get(norm(c)) ?? ''}
                 onChange={(v) => {
                   clearFieldError('color');
-                  setColor(v);
+                  clearFieldError('colorCode');
+                  // Typed a bare chart code? Swap it for the colour it names.
+                  const byCode = chart?.colors.find((c) => c.code === v.trim());
+                  const next = byCode ? byCode.name : v;
+                  setColor(next);
                   // A chart colour DEFINES its code — set it the moment the
                   // typed/picked name resolves, and mark it touched so the
                   // submit sends it (a new article must not lose its code).
-                  const entry = chartColorByName(chart, v);
+                  const entry = byCode ?? chartColorByName(chart, next);
                   if (entry) {
                     setColorCode(entry.code);
                     colorCodeTouched.current = true;
-                    clearFieldError('colorCode');
                   }
                 }}
                 onKeyDown={(e) => { if (e.key === 'Escape') { setColor(''); return; } advanceCascade(e, nmRef); }}
@@ -646,26 +670,6 @@ export default function IngressForm({ onDone }: IngressFormProps) {
                     )}
                   </>
                 )}
-              />
-            </Field>
-
-            {/* COLOUR CODE — optional, batch-level. Bands per the REAL chart
-                (carta de colores, 2026-08-15): 100 blanco, 200s pasteles,
-                300s medios, 400s oscuros — the client's earlier note was off
-                by a hundred. */}
-            <Field label="Código de color" hint="Opcional · 100 blanco · 200s pastel · 300s medio · 400s oscuro" error={fieldErrors.colorCode}>
-              <Input
-                data-color-code
-                aria-invalid={Boolean(fieldErrors.colorCode)}
-                value={colorCode}
-                placeholder="215"
-                maxLength={12}
-                onChange={(e) => {
-                  clearFieldError('colorCode');
-                  colorCodeTouched.current = true;
-                  setColorCode(e.target.value);
-                }}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); nmRef.current?.focus(); } }}
               />
             </Field>
 
@@ -808,16 +812,46 @@ export default function IngressForm({ onDone }: IngressFormProps) {
                   }))}
                 />
               </Field>
-              <Field label="Composición">
-                <Input
-                  value={batchDefaults.fiberComposition}
-                  placeholder="95% algodón / 5% elastano"
-                  onChange={(e) => setBatchDefaults((prev) => ({
-                    ...prev,
-                    fiberComposition: e.target.value,
-                    touched: { ...prev.touched, composition: true },
-                  }))}
-                />
+              <Field label="Composición" error={fieldErrors.fiberComposition}>
+                {/* The standard blends are the ONLY options (client, 2026-08-15);
+                    free entry only survives on a device missing the catalogue. */}
+                {catalog?.compositions?.length ? (
+                  <Select
+                    aria-invalid={Boolean(fieldErrors.fiberComposition)}
+                    value={batchDefaults.fiberComposition}
+                    onChange={(e) => {
+                      clearFieldError('fiberComposition');
+                      setBatchDefaults((prev) => ({
+                        ...prev,
+                        fiberComposition: e.target.value,
+                        touched: { ...prev.touched, composition: true },
+                      }));
+                    }}
+                  >
+                    <option value="">—</option>
+                    {catalog.compositions.map((blend) => (
+                      <option key={blend} value={blend}>{blend}</option>
+                    ))}
+                    {/* A prefilled legacy value stays selectable so the form
+                        never shows a value the select cannot hold. */}
+                    {batchDefaults.fiberComposition &&
+                      !catalog.compositions.includes(batchDefaults.fiberComposition) && (
+                      <option value={batchDefaults.fiberComposition}>
+                        {batchDefaults.fiberComposition} (legado)
+                      </option>
+                    )}
+                  </Select>
+                ) : (
+                  <Input
+                    value={batchDefaults.fiberComposition}
+                    placeholder="95% algodón / 5% elastano"
+                    onChange={(e) => setBatchDefaults((prev) => ({
+                      ...prev,
+                      fiberComposition: e.target.value,
+                      touched: { ...prev.touched, composition: true },
+                    }))}
+                  />
+                )}
               </Field>
             </div>
           </section>

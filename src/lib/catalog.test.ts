@@ -152,4 +152,24 @@ describe('validateIngressForm with the closed catalogue', () => {
     expect(e.color).toBeUndefined();
     expect(e.fabricType).toBeUndefined();
   });
+
+  const BLENDS = ['65% poliéster / 35% algodón', '48% poliéster / 52% algodón', '100% algodón'];
+
+  it('accepts the standard blends and an empty composition', () => {
+    for (const blend of [...BLENDS, '', undefined]) {
+      const e = validateIngressForm({ ...base, fiberComposition: blend }, { ...ctx, compositions: BLENDS });
+      expect(e.fiberComposition).toBeUndefined();
+    }
+  });
+
+  it('rejects a non-standard blend, but only when the catalogue is loaded', () => {
+    const off = { ...base, fiberComposition: '95% algodón / 5% elastano' };
+    expect(validateIngressForm(off, { ...ctx, compositions: BLENDS }).fiberComposition)
+      .toMatch(/mezclas estándar/);
+    expect(validateIngressForm(off, ctx).fiberComposition).toBeUndefined();
+    // The form appends an existing article's stored legacy blend to the list —
+    // exactly what its Select offers — and that must pass.
+    expect(validateIngressForm(off, { ...ctx, compositions: [...BLENDS, '95% algodón / 5% elastano'] })
+      .fiberComposition).toBeUndefined();
+  });
 });

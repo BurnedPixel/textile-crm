@@ -463,6 +463,8 @@ export interface ComboboxProps extends ComboboxInputProps {
   options: string[];
   placeholder?: string;
   renderOption?: (v: string) => ReactNode;
+  /** Extra text an option also matches on while filtering (e.g. a chart code). */
+  searchText?: (v: string) => string;
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
   ref?: Ref<HTMLInputElement>;
 }
@@ -473,6 +475,7 @@ export function Combobox({
   options,
   placeholder,
   renderOption,
+  searchText,
   onKeyDown,
   ref,
   ...rest
@@ -482,9 +485,11 @@ export function Combobox({
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const filtered = options.filter((o) =>
-    value === '' ? true : normStr(o).includes(normStr(value)),
-  );
+  const filtered = options.filter((o) => {
+    if (value === '') return true;
+    const q = normStr(value);
+    return normStr(o).includes(q) || (searchText ? normStr(searchText(o)).includes(q) : false);
+  });
 
   // Reset highlight when filtered list changes.
   useEffect(() => { setActiveIdx(-1); }, [value]);

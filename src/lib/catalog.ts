@@ -35,6 +35,8 @@ export interface CatalogFabric {
 export interface CatalogDoc extends Doc {
   type: 'config';
   fabrics: CatalogFabric[];
+  /** The standard fibre blends — the ONLY compositions an operator may pick. */
+  compositions?: string[];
   lastUpdate: string;
 }
 

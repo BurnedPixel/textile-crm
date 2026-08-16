@@ -14,6 +14,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { db } from '../../lib/db';
 import { cachedUser } from '../../lib/auth';
 import { getProductsWithBatch } from '../../lib/queries';
+import { getCatalog } from '../../lib/catalog';
 import { updateRollDetails, adjustStock } from '../../lib/inventory';
 import { useLiveQuery } from '../../lib/hooks';
 import { hasRollStock, type BatchDoc, type ConditionTag, type ProductDoc } from '../../lib/types';
@@ -63,6 +64,7 @@ export default function EditPane({ onDone }: EditPaneProps) {
   const [fieldErr, setFieldErr] = useState<{ weight?: string; reason?: string }>({});
 
   const { data: rows } = useLiveQuery(() => getProductsWithBatch(db), []);
+  const { data: catalog = null } = useLiveQuery(() => getCatalog(db), []);
   const all = useMemo<Row[]>(() => rows ?? [], [rows]);
 
   const selected = all.find((r) => r.product._id === selectedId) ?? null;
@@ -83,6 +85,9 @@ export default function EditPane({ onDone }: EditPaneProps) {
           batch.nm,
           batch.fabricType,
           product.pantone ?? '',
+          // «65» finds every 65/35 roll — the blends are standard, so the
+          // polyester percentage is a real search key (client, 2026-08-15).
+          product.fiberComposition ?? '',
         ].some((field) => fold(field).includes(q)),
       )
       .sort((a, b) => {
@@ -195,12 +200,12 @@ export default function EditPane({ onDone }: EditPaneProps) {
 
       <section style={sectionStyle} className="card">
         <h2 style={sectionTitle}>Buscar rollo</h2>
-        <Field label="Nº de lote, color, código, artículo o rollo">
+        <Field label="Nº de lote, color, código, NM/Dtex, tela o composición">
           <Input
             data-hotkey-search=""
             type="search"
             value={query}
-            placeholder="4471"
+            placeholder="4471 · Azul rey · 405 · 65%…"
             onChange={(e) => setQuery(e.target.value)}
           />
         </Field>
@@ -283,11 +288,28 @@ export default function EditPane({ onDone }: EditPaneProps) {
                   />
                 </Field>
                 <Field label="Composición">
-                  <Input
-                    value={form.fiberComposition}
-                    placeholder="95% algodón / 5% elastano"
-                    onChange={(e) => setForm({ ...form, fiberComposition: e.target.value })}
-                  />
+                  {/* Same closed list as ingress; a stored legacy blend stays
+                      selectable so the correction form never lies. */}
+                  {catalog?.compositions?.length ? (
+                    <Select
+                      value={form.fiberComposition}
+                      onChange={(e) => setForm({ ...form, fiberComposition: e.target.value })}
+                    >
+                      <option value="">—</option>
+                      {catalog.compositions.map((blend) => (
+                        <option key={blend} value={blend}>{blend}</option>
+                      ))}
+                      {form.fiberComposition && !catalog.compositions.includes(form.fiberComposition) && (
+                        <option value={form.fiberComposition}>{form.fiberComposition} (legado)</option>
+                      )}
+                    </Select>
+                  ) : (
+                    <Input
+                      value={form.fiberComposition}
+                      placeholder="95% algodón / 5% elastano"
+                      onChange={(e) => setForm({ ...form, fiberComposition: e.target.value })}
+                    />
+                  )}
                 </Field>
                 <Field label={isRoll ? 'Costo · $/kg' : 'Costo unitario $'}>
                   <NumberInput
