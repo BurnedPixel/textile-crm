@@ -92,6 +92,11 @@ export default function VentasIsland() {
     () => (sales ?? []).find((s) => s._id === selectedId) ?? null,
     [sales, selectedId],
   );
+  useEffect(() => {
+    if (selectedSale) {
+      document.querySelector('[data-sale-detail]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [selectedSale]);
   const selectedClient = selectedSale ? clientById.get(selectedSale.clientId ?? '') ?? null : null;
   const selectedPayments = selectedSale ? paymentsFor.get(selectedSale._id) ?? [] : [];
   const selectedRefunds = selectedSale ? refundsFor.get(selectedSale._id) ?? [] : [];
