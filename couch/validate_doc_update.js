@@ -6,7 +6,7 @@
 // Enforces:
 //   1. No derived fields (totalBs / amountBs) — they are computed on read, never stored.
 //   2. Only authenticated users with the app role (or server admins) may write.
-//   3. Sale/Payment/Expense/InventoryMovement are append-only — a role member may create
+//   3. Sale/Payment/Refund/Expense/InventoryMovement are append-only — a role member may create
 //      them but never mutate an existing one (historical records never change; the "cannot
 //      conflict by construction" invariant depends on existing ids being un-writable).
 //      A new prefix is NOT append-only just by being named that — it has to be listed
@@ -29,8 +29,8 @@ function (newDoc, oldDoc, userCtx, secObj) {
 
   // Immutable append-only docs: reject any write over an existing id (create-only).
   // Admins bypass so conflict resolution can delete stale counter revs, etc.
-  if (!isAdmin && oldDoc && /^(sale|payment|expense|movement):/.test(newDoc._id)) {
-    throw { forbidden: 'Registro inmutable: no se puede modificar una venta, cobro, gasto o movimiento existente.' };
+  if (!isAdmin && oldDoc && /^(sale|payment|expense|movement|refund):/.test(newDoc._id)) {
+    throw { forbidden: 'Registro inmutable: no se puede modificar una venta, cobro, vuelto, gasto o movimiento existente.' };
   }
 
   // Deletions carry no business fields to validate.

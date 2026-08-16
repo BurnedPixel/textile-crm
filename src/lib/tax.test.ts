@@ -69,15 +69,15 @@ describe('saleBalance — what is owed is the GRAND total', () => {
   it('counts the tax as debt', () => {
     const s = sale({ ivaRate: IVA_RATE, igtfRate: IGTF_RATE, totalUsd: 100 });
     expect(grandTotalUsd(s)).toBe(116);
-    expect(saleBalance(s).owedUsd).toBe(116);
-    expect(saleBalance(s).status).toBe('PENDING');
+    expect(saleBalance(s, [], []).owedUsd).toBe(116);
+    expect(saleBalance(s, [], []).status).toBe('PENDING');
   });
 
   it('does not call a sale paid when the payment covers the net but not the IVA', () => {
     // The exact failure the one-commit switch exists to prevent: frozen PAID,
     // and the tax portion invisible in every receivable screen thereafter.
     const s = sale({ ivaRate: IVA_RATE, igtfRate: IGTF_RATE, paidUsdCash: 100 });
-    const b = saleBalance(s);
+    const b = saleBalance(s, [], []);
     expect(b.status).toBe('PARTIAL');
     // $100 in divisas covers the whole $100 base (share capped at 1), so IGTF
     // is 100 × 1 × 3% = 3 and the grand total is 119.
@@ -86,7 +86,7 @@ describe('saleBalance — what is owed is the GRAND total', () => {
 
   it('leaves an untaxed sale balance exactly where it was', () => {
     const s = sale({ paidUsdCash: 100 });
-    expect(saleBalance(s)).toEqual({ paidUsd: 100, owedUsd: 0, status: 'PAID' });
+    expect(saleBalance(s, [], [])).toEqual({ paidUsd: 100, owedUsd: 0, creditUsd: 0, status: 'PAID' });
   });
 });
 

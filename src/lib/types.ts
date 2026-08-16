@@ -220,6 +220,29 @@ export interface PaymentDoc extends Doc {
   operatorId: string;
 }
 
+/**
+ * _id: refund:{ISO date}:{uuid}. Change handed BACK to the client («vuelto»),
+ * settling a saldo a favor created by an overpayment. Append-only and immutable,
+ * like sale/payment/expense/movement. Amounts are POSITIVE — the direction is
+ * the doc TYPE, never a negative number, so assertAmount keeps rejecting
+ * negatives everywhere. Bs is stored (money actually handed over) at the rate
+ * locked HERE — the day the change was given — which is why it is `givenBs`
+ * and never the forbidden derived `amountBs`.
+ */
+export interface RefundDoc extends Doc {
+  type: 'refund';
+  /** → SaleDoc._id. The credit is per-sale; that is what makes it derivable. */
+  saleId: string;
+  date: string;
+  /** Locked at creation. Never recompute old records. */
+  exchangeRateBCV: number;
+  givenUsdCash: number;
+  givenUsdTransfer: number;
+  givenBs: number;
+  note: string;
+  operatorId: string;
+}
+
 export interface MovementLineItem {
   productId: string;
   /** Signed: negative for OUT, positive for IN. */
@@ -310,6 +333,8 @@ export const movementIdOf = (date: string, uuid: string): string => `movement:${
 export const expenseIdOf = (date: string, uuid: string): string => `expense:${date}:${uuid}`;
 
 export const paymentIdOf = (date: string, uuid: string): string => `payment:${date}:${uuid}`;
+
+export const refundIdOf = (date: string, uuid: string): string => `refund:${date}:${uuid}`;
 
 export const SYSTEM_CONFIG_ID = 'config:system';
 export const FISCAL_CONFIG_ID = 'config:fiscal';

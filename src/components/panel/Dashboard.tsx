@@ -5,8 +5,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { db, dbReady, onDbChange } from '../../lib/db';
 import { getConfig, getStockedBatches, getSales, getClients } from '../../lib/queries';
-import { usdPaid, grandTotalUsd } from '../../lib/queries';
-import { getPayments, paymentsBySale, recordPayment, saleBalance } from '../../lib/payments';
+import { usdPaid, grandTotalUsd, SETTLED_EPSILON, uuidv4 } from '../../lib/queries';
+import {
+  getPayments, paymentsBySale, recordPayment, saleBalance,
+  getRefunds, refundsBySale, recordRefund,
+} from '../../lib/payments';
 import { cachedUser } from '../../lib/auth';
 import {
   fmtUsd, fmtBs, fmtDateTime, toBs, round2, fmtLots,
@@ -25,7 +28,7 @@ import {
   normStr,
 } from '../ui';
 import { hasRollStock } from '../../lib/types';
-import type { SaleDoc, PaymentDoc, ClientDoc, BatchDoc, ProductDoc, SystemConfigDoc } from '../../lib/types';
+import type { SaleDoc, PaymentDoc, RefundDoc, ClientDoc, BatchDoc, ProductDoc, SystemConfigDoc } from '../../lib/types';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
@@ -53,8 +56,12 @@ interface DashboardData {
   todaySales: SaleDoc[];
   recentSales: SaleDoc[];
   pendingSales: SaleDoc[];
+  /** Sales the business owes change on («saldo a favor del cliente»), same 90-day window. */
+  creditSales: SaleDoc[];
   /** Collections indexed by saleId — every payment read on this page goes through it. */
   paymentsFor: Map<string, PaymentDoc[]>;
+  /** Refunds («vuelto entregado») indexed by saleId — same coverage as payments. */
+  refundsFor: Map<string, RefundDoc[]>;
   clients: ClientDoc[];
 }
 
@@ -64,7 +71,7 @@ async function fetchAll(): Promise<DashboardData> {
   // (<10k sales/yr). Upgrade to a Mango index if perf becomes an issue.
   const cutoff = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
 
-  const [config, stocked, historicSales, recentSales, allClients, payments] = await Promise.all([
+  const [config, stocked, historicSales, recentSales, allClients, payments, refunds] = await Promise.all([
     getConfig(db),
     getStockedBatches(db),
     getSales(db, { startDate: cutoff, descending: true }),
@@ -76,8 +83,10 @@ async function fetchAll(): Promise<DashboardData> {
     // Every payment, not a windowed slice: a collection made today can settle a
     // sale older than the window, and missing it would show a debt that is gone.
     getPayments(db),
+    getRefunds(db),
   ]);
   const paymentsFor = paymentsBySale(payments);
+  const refundsFor = refundsBySale(refunds);
 
   // Today's sales are the head of the 90-day window — filtering beats a third scan.
   const todaySales = historicSales.filter((s) => s.date.slice(0, 10) === todayStart);
@@ -85,10 +94,16 @@ async function fetchAll(): Promise<DashboardData> {
   // DERIVED, not sale.paymentStatus — a sale settled by a later collection must
   // drop out of this list, and the sale doc itself can never be updated to say so.
   const pendingSales = historicSales.filter(
-    (s) => saleBalance(s, paymentsFor.get(s._id)).status !== 'PAID',
+    (s) => saleBalance(s, paymentsFor.get(s._id) ?? [], refundsFor.get(s._id) ?? []).status !== 'PAID',
+  );
+  const creditSales = historicSales.filter(
+    (s) => saleBalance(s, paymentsFor.get(s._id) ?? [], refundsFor.get(s._id) ?? []).creditUsd > SETTLED_EPSILON,
   );
 
-  return { config, stocked, todaySales, recentSales, pendingSales, paymentsFor, clients: allClients };
+  return {
+    config, stocked, todaySales, recentSales, pendingSales, creditSales, paymentsFor, refundsFor,
+    clients: allClients,
+  };
 }
 
 // ─── STAT CARD ───────────────────────────────────────────────────────────────
@@ -434,13 +449,18 @@ function Divider() {
 interface SideProps {
   recentSales: SaleDoc[];
   pendingSales: SaleDoc[];
+  creditSales: SaleDoc[];
   paymentsFor: Map<string, PaymentDoc[]>;
+  refundsFor: Map<string, RefundDoc[]>;
   clientMap: Map<string, string>;
   config: SystemConfigDoc | null;
   onCollect: (sale: SaleDoc, owedUsd: number) => void;
+  onRefund: (sale: SaleDoc, creditUsd: number) => void;
 }
 
-function SidePanel({ recentSales, pendingSales, paymentsFor, clientMap, config, onCollect }: SideProps) {
+function SidePanel({
+  recentSales, pendingSales, creditSales, paymentsFor, refundsFor, clientMap, config, onCollect, onRefund,
+}: SideProps) {
   const rate = config?.currentDailyRateBCV;
 
   function clientName(clientId: string | null): string {
@@ -448,7 +468,8 @@ function SidePanel({ recentSales, pendingSales, paymentsFor, clientMap, config, 
     return clientMap.get(clientId) ?? 'Cliente';
   }
 
-  const saleStatus = (sale: SaleDoc) => saleBalance(sale, paymentsFor.get(sale._id)).status;
+  const saleStatus = (sale: SaleDoc) =>
+    saleBalance(sale, paymentsFor.get(sale._id) ?? [], refundsFor.get(sale._id) ?? []).status;
 
   return (
     <aside
@@ -571,7 +592,7 @@ function SidePanel({ recentSales, pendingSales, paymentsFor, clientMap, config, 
           Cobros pendientes
         </h2>
 
-        {pendingSales.length === 0 ? (
+        {pendingSales.length === 0 && creditSales.length === 0 ? (
           <p
             style={{
               fontFamily: 'var(--font-sans)',
@@ -586,7 +607,7 @@ function SidePanel({ recentSales, pendingSales, paymentsFor, clientMap, config, 
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {pendingSales.map((sale) => {
-              const owed = saleBalance(sale, paymentsFor.get(sale._id)).owedUsd;
+              const owed = saleBalance(sale, paymentsFor.get(sale._id) ?? [], refundsFor.get(sale._id) ?? []).owedUsd;
               const days = daysSince(sale.date);
               return (
                 <div
@@ -644,6 +665,79 @@ function SidePanel({ recentSales, pendingSales, paymentsFor, clientMap, config, 
                 </div>
               );
             })}
+            {creditSales.map((sale) => {
+              const credit = saleBalance(sale, paymentsFor.get(sale._id) ?? [], refundsFor.get(sale._id) ?? []).creditUsd;
+              const days = daysSince(sale.date);
+              return (
+                <div
+                  key={sale._id}
+                  data-credit-sale={sale._id}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    padding: '10px 12px',
+                    background: 'rgba(62,107,58,0.08)',
+                    border: '1px solid rgba(62,107,58,0.25)',
+                    borderLeft: '3px solid var(--color-ok)',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: 'var(--font-sans)',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: 'var(--color-ink)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
+                      {clientName(sale.clientId)}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: 'var(--font-sans)',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        color: 'var(--color-ok)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      A favor
+                    </span>
+                    <Money usd={credit} rate={rate} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                    <span
+                      style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '10px',
+                        color: 'var(--color-thread)',
+                      }}
+                    >
+                      {days === 0 ? 'Hoy' : `hace ${days}d`}
+                    </span>
+                    <Button variant="ghost" size="md" type="button" onClick={() => onRefund(sale, credit)}>
+                      Entregar vuelto
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
@@ -676,6 +770,7 @@ function CollectDialog({
   const [transfer, setTransfer] = useState('');
   const [bs, setBs] = useState('');
   const [note, setNote] = useState('');
+  const [allowOverpayment, setAllowOverpayment] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -685,6 +780,7 @@ function CollectDialog({
 
   const num = (s: string) => parseFloat(s) || 0;
   const enteredUsd = rate ? usdPaid(num(cash), num(transfer), num(bs), rate) : 0;
+  const overpaid = enteredUsd > owedUsd + SETTLED_EPSILON;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -703,6 +799,7 @@ function CollectDialog({
         paidBs: num(bs),
         note,
         operatorId: cachedUser()?.name ?? 'desconocido',
+        allowOverpayment,
       });
       onClose();
     } catch (err) {
@@ -766,8 +863,21 @@ function CollectDialog({
 
         <p style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--color-thread)', margin: 0 }}>
           Total del cobro: <strong style={{ color: 'var(--color-ink)' }}>{fmtUsd(round2(enteredUsd))}</strong>
-          {' · '}queda {fmtUsd(round2(Math.max(0, owedUsd - enteredUsd)))}
+          {overpaid
+            ? ` · Quedará ${fmtUsd(round2(enteredUsd - owedUsd))} a favor del cliente`
+            : ` · queda ${fmtUsd(round2(Math.max(0, owedUsd - enteredUsd)))}`}
         </p>
+
+        {overpaid && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-ink)' }}>
+            <input
+              type="checkbox"
+              checked={allowOverpayment}
+              onChange={(e) => setAllowOverpayment(e.target.checked)}
+            />
+            Registrar el excedente como saldo a favor (sin vuelto ahora)
+          </label>
+        )}
 
         {error && (
           <div role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }}>
@@ -781,6 +891,147 @@ function CollectDialog({
           </Button>
           <Button variant="primary" type="submit" disabled={saving}>
             {saving ? 'Registrando…' : 'Registrar cobro'}
+          </Button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+// ─── ENTREGAR VUELTO ─────────────────────────────────────────────────────────
+
+/**
+ * Records change handed back to the client. Structural copy of CollectDialog —
+ * same open/close/saving pattern, opposite direction of money.
+ */
+function RefundDialog({
+  sale,
+  creditUsd,
+  rate,
+  clientName,
+  onClose,
+}: {
+  sale: SaleDoc;
+  creditUsd: number;
+  rate: number | undefined;
+  clientName: string;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  // Minted once when the dialog opens — every submit (including a retry after a
+  // dropped connection) carries the same refundUid, so recordRefund is idempotent.
+  const refundMeta = useRef({ date: new Date().toISOString(), refundUid: uuidv4() });
+  const [cash, setCash] = useState(creditUsd.toFixed(2));
+  const [transfer, setTransfer] = useState('');
+  const [bs, setBs] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+
+  const num = (s: string) => parseFloat(s) || 0;
+  const enteredUsd = rate ? usdPaid(num(cash), num(transfer), num(bs), rate) : 0;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    if (!rate) {
+      setError('No hay tasa del día registrada. Actualízala en Ajustes antes de entregar un vuelto.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await recordRefund(db, {
+        saleId: sale._id,
+        exchangeRateBCV: rate,
+        givenUsdCash: num(cash),
+        givenUsdTransfer: num(transfer),
+        givenBs: num(bs),
+        note,
+        operatorId: cachedUser()?.name ?? 'desconocido',
+        date: refundMeta.current.date,
+        refundUid: refundMeta.current.refundUid,
+      });
+      onClose();
+    } catch (err) {
+      setError((err as Error).message ?? 'Error desconocido.');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      aria-label="Entregar vuelto"
+      style={{
+        border: '1px solid var(--color-thread)',
+        borderRadius: '8px',
+        background: 'var(--color-cloth)',
+        padding: '20px 24px',
+        width: 'min(420px, calc(100vw - 32px))',
+        color: 'var(--color-ink)',
+      }}
+    >
+      <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <h2
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '13px',
+              fontWeight: 700,
+              letterSpacing: '0.07em',
+              textTransform: 'uppercase',
+              color: 'var(--color-thread)',
+              margin: '0 0 6px',
+            }}
+          >
+            Entregar vuelto
+          </h2>
+          <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', margin: 0 }}>
+            {clientName} · a favor <strong>{fmtUsd(creditUsd)}</strong>
+            {rate ? ` · ${fmtBs(toBs(creditUsd, rate))}` : ''}
+          </p>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-thread)', margin: '4px 0 0' }}>
+            {fmtDateTime(sale.date)}
+          </p>
+        </div>
+
+        <div className="form-grid-2">
+          <Field label="Efectivo $">
+            <NumberInput value={cash} min="0" step="0.01" placeholder="0.00" autoFocus onChange={(e) => setCash(e.target.value)} />
+          </Field>
+          <Field label="Transferencia $">
+            <NumberInput value={transfer} min="0" step="0.01" placeholder="0.00" onChange={(e) => setTransfer(e.target.value)} />
+          </Field>
+        </div>
+        <Field label="Bolívares" hint={rate ? `A la tasa de hoy: ${fmtBs(rate)}/$` : 'Sin tasa del día'}>
+          <NumberInput value={bs} min="0" step="0.01" placeholder="0,00" onChange={(e) => setBs(e.target.value)} />
+        </Field>
+        <Field label="Referencia">
+          <Input value={note} placeholder="Nº de transferencia, recibo…" onChange={(e) => setNote(e.target.value)} />
+        </Field>
+
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--color-thread)', margin: 0 }}>
+          Total del vuelto: <strong style={{ color: 'var(--color-ink)' }}>{fmtUsd(round2(enteredUsd))}</strong>
+          {' · '}Quedará a favor: {fmtUsd(round2(Math.max(0, creditUsd - enteredUsd)))}
+        </p>
+
+        {error && (
+          <div role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <Button variant="ghost" type="button" onClick={() => ref.current?.close()}>
+            Cancelar
+          </Button>
+          <Button variant="primary" type="submit" disabled={saving}>
+            {saving ? 'Registrando…' : 'Entregar vuelto'}
           </Button>
         </div>
       </form>
@@ -881,6 +1132,7 @@ function Header({ config }: { config: SystemConfigDoc | null }) {
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [collecting, setCollecting] = useState<{ sale: SaleDoc; owedUsd: number } | null>(null);
+  const [refunding, setRefunding] = useState<{ sale: SaleDoc; creditUsd: number } | null>(null);
 
   const load = useCallback(() => {
     void fetchAll().then(setData).catch((err) => console.error('[Dashboard]', err));
@@ -910,7 +1162,7 @@ export default function Dashboard() {
     );
   }
 
-  const { config, stocked, todaySales, recentSales, pendingSales, paymentsFor, clients } = data;
+  const { config, stocked, todaySales, recentSales, pendingSales, creditSales, paymentsFor, refundsFor, clients } = data;
   const rate = config?.currentDailyRateBCV;
 
   // Client id → name map (single pass)
@@ -926,7 +1178,19 @@ export default function Dashboard() {
 
   // Stat: Por cobrar — derived from the ledger, not sale.paymentStatus.
   const receivableUsd = round2(
-    pendingSales.reduce((s, sale) => s + saleBalance(sale, paymentsFor.get(sale._id)).owedUsd, 0),
+    pendingSales.reduce(
+      (s, sale) => s + saleBalance(sale, paymentsFor.get(sale._id) ?? [], refundsFor.get(sale._id) ?? []).owedUsd,
+      0,
+    ),
+  );
+
+
+  // Stat: Por devolver — the mirror of receivableUsd, money owed TO the client.
+  const refundableUsd = round2(
+    creditSales.reduce(
+      (s, sale) => s + saleBalance(sale, paymentsFor.get(sale._id) ?? [], refundsFor.get(sale._id) ?? []).creditUsd,
+      0,
+    ),
   );
 
   // Stat: Artículos con stock
@@ -959,7 +1223,11 @@ export default function Dashboard() {
         <StatCard
           label="Por cobrar"
           primary={fmtUsd(receivableUsd)}
-          secondary={rate ? fmtBs(toBs(receivableUsd, rate)) : undefined}
+          secondary={
+            refundableUsd > SETTLED_EPSILON
+              ? `Por devolver: ${fmtUsd(refundableUsd)}`
+              : rate ? fmtBs(toBs(receivableUsd, rate)) : undefined
+          }
         />
         <StatCard label="Artículos con stock" primary={String(stockedItems)} />
         <StatCard
@@ -1000,10 +1268,13 @@ export default function Dashboard() {
         <SidePanel
           recentSales={recentSales}
           pendingSales={pendingSales}
+          creditSales={creditSales}
           paymentsFor={paymentsFor}
+          refundsFor={refundsFor}
           clientMap={clientMap}
           config={config}
           onCollect={(sale, owedUsd) => setCollecting({ sale, owedUsd })}
+          onRefund={(sale, creditUsd) => setRefunding({ sale, creditUsd })}
         />
       </div>
 
@@ -1014,6 +1285,16 @@ export default function Dashboard() {
           rate={rate}
           clientName={collecting.sale.clientId ? clientMap.get(collecting.sale.clientId) ?? 'Cliente' : 'Contado'}
           onClose={() => setCollecting(null)}
+        />
+      )}
+
+      {refunding && (
+        <RefundDialog
+          sale={refunding.sale}
+          creditUsd={refunding.creditUsd}
+          rate={rate}
+          clientName={refunding.sale.clientId ? clientMap.get(refunding.sale.clientId) ?? 'Cliente' : 'Contado'}
+          onClose={() => setRefunding(null)}
         />
       )}
     </div>
