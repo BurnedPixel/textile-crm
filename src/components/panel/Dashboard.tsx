@@ -154,13 +154,15 @@ function StatCard({ label, primary, secondary }: { label: string; primary: strin
 
 /**
  * /venta with the batch's facets preselected (SaleTerminal reads these on
- * mount). Trailing slash on purpose: it is the canonical static URL, so the
- * service worker serves the precached venta page instead of falling back to
- * the panel — without it, clicking a row on an installed PWA went nowhere.
+ * mount). NO trailing slash: the PWA precache manifest lists pages as bare
+ * `venta` (how @vite-pwa/astro canonicalizes them under trailingSlash
+ * 'ignore'), so `/venta/?…` misses the cache and the offline fallback serves
+ * the PANEL — the click looks dead on an installed PWA. Verify URL-shape
+ * changes with a service-worker-CONTROLLED browser, never a fresh profile.
  */
 function ventaUrl(batch: BatchDoc): string {
   const p = new URLSearchParams({ color: batch.color, nm: batch.nm, fabric: batch.fabricType });
-  return `/venta/?${p}`;
+  return `/venta?${p}`;
 }
 
 interface InventoryTableProps {
