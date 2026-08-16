@@ -192,7 +192,9 @@ export default function VentasIsland() {
       {filtered.length === 0 ? (
         <EmptyState title="Sin ventas para este filtro" />
       ) : (
-        <div className="no-print" style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', overflow: 'hidden', marginBottom: '1.5rem' }}>
+        // NOT no-print: the expanded nota lives inside this wrapper, and display:none
+        // on an ancestor would blank the printout — print CSS hides via visibility.
+        <div style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', overflow: 'hidden', marginBottom: '1.5rem' }}>
           <table className="table-cards" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-thread)' }}>
