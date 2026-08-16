@@ -11,6 +11,7 @@ import { useState, useEffect, useRef, type KeyboardEvent } from 'react';
 import { db } from '../../lib/db';
 import { cachedUser } from '../../lib/auth';
 import { getBatches, getBatchProducts, getStockedBatches } from '../../lib/queries';
+import { getColorChart } from '../../lib/catalog';
 import { returnStock, returnPieceId } from '../../lib/inventory';
 import { useLiveQuery } from '../../lib/hooks';
 import {
@@ -102,6 +103,9 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
   // zero is precisely the one most likely to come back.
   const { data: allBatches } = useLiveQuery(() => getBatches(db), []);
   const rollBatches = (allBatches ?? []).filter((b) => b.productType === 'ROLL');
+  // «405» finds «Azul rey» — same one-field name-or-code rule as Tela nueva.
+  const { data: chart = null } = useLiveQuery(() => getColorChart(db), []);
+  const codeByColorName = new Map((chart?.colors ?? []).map((c) => [norm(c.name), c.code]));
 
   const cascadeComplete = Boolean(color.trim() && nm.trim() && fabricType.trim());
   const matchedBatch: BatchDoc | null | undefined = cascadeComplete
@@ -327,16 +331,31 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
           <h2 style={sectionTitle}>Artículo devuelto</h2>
 
           <div className="form-grid-3">
-            <Field label="Color">
+            <Field label="Color" hint={codeByColorName.get(norm(color)) ? `Código ${codeByColorName.get(norm(color))}` : undefined}>
               <Combobox
                 ref={colorRef}
                 data-hotkey-search=""
                 value={color}
-                placeholder="Azul rey"
+                placeholder="Azul rey · 405"
                 options={colorOptions}
-                onChange={setColor}
+                searchText={(c) => codeByColorName.get(norm(c)) ?? ''}
+                onChange={(v) => {
+                  // Typed a bare chart code? Swap it for the colour it names —
+                  // batchIdOf norm()s, so chart casing still matches the batch.
+                  const byCode = chart?.colors.find((c) => c.code === v.trim());
+                  setColor(byCode ? byCode.name : v);
+                }}
                 onKeyDown={(e) => { if (e.key === 'Escape') { setColor(''); return; } advanceCascade(e, nmRef); }}
-                renderOption={(c) => <SwatchChip color={c} size="sm" />}
+                renderOption={(c) => (
+                  <>
+                    <SwatchChip color={c} size="sm" />
+                    {codeByColorName.get(norm(c)) && (
+                      <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-thread)' }}>
+                        {codeByColorName.get(norm(c))}
+                      </span>
+                    )}
+                  </>
+                )}
               />
             </Field>
             <Field label={`${NM_LABEL} (métrica aguja)`}>
