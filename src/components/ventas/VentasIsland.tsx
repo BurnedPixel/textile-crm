@@ -4,7 +4,7 @@
 // Unlike the Panel's 90-day "Ventas recientes"/"Cobros pendientes" lists, this
 // page is deliberately the un-windowed surface: getSales() with no date bounds.
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../../lib/db';
 import { getSales, getClients, getFiscalConfig, grandTotalUsd, SETTLED_EPSILON } from '../../lib/queries';
 import { getPayments, getRefunds, paymentsBySale, refundsBySale, saleBalance } from '../../lib/payments';
@@ -83,18 +83,22 @@ export default function VentasIsland() {
 
   // ---- Selection + deep link (?sale=…) ----
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const deepLinked = useRef(false);
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get('sale');
-    if (id) setSelectedId(id);
+    if (id) { deepLinked.current = true; setSelectedId(id); }
   }, []);
 
   const selectedSale = useMemo(
     () => (sales ?? []).find((s) => s._id === selectedId) ?? null,
     [sales, selectedId],
   );
+  // The detail expands in place under the clicked row, so only a deep link
+  // (?sale=… — the row may be far down the unwindowed list) needs a scroll.
   useEffect(() => {
-    if (selectedSale) {
-      document.querySelector('[data-sale-detail]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (selectedSale && deepLinked.current) {
+      deepLinked.current = false;
+      document.querySelector(`[data-sale-row="${CSS.escape(selectedSale._id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [selectedSale]);
   const selectedClient = selectedSale ? clientById.get(selectedSale.clientId ?? '') ?? null : null;
@@ -203,18 +207,21 @@ export default function VentasIsland() {
               {filtered.map((sale, i) => {
                 const b = balanceOf(sale);
                 const isCredit = b.creditUsd > SETTLED_EPSILON;
+                const isOpen = selectedId === sale._id;
+                const toggle = () => setSelectedId(isOpen ? null : sale._id);
                 return (
+                  <Fragment key={sale._id}>
                   <tr
-                    key={sale._id}
                     data-sale-row={sale._id}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setSelectedId(sale._id)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') setSelectedId(sale._id); }}
+                    aria-expanded={isOpen}
+                    onClick={toggle}
+                    onKeyDown={(e) => { if (e.key === 'Enter') toggle(); }}
                     style={{
-                      borderBottom: i < filtered.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none',
+                      borderBottom: !isOpen && i < filtered.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none',
                       cursor: 'pointer',
-                      background: selectedId === sale._id ? 'rgba(181,23,92,0.06)' : undefined,
+                      background: isOpen ? 'rgba(181,23,92,0.06)' : undefined,
                     }}
                   >
                     <td style={tdStyle}>{fmtDateTime(sale.date)}</td>
@@ -230,6 +237,54 @@ export default function VentasIsland() {
                       )}
                     </td>
                   </tr>
+                  {isOpen && selectedSale && selectedBalance && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: '0 14px 14px', borderBottom: i < filtered.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none' }}>
+                        <div data-sale-detail style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              {selectedBalance.owedUsd > SETTLED_EPSILON ? (
+                                <Badge tone="danger">Saldo pendiente {selectedBalance.owedUsd.toFixed(2)} $</Badge>
+                              ) : selectedBalance.creditUsd > SETTLED_EPSILON ? (
+                                <Badge tone="ok">A favor del cliente {selectedBalance.creditUsd.toFixed(2)} $</Badge>
+                              ) : (
+                                <Badge tone="ok">Pagada</Badge>
+                              )}
+                            </div>
+                            <Button variant="ghost" size="md" onClick={() => setSelectedId(null)}>Cerrar</Button>
+                          </div>
+
+                          {/* Cobros y vueltos */}
+                          {(selectedPayments.length > 0 || selectedRefunds.length > 0) && (
+                            <div className="no-print" style={{ background: 'var(--color-greige)', border: '1px dashed var(--color-thread)', borderRadius: '8px', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-thread)' }}>
+                                Cobros y vueltos
+                              </span>
+                              {[...selectedPayments.map((p) => ({ ...p, kind: 'Cobro' as const })), ...selectedRefunds.map((r) => ({ ...r, kind: 'Vuelto entregado' as const }))]
+                                .sort((a, b2) => a.date.localeCompare(b2.date))
+                                .map((entry: (PaymentDoc | RefundDoc) & { kind: string }) => (
+                                  <div key={entry._id} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-ink)' }}>
+                                    <span>{entry.kind} — {fmtDate(entry.date)}{entry.note ? ` (${entry.note})` : ''}</span>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+
+                          <NotaEntrega sale={selectedSale} client={selectedClient} fiscal={fiscal ?? null} />
+
+                          <div className="no-print" style={{ display: 'flex', gap: '12px' }}>
+                            <Button variant="ghost" size="lg" onClick={() => window.print()}>
+                              Imprimir nota
+                            </Button>
+                            <Button variant="ghost" size="lg" data-share-pdf disabled={sharingPdf} onClick={handleSharePdf}>
+                              {sharingPdf ? 'Generando…' : 'Compartir PDF'}
+                            </Button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -250,50 +305,6 @@ export default function VentasIsland() {
         </div>
       )}
 
-      {/* Detail: regenerated nota de entrega */}
-      {selectedSale && selectedBalance && (
-        <div data-sale-detail style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              {selectedBalance.owedUsd > SETTLED_EPSILON ? (
-                <Badge tone="danger">Saldo pendiente {selectedBalance.owedUsd.toFixed(2)} $</Badge>
-              ) : selectedBalance.creditUsd > SETTLED_EPSILON ? (
-                <Badge tone="ok">A favor del cliente {selectedBalance.creditUsd.toFixed(2)} $</Badge>
-              ) : (
-                <Badge tone="ok">Pagada</Badge>
-              )}
-            </div>
-            <Button variant="ghost" size="md" onClick={() => setSelectedId(null)}>Cerrar</Button>
-          </div>
-
-          {/* Cobros y vueltos */}
-          {(selectedPayments.length > 0 || selectedRefunds.length > 0) && (
-            <div className="no-print" style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '8px', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-thread)' }}>
-                Cobros y vueltos
-              </span>
-              {[...selectedPayments.map((p) => ({ ...p, kind: 'Cobro' as const })), ...selectedRefunds.map((r) => ({ ...r, kind: 'Vuelto entregado' as const }))]
-                .sort((a, b) => a.date.localeCompare(b.date))
-                .map((entry: (PaymentDoc | RefundDoc) & { kind: string }) => (
-                  <div key={entry._id} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-ink)' }}>
-                    <span>{entry.kind} — {fmtDate(entry.date)}{entry.note ? ` (${entry.note})` : ''}</span>
-                  </div>
-                ))}
-            </div>
-          )}
-
-          <NotaEntrega sale={selectedSale} client={selectedClient} fiscal={fiscal ?? null} />
-
-          <div className="no-print" style={{ display: 'flex', gap: '12px' }}>
-            <Button variant="ghost" size="lg" onClick={() => window.print()}>
-              Imprimir nota
-            </Button>
-            <Button variant="ghost" size="lg" data-share-pdf disabled={sharingPdf} onClick={handleSharePdf}>
-              {sharingPdf ? 'Generando…' : 'Compartir PDF'}
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

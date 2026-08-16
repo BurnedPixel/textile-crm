@@ -60,7 +60,7 @@ const icons: Record<string, string> = {
 
       {/* Nav items */}
       {navItems.map((item) => {
-        const isActive = active === item.href || (item.href !== '/' && Astro.url.pathname.startsWith(item.href));
+        const isActive = active === item.href || (item.href !== '/' && (Astro.url.pathname === item.href || Astro.url.pathname.startsWith(item.href + '/')));
         return (
           <a
             href={item.href}
@@ -112,7 +112,7 @@ const icons: Record<string, string> = {
         </summary>
         <div class="menu-panel">
           {navItems.map((item) => {
-            const isActive = active === item.href || (item.href !== '/' && Astro.url.pathname.startsWith(item.href));
+            const isActive = active === item.href || (item.href !== '/' && (Astro.url.pathname === item.href || Astro.url.pathname.startsWith(item.href + '/')));
             return (
               <a
                 href={item.href}
