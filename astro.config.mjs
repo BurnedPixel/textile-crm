@@ -33,6 +33,11 @@ export default defineConfig({
         navigateFallback: '/',
         // Never intercept CouchDB traffic — sync must hit the network.
         navigateFallbackDenylist: [/^\/db\//],
+        // Query params never pick the page here (they only preselect state,
+        // e.g. /venta/?color=…), so ignore them ALL when matching the
+        // precache — otherwise such a navigation misses the cache and the
+        // fallback serves the panel instead of the page asked for.
+        ignoreURLParametersMatching: [/.*/],
         runtimeCaching: [],
       },
     }),
