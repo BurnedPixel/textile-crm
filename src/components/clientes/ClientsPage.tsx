@@ -1,7 +1,7 @@
 // ClientsPage — master-detail clients view. Spanish UI, English code.
 // client:only="react" (PouchDB browser-only).
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { db } from '../../lib/db';
 import { useLiveQuery } from '../../lib/hooks';
 import { getClients, getSales, saveClient, usdPaid, grandTotalUsd, getFiscalConfig } from '../../lib/queries';
@@ -777,7 +777,28 @@ export default function ClientsPage() {
   });
   const ledger: Ledger = ledgerData ?? { sales: [], payments: [], refunds: [] };
 
+  // Per-client balance, computed once per ledger change — walk-in sales
+  // (clientId null) have no client to attribute the balance to.
+  const balances = useMemo(() => {
+    const paymentsFor = paymentsBySale(ledger.payments);
+    const refundsFor = refundsBySale(ledger.refunds);
+    const salesByClient = new Map<string, SaleDoc[]>();
+    for (const sale of ledger.sales) {
+      if (!sale.clientId) continue;
+      const list = salesByClient.get(sale.clientId);
+      if (list) list.push(sale);
+      else salesByClient.set(sale.clientId, [sale]);
+    }
+    const map = new Map<string, { owed: number; credit: number }>();
+    for (const [clientId, sales] of salesByClient) {
+      const { owedToBusinessUsd, owedToClientUsd } = clientBalance(sales, paymentsFor, refundsFor);
+      map.set(clientId, { owed: owedToBusinessUsd, credit: owedToClientUsd });
+    }
+    return map;
+  }, [ledger.sales, ledger.payments, ledger.refunds]);
+
   const [filter, setFilter] = useState('');
+  const [balanceFilter, setBalanceFilter] = useState<'all' | 'debt' | 'credit'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<'view' | 'new' | 'edit'>('view');
   const [saving, setSaving] = useState(false);
@@ -786,14 +807,18 @@ export default function ClientsPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
 
-  // Filter clients
+  // Filter clients — text search AND balance filter
   const q = filter.toLowerCase();
-  const filtered = (clients ?? []).filter(
-    (c) =>
-      !q ||
-      c.name.toLowerCase().includes(q) ||
-      c.documentId.toLowerCase().includes(q),
-  );
+  const filtered = (clients ?? []).filter((c) => {
+    if (q && !c.name.toLowerCase().includes(q) && !c.documentId.toLowerCase().includes(q)) return false;
+    const bal = balances.get(c._id);
+    if (balanceFilter === 'debt') return (bal?.owed ?? 0) > SETTLED_EPSILON;
+    if (balanceFilter === 'credit') return (bal?.credit ?? 0) > SETTLED_EPSILON;
+    return true;
+  });
+
+  const debtCount = (clients ?? []).filter((c) => (balances.get(c._id)?.owed ?? 0) > SETTLED_EPSILON).length;
+  const creditCount = (clients ?? []).filter((c) => (balances.get(c._id)?.credit ?? 0) > SETTLED_EPSILON).length;
 
   const selectedClient = (clients ?? []).find((c) => c._id === selectedId) ?? null;
   const selectedIdx = filtered.findIndex((c) => c._id === selectedId);
@@ -963,6 +988,60 @@ export default function ClientsPage() {
             </span>
           </div>
 
+          {/* Balance filter */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div
+              data-balance-filter
+              role="group"
+              aria-label="Filtrar por saldo"
+              style={{ display: 'flex', gap: '4px' }}
+            >
+              {([
+                ['all', 'Todos'],
+                ['debt', 'Con deuda'],
+                ['credit', 'A favor'],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  data-balance-filter-option={value}
+                  aria-pressed={balanceFilter === value}
+                  onClick={() => setBalanceFilter(value)}
+                  style={{
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    padding: '5px 10px',
+                    borderRadius: '5px',
+                    border: `1px solid ${balanceFilter === value ? 'var(--color-dye)' : 'var(--color-thread)'}`,
+                    background: balanceFilter === value ? 'rgba(181,23,92,0.08)' : 'transparent',
+                    color: balanceFilter === value ? 'var(--color-dye)' : 'var(--color-thread)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {(debtCount > 0 || creditCount > 0) && (
+              <div
+                data-balance-summary
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px',
+                  color: 'var(--color-thread)',
+                }}
+              >
+                {[
+                  debtCount > 0 ? `${debtCount} con deuda` : null,
+                  creditCount > 0 ? `${creditCount} a favor` : null,
+                ].filter(Boolean).join(' · ')}
+              </div>
+            )}
+          </div>
+
           {/* Table */}
           {filtered.length === 0 ? (
             <p
@@ -984,11 +1063,16 @@ export default function ClientsPage() {
             >
               {filtered.map((client, idx) => {
                 const isSelected = client._id === selectedId;
+                const bal = balances.get(client._id);
+                const rowOwed = bal?.owed ?? 0;
+                const rowCredit = bal?.credit ?? 0;
                 return (
                   <div
                     key={client._id}
                     role="option"
                     aria-selected={isSelected}
+                    data-owed={rowOwed > SETTLED_EPSILON ? rowOwed : undefined}
+                    data-credit={rowCredit > SETTLED_EPSILON ? rowCredit : undefined}
                     tabIndex={0}
                     ref={(el) => { rowRefs.current[idx] = el as HTMLTableRowElement | null; }}
                     onClick={() => {
@@ -1061,7 +1145,35 @@ export default function ClientsPage() {
                         </div>
                       )}
                     </div>
-                    <Badge tone="neutral">{client.entityType === 'PERSON' ? 'Natural' : 'Jurídica'}</Badge>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                      <Badge tone="neutral">{client.entityType === 'PERSON' ? 'Natural' : 'Jurídica'}</Badge>
+                      {rowOwed > SETTLED_EPSILON && (
+                        <span
+                          style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: 'var(--color-danger)',
+                            fontFeatureSettings: '"tnum" 1',
+                          }}
+                        >
+                          Debe {fmtUsd(rowOwed)}
+                        </span>
+                      )}
+                      {rowCredit > SETTLED_EPSILON && (
+                        <span
+                          style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: 'var(--color-ok)',
+                            fontFeatureSettings: '"tnum" 1',
+                          }}
+                        >
+                          A favor {fmtUsd(rowCredit)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })}
