@@ -44,7 +44,7 @@ export function buildNotaPdf(
   doc.text(rifLine, MARGIN, y);
   y += 6;
   doc.setFont('helvetica', 'bold');
-  doc.text('NOTA DE ENTREGA — no es una factura fiscal', MARGIN, y);
+  doc.text('NOTA DE ENTREGA', MARGIN, y);
   y += 4;
   doc.setLineWidth(0.2);
   doc.line(MARGIN, y, PAGE_W - MARGIN, y);

@@ -40,7 +40,7 @@ export default function NotaEntrega({ sale, client, fiscal }: NotaEntregaProps) 
           {fiscal?.address ? ` · ${fiscal.address}` : ''}
         </div>
         <div style={{ ...meta, marginTop: 6, fontWeight: 700, color: 'var(--color-ink)' }}>
-          NOTA DE ENTREGA — no es una factura fiscal
+          NOTA DE ENTREGA
         </div>
       </header>
 
