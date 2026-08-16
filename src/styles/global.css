@@ -353,4 +353,17 @@
     padding: 0;
   }
   .no-print { display: none !important; }
+  /* Ancestors of the nota that can't be display:none'd (that would take the
+     nota with them) but are tall — e.g. the /ventas table the nota expands
+     inside. Collapse their height so the invisible content doesn't generate
+     blank pages; the absolutely-positioned nota escapes the clip because its
+     containing block (the page) is outside the collapsed box. */
+  .print-collapse {
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+  }
 }
