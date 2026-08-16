@@ -4,7 +4,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { db } from '../../lib/db';
 import { useLiveQuery } from '../../lib/hooks';
-import { getClients, getSales, saveClient, usdPaid, grandTotalUsd, getFiscalConfig } from '../../lib/queries';
+import { getClients, getSales, saveClient, usdPaid, grandTotalUsd, getFiscalConfig, getConfig } from '../../lib/queries';
+import { CollectDialog, RefundDialog } from '../shared/PaymentDialogs';
 import { waLink, buildDunningText, toWaNumber } from '../../lib/whatsapp';
 import {
   getPayments, paymentsBySale, saleBalance,
@@ -123,6 +124,10 @@ interface Ledger {
  */
 function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledger: Ledger; businessName?: string }) {
   const clientId = client._id;
+  // Settle debts (and hand back vueltos) right here — before this, the only
+  // path was hunting the sale down on the Panel, whose lists cap at 90 days.
+  const { data: config } = useLiveQuery((d) => getConfig(d));
+  const [action, setAction] = useState<{ kind: 'collect' | 'refund'; sale: SaleDoc; amountUsd: number } | null>(null);
   const clientSales = ledger.sales.filter((s) => s.clientId === clientId);
   const paymentsFor = paymentsBySale(ledger.payments);
   const refundsFor = refundsBySale(ledger.refunds);
@@ -270,7 +275,7 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
               borderBottom: '1px solid var(--color-thread)',
             }}
           >
-            {(['Fecha', 'Total', 'Estado'] as const).map((h) => (
+            {(['Fecha', 'Total', 'Estado', ''] as const).map((h) => (
               <th
                 key={h}
                 style={{
@@ -292,7 +297,8 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
         <tbody>
           {clientSales.map((sale) => {
             // Derived — never sale.paymentStatus, which is the checkout snapshot.
-            const status = saleBalance(sale, paymentsFor.get(sale._id) ?? [], refundsFor.get(sale._id) ?? []).status;
+            const b = saleBalance(sale, paymentsFor.get(sale._id) ?? [], refundsFor.get(sale._id) ?? []);
+            const status = b.status;
             return (
               <tr
                 key={sale._id}
@@ -319,11 +325,55 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
                 <td style={{ textAlign: 'right', padding: '8px 0' }}>
                   <Badge tone={PAYMENT_TONE[status]}>{PAYMENT_LABEL[status]}</Badge>
                 </td>
+                <td
+                  style={{ textAlign: 'right', padding: '8px 0' }}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  {b.owedUsd > SETTLED_EPSILON ? (
+                    <Button
+                      variant="ghost"
+                      size="md"
+                      data-collect-sale={sale._id}
+                      onClick={(e) => { e.stopPropagation(); setAction({ kind: 'collect', sale, amountUsd: b.owedUsd }); }}
+                    >
+                      Cobrar
+                    </Button>
+                  ) : b.creditUsd > SETTLED_EPSILON ? (
+                    <Button
+                      variant="ghost"
+                      size="md"
+                      data-refund-sale={sale._id}
+                      onClick={(e) => { e.stopPropagation(); setAction({ kind: 'refund', sale, amountUsd: b.creditUsd }); }}
+                    >
+                      Vuelto
+                    </Button>
+                  ) : null}
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+
+      {action?.kind === 'collect' && (
+        <CollectDialog
+          sale={action.sale}
+          owedUsd={action.amountUsd}
+          rate={config?.currentDailyRateBCV}
+          clientName={client.name}
+          onClose={() => setAction(null)}
+        />
+      )}
+      {action?.kind === 'refund' && (
+        <RefundDialog
+          sale={action.sale}
+          creditUsd={action.amountUsd}
+          rate={config?.currentDailyRateBCV}
+          clientName={client.name}
+          onClose={() => setAction(null)}
+        />
+      )}
 
       {/* Collections + refunds recorded after checkout — otherwise the note
           captured with each one would be written and never readable anywhere.
