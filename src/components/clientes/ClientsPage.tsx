@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../../lib/db';
 import { useLiveQuery } from '../../lib/hooks';
 import { getClients, getSales, saveClient, usdPaid, grandTotalUsd, getFiscalConfig } from '../../lib/queries';
-import { waLink, buildDunningText } from '../../lib/whatsapp';
+import { waLink, buildDunningText, toWaNumber } from '../../lib/whatsapp';
 import { getPayments, paymentsBySale, saleBalance } from '../../lib/payments';
 import {
   FIELD_MAX, validateDocumentId, validateEmail, validateName, validatePhone,
@@ -409,8 +409,27 @@ function DetailPanel({ client, ledger, onEdit, businessName }: DetailPanelProps)
               {client.documentId}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: '8px', flexShrink: 0, alignItems: 'center' }}>
             <Badge tone="neutral">{ENTITY_LABELS[client.entityType]}</Badge>
+            {/* Plain chat, no pre-written text — hidden when the stored number
+                cannot become a wa.me link, same rule as the dunning button. */}
+            {toWaNumber(client.phoneNumber) && (
+              <a
+                data-wa-chat
+                href={`https://wa.me/${toWaNumber(client.phoneNumber)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  minHeight: '36px', padding: '0 12px', borderRadius: '6px',
+                  border: '1.5px solid var(--color-ok)', color: 'var(--color-ok)',
+                  fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 600,
+                  textDecoration: 'none', backgroundColor: 'transparent', whiteSpace: 'nowrap',
+                }}
+              >
+                Chat
+              </a>
+            )}
             <Button variant="ghost" size="md" onClick={onEdit}>
               Editar
             </Button>
