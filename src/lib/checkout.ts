@@ -6,8 +6,8 @@ import {
   saleIdOf,
   movementIdOf,
   assertAmount,
+  hasRollStock,
   UNIT_FOR,
-  ROLL_EMPTY_KG,
   type BatchDoc,
   type ProductDoc,
   type SaleDoc,
@@ -17,6 +17,8 @@ import {
 } from './types';
 import { round2 } from './format';
 import { computePaymentStatus, saleTaxes, uuidv4, IVA_RATE, IGTF_RATE } from './queries';
+import { writeWithCounters, type CounterWrite } from './inventory';
+import { recomputeBatchCounters } from './conflicts';
 
 type DB = PouchDB.Database;
 
@@ -46,7 +48,7 @@ export async function checkout(db: DB, input: CheckoutInput): Promise<SaleDoc> {
     assertAmount(payment, 'El monto pagado', { allowZero: true });
   }
 
-  return attemptCheckout(db, input, saleId, /*isRetry*/ false);
+  return attemptCheckout(db, input, saleId);
 }
 
 async function getExisting(db: DB, saleId: string): Promise<SaleDoc | null> {
@@ -62,7 +64,6 @@ async function attemptCheckout(
   db: DB,
   input: CheckoutInput,
   saleId: string,
-  isRetry: boolean,
 ): Promise<SaleDoc> {
   // Load fresh batch + product docs referenced by the cart.
   const batchIds = [...new Set(input.lines.map((l) => l.batchId))];
@@ -72,9 +73,12 @@ async function attemptCheckout(
     fetchMap<ProductDoc>(db, productIds),
   ]);
 
-  // Mutable working copies of counters (we only write the ones we touch).
-  const touchedProducts = new Map<string, ProductDoc>();
-  const touchedBatches = new Map<string, BatchDoc>();
+  // Staged deltas, NOT absolute counter values: what this sale takes off each
+  // roll / batch. The docs are built from them later, against whichever rev the
+  // write actually lands on.
+  const rollDeductKg = new Map<string, number>();
+  const rollBatchOf = new Map<string, string>();
+  const unitDeductByBatch = new Map<string, number>();
   const movementLines: MovementLineItem[] = [];
   const saleLines: CartLineItem[] = [];
   let totalUsd = 0;
@@ -100,36 +104,32 @@ async function attemptCheckout(
       );
     }
 
-    const product = touchedProducts.get(line.productId) ?? products.get(line.productId);
+    const product = products.get(line.productId);
     if (!product) throw new Error(`Producto no encontrado: ${line.productId}`);
 
     if (batch.productType === 'ROLL') {
       // ROLL: deduct Kg from the specific roll's currentWeightKg.
-      const roll = touchedProducts.get(product._id) ?? { ...product };
-      if (roll.currentWeightKg < line.quantity) {
-        throw new Error(
-          `Stock insuficiente en ${line.description}: quedan ${roll.currentWeightKg} kg.`,
-        );
+      const staged = rollDeductKg.get(product._id) ?? 0;
+      const available = round2(product.currentWeightKg - staged);
+      if (available < line.quantity) {
+        throw new Error(`Stock insuficiente en ${line.description}: quedan ${available} kg.`);
       }
-      roll.currentWeightKg = round2(roll.currentWeightKg - line.quantity);
-      if (roll.currentWeightKg < 0) roll.currentWeightKg = 0; // clamp float dust
-      touchedProducts.set(roll._id, roll);
-      // A roll reaching empty removes one from the batch's roll count.
-      if (roll.currentWeightKg <= ROLL_EMPTY_KG) {
-        const b = touchedBatches.get(batch._id) ?? { ...batch };
-        b.currentUnits = Math.max(0, b.currentUnits - 1);
-        touchedBatches.set(b._id, b);
-      }
+      rollDeductKg.set(product._id, round2(staged + line.quantity));
+      rollBatchOf.set(product._id, batch._id);
     } else {
       // COMBO/PIECE: deduct whole units from batch.currentUnits (single pool product).
-      const b = touchedBatches.get(batch._id) ?? { ...batch };
-      if (b.currentUnits < line.quantity) {
-        throw new Error(
-          `Stock insuficiente en ${line.description}: quedan ${b.currentUnits} ud.`,
-        );
+      // Units are countable: half a combo cannot be sold, and a fractional
+      // quantity would freeze onto the immutable sale AND the ledger as a
+      // -2.5 Units movement, mixing the two units of measure permanently.
+      if (!Number.isInteger(line.quantity)) {
+        throw new Error('Las unidades deben ser un número entero.');
       }
-      b.currentUnits = b.currentUnits - line.quantity;
-      touchedBatches.set(b._id, b);
+      const staged = unitDeductByBatch.get(batch._id) ?? 0;
+      const available = batch.currentUnits - staged;
+      if (available < line.quantity) {
+        throw new Error(`Stock insuficiente en ${line.description}: quedan ${available} ud.`);
+      }
+      unitDeductByBatch.set(batch._id, staged + line.quantity);
     }
 
     // Recompute money — trust nothing the cart sent.
@@ -202,18 +202,66 @@ async function attemptCheckout(
     lineItems: movementLines,
   };
 
-  // ONE bulkDocs — sale + movement + touched counters written atomically.
-  const writes = [sale, movement, ...touchedProducts.values(), ...touchedBatches.values()];
-  const results = await db.bulkDocs(writes);
+  // ONE bulkDocs — sale + movement + touched counters. bulkDocs is per-document
+  // and NOT transactional: the sale and the movement have unique ids and always
+  // land, while a counter can 409 against a concurrent write. That loser used to
+  // be dropped forever (the retry re-found the sale it had just written and
+  // returned it), with no conflicting rev left for the watcher to heal — so the
+  // deduction is re-applied here, on a FRESH read, delta by delta.
+  const emptiedRolls = new Map<string, boolean>();
+  const counters: CounterWrite[] = [];
 
-  // Counter docs can conflict with a concurrent local write. Retry ONCE with fresh revs.
-  const conflicted = results.some((r) => 'error' in r && (r as PouchDB.Core.Error).status === 409);
-  if (conflicted) {
-    if (isRetry) throw new Error('Conflicto de inventario persistente. Reintente la venta.');
-    // Re-check idempotency: the sale may have won even if a counter lost.
-    const already = await getExisting(db, saleId);
-    if (already) return already;
-    return attemptCheckout(db, input, saleId, /*isRetry*/ true);
+  for (const [productId, deductKg] of rollDeductKg) {
+    counters.push({
+      id: productId,
+      initial: products.get(productId) ?? null,
+      build: (fresh) => {
+        const cur = (fresh as ProductDoc | null) ?? products.get(productId)!;
+        const next = Math.max(0, round2(cur.currentWeightKg - deductKg)); // clamp float dust
+        // The empty transition is read off the SAME rev this write lands on.
+        // Deciding it once, from the first read, is how a stale transition ends
+        // up on the batch counter after a rebuild.
+        emptiedRolls.set(productId, hasRollStock(cur.currentWeightKg) && !hasRollStock(next));
+        return { ...cur, currentWeightKg: next };
+      },
+    });
+  }
+
+  for (const batchId of batchIds) {
+    const rollIds = [...rollBatchOf].filter(([, id]) => id === batchId).map(([pid]) => pid);
+    let applied = 0;
+    let target = 0;
+    counters.push({
+      id: batchId,
+      initial: batches.get(batchId) ?? null,
+      dependsOn: rollIds,
+      build: (fresh) => {
+        const cur = (fresh as BatchDoc | null) ?? batches.get(batchId)!;
+        // Units sold outright, plus one per roll this sale actually emptied.
+        target =
+          (unitDeductByBatch.get(batchId) ?? 0) +
+          rollIds.filter((id) => emptiedRolls.get(id)).length;
+        const outstanding = target - applied;
+        return outstanding
+          ? { ...cur, currentUnits: Math.max(0, cur.currentUnits - outstanding) }
+          : null;
+      },
+      landed: () => {
+        applied = target;
+      },
+    });
+  }
+
+  const unresolved = await writeWithCounters(db, [sale, movement], counters);
+  if (unresolved.length) {
+    // The sale and its movement ARE committed, so the ledger already holds the
+    // truth and only the cache is stale — and re-running checkout would
+    // short-circuit on transactionId without deducting anything. Rebuild the
+    // cache from the ledger instead of throwing an error nobody can act on.
+    console.warn(`[checkout] counters not applied: ${unresolved.join(', ')}`);
+    for (const batchId of batchIds) {
+      await recomputeBatchCounters(db, batchId).catch(() => undefined);
+    }
   }
 
   return sale;

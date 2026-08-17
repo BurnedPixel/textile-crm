@@ -31,12 +31,25 @@ type BulkDocsFn = (docsArg: unknown, ...rest: unknown[]) => unknown;
 function wrap(original: BulkDocsFn): BulkDocsFn {
   return function patchedBulkDocs(this: unknown, docsArg: unknown, ...rest: unknown[]) {
     // bulkDocs accepts either an array or a { docs: [...] } wrapper.
-    const docs = Array.isArray(docsArg)
-      ? docsArg
-      : (docsArg as { docs?: unknown[] } | null)?.docs;
+    const wrapper = Array.isArray(docsArg)
+      ? null
+      : (docsArg as { docs?: unknown[]; new_edits?: boolean } | null);
+    const docs = Array.isArray(docsArg) ? docsArg : wrapper?.docs;
+
+    // `new_edits: false` is REPLICATION writing documents this device did not
+    // author — the inbound pull batch. Validating those would let ONE bad doc
+    // upstream reject the whole batch, on every device, forever; the server's
+    // validate_doc_update is the boundary for them. This layer guards what THIS
+    // app writes. The flag rides in either position: inside the { docs, new_edits }
+    // wrapper (what pouchdb-replication sends) or in the options argument.
+    const options = rest.find(
+      (a) => a && typeof a === 'object' && !Array.isArray(a),
+    ) as { new_edits?: boolean } | undefined;
+    const newEdits = wrapper?.new_edits ?? options?.new_edits;
+
     // Reject as a promise (not a sync throw) so put/post/bulkDocs all surface the
     // failure the same way callers expect — via .catch / await rejection.
-    if (Array.isArray(docs)) {
+    if (Array.isArray(docs) && newEdits !== false) {
       const callback = rest.find((a) => typeof a === 'function') as
         | ((err: unknown) => void)
         | undefined;

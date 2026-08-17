@@ -117,6 +117,58 @@ describe('checkout — happy path', () => {
   });
 });
 
+// bulkDocs is per-document, not transactional: the sale and the movement land
+// while a counter 409s against a concurrent write. That loser used to be dropped
+// forever — the retry re-found the sale it had just written and returned it — so
+// the roll kept its full weight while the batch lost a unit, with no conflicting
+// rev anywhere for the watcher to heal.
+describe('checkout — a counter that loses a 409 is re-applied, not dropped', () => {
+  it('fully selling a roll whose rev is bumped mid-write still empties it, exactly once', async () => {
+    const db = makeTestDb();
+    const bid = await seedRollBatch(db);
+    const pid = productIdOf(bid, 'R1');
+
+    const orig = db.bulkDocs.bind(db);
+    let tripped = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (db as any).bulkDocs = async (docs: any, ...rest: any[]) => {
+      if (tripped || !Array.isArray(docs) || docs.length < 3) return orig(docs, ...rest);
+      tripped = true;
+      // A concurrent write bumps the roll's rev between checkout's read and its
+      // write; the roll's write therefore conflicts while everything else lands.
+      await orig([{ ...((await db.get(pid)) as object) }] as never);
+      const landed = await orig(docs.filter((d: any) => d._id !== pid), ...rest);
+      const byId = new Map((landed as any[]).map((r) => [r.id, r]));
+      return docs.map((d: any) =>
+        d._id === pid ? { id: pid, error: true, status: 409, name: 'conflict' } : byId.get(d._id),
+      );
+    };
+
+    await checkout(db, {
+      transactionId: 'tx-409',
+      createdAt: new Date().toISOString(),
+      clientId: null,
+      isOnTheBooks: false,
+      exchangeRateBCV: RATE,
+      creditTerms: null,
+      operatorId: 'op',
+      lines: [rollLine(bid, 'R1', 20, 8)], // the whole roll
+      payments: { paidUsdCash: 160, paidUsdTransfer: 0, paidBs: 0 },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (db as any).bulkDocs = orig;
+
+    expect(tripped).toBe(true); // the interleave actually fired
+    expect(await getSales(db)).toHaveLength(1); // sale written once
+    expect((await getMovements(db)).filter((m) => m.movementType === 'OUT')).toHaveLength(1);
+
+    const r1 = await db.get<ProductDoc>(pid);
+    expect(r1.currentWeightKg).toBe(0); // the deduction landed on the fresh rev
+    const batch = await db.get<BatchDoc>(bid);
+    expect(batch.currentUnits).toBe(1); // 2 → 1: the transition counted ONCE
+  });
+});
+
 describe('checkout — idempotency', () => {
   it('same transactionId twice → one sale, single deduction', async () => {
     const db = makeTestDb();
@@ -178,6 +230,29 @@ describe('checkout — rejections', () => {
         payments: { paidUsdCash: 0, paidUsdTransfer: 0, paidBs: 0 },
       }),
     ).rejects.toThrow(/unidad/i);
+  });
+
+  it('rejects a fractional quantity on a Units line', async () => {
+    const db = makeTestDb();
+    await ingressStock(db, {
+      color: 'Blanco', nm: '30', fabricType: 'Piqué', productType: 'COMBO', operatorId: 'op',
+      units: 10, unitPurchaseValueUsd: 1, unitSalePriceUsd: 2,
+    });
+    const bid = batchIdOf('Blanco', '30', 'Piqué');
+    await expect(
+      checkout(db, {
+        transactionId: 'tx-half-combo',
+        createdAt: new Date().toISOString(),
+        clientId: null,
+        isOnTheBooks: false,
+        exchangeRateBCV: RATE,
+        creditTerms: null,
+        operatorId: 'op',
+        lines: [unitLine(bid, 2.5, 8)],
+        payments: { paidUsdCash: 20, paidUsdTransfer: 0, paidBs: 0 },
+      }),
+    ).rejects.toThrow(/entero/i);
+    expect(await getSales(db)).toHaveLength(0);
   });
 
   it('rejects credit sales (not fully paid) with no client selected', async () => {
