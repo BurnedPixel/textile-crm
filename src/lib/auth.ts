@@ -109,6 +109,32 @@ export async function logout(): Promise<void> {
   location.replace('/login');
 }
 
+// ---- Role checks (DISPLAY-ONLY — the server, not this file, enforces access) ----
+//
+// CouchDB roles are opaque strings cached verbatim from the session (see
+// `login`/`getSession` above). The app has no prior convention for reading
+// them, so these two are derived from `BRAND.dbName` the same way
+// couch/setup.sh derives its APP_ROLE (default `${dbName}`, the read/write
+// "member" role): `${BRAND.dbName}-admin` / `${BRAND.dbName}-operador`. This
+// is the coupling point — couch/setup.sh must provision users with one of
+// these two role strings (on top of the member role) for hasRole/isAdmin to
+// see anything.
+
+const ADMIN_ROLE = `${BRAND.dbName}-admin`;
+const OPERADOR_ROLE = `${BRAND.dbName}-operador`;
+
+/** Does the cached session carry this exact role string? Display-only gating. */
+export function hasRole(role: string): boolean {
+  return cachedUser()?.roles.includes(role) ?? false;
+}
+
+/** Display-only admin gate — CouchDB `_security`/`validate_doc_update` is the real boundary. */
+export function isAdmin(): boolean {
+  return hasRole(ADMIN_ROLE);
+}
+
+export { ADMIN_ROLE, OPERADOR_ROLE };
+
 // ---- Shared device (per-device setting; explicit logout wipes this equipment) ----
 
 /** Is this device marked as shared? Device-scoped localStorage, never synced. */

@@ -9,6 +9,7 @@ import {
   validateEmail,
   validateName,
   validatePhone,
+  validateUsername,
 } from './types';
 import { saveClient } from './queries';
 import { makeTestDb } from './testdb';
@@ -48,6 +49,20 @@ describe('validateName', () => {
 
   it('rejects a pasted document', () => {
     expect(validateName('x'.repeat(200))).toMatch(/120 caracteres/);
+  });
+});
+
+describe('validateUsername', () => {
+  it('accepts lowercase names with the allowed punctuation', () => {
+    for (const ok of ['jperez', 'j.perez', 'j_perez-2', 'abc']) {
+      expect(validateUsername(ok), ok).toBeNull();
+    }
+  });
+
+  it('rejects empty, too short, too long, and non-lowercase input', () => {
+    for (const bad of ['', 'jp', 'x'.repeat(41), 'JPerez', 'j perez', 'jpérez']) {
+      expect(validateUsername(bad), bad).not.toBeNull();
+    }
   });
 });
 
