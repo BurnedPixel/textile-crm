@@ -88,10 +88,17 @@ echo "==> Setting _security on ${DB}"
 #        which is exactly why ${APP_ROLE}-admin is listed below: it is what lets
 #        the in-app Usuarios panel create users and reset passwords.
 echo "==> Setting _security on _users (admins: ${APP_ROLE}-admin)"
+# CouchDB 3.x blocks editing _users/_security unless users_db_security_editable
+# is on (403 otherwise). Enable just for this PUT, then restore the guard —
+# the stored security object keeps applying either way; only EDITING is gated.
+"${CURL[@]}" -X PUT "${COUCH_URL}/_node/_local/_config/couchdb/users_db_security_editable" \
+  -d '"true"' >/dev/null
 "${CURL[@]}" -X PUT "${COUCH_URL}/_users/_security" -d '{
   "admins":  { "names": [], "roles": ["_admin", "'"${APP_ROLE}"'-admin"] },
   "members": { "names": [], "roles": [] }
 }' >/dev/null
+"${CURL[@]}" -X PUT "${COUCH_URL}/_node/_local/_config/couchdb/users_db_security_editable" \
+  -d '"false"' >/dev/null
 
 # 6. Push the validation design doc (preserving its _rev if it already exists).
 echo "==> Pushing validation design doc"
