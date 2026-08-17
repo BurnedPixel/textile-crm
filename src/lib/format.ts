@@ -27,6 +27,9 @@ const dateTimeFmt = new Intl.DateTimeFormat('es-VE', { dateStyle: 'short', timeS
 /** Money math helper — round to cents. */
 export const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
+/** Kg-weight math helper — round to the app's 0.001 kg granularity (ROLL_EMPTY_KG). */
+export const round3 = (n: number): number => Math.round((n + Number.EPSILON) * 1000) / 1000;
+
 /** Derived, display-only. Never write the result to a document. */
 export const toBs = (usd: number, exchangeRateBCV: number): number => round2(usd * exchangeRateBCV);
 

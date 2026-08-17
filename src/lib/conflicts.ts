@@ -15,7 +15,7 @@ import {
   type ClientDoc,
   type InventoryMovementDoc,
 } from './types';
-import { round2 } from './format';
+import { round3 } from './format';
 
 type DB = PouchDB.Database;
 
@@ -227,7 +227,7 @@ export async function recomputeBatchCounters(
   for (const row of products.rows) {
     const p = row.doc as ProductDoc | undefined;
     if (!p) continue;
-    const total = round2(totalsByProduct.get(p._id) ?? 0);
+    const total = round3(totalsByProduct.get(p._id) ?? 0);
     if (isRoll) {
       const weight = Math.max(0, total);
       writes.push({ ...p, currentWeightKg: weight });

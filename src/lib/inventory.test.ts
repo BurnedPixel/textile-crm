@@ -705,13 +705,13 @@ describe('returnStock — the cached counter agrees with a rebuild from the ledg
     const bid = batchIdOf(ROLL_ARTICLE.color, ROLL_ARTICLE.nm, ROLL_ARTICLE.fabricType);
     await ingressStock(db, { ...ROLL_ARTICLE, rolls: rollsOf(['R1', 20]) });
 
-    // round2(0.002) is 0 — the roll would arrive empty and the kilos would be
+    // round3(0.0002) is 0 — the roll would arrive empty and the kilos would be
     // lost, while the batch counted a roll the ledger rebuild does not.
     await expect(
       returnStock(db, {
         returnId: '55556666-7777-8888-9999-aaaaaaaaaaaa',
         date: new Date().toISOString(),
-        productId: productIdOf(bid, 'R1'), weightKg: 0.002, operatorId: 'op',
+        productId: productIdOf(bid, 'R1'), weightKg: 0.0002, operatorId: 'op',
       }),
     ).rejects.toThrow(/demasiado pequeño/i);
 

@@ -60,6 +60,42 @@ describe('recomputeBatchCounters — ledger is source of truth', () => {
     const batchB = (await db.get(bid)) as { currentUnits: number };
     expect(batchB.currentUnits).toBe(2); // both rolls still non-empty
   });
+
+  it('agrees with the ledger at 0.001 kg granularity (audit I-7)', async () => {
+    // Three 0.004 kg sales off a 10 kg roll: at 2-decimal rounding the cache
+    // (10.00 - 0.00 x3 = 10.00) drifts from the ledger (10 - 0.012 = 9.988).
+    const db = makeTestDb();
+    await ingressStock(db, {
+      color: 'Negro',
+      nm: '24',
+      fabricType: 'Rib',
+      productType: 'ROLL',
+      operatorId: 'op',
+      rolls: [{ pieceId: 'R1', weightKg: 10, purchaseValueUsd: 5, salePriceUsd: 8 }],
+    });
+    const bid = batchIdOf('Negro', '24', 'Rib');
+    for (const tx of ['tx1', 'tx2', 'tx3']) {
+      await checkout(db, {
+        transactionId: tx,
+        createdAt: new Date().toISOString(),
+        clientId: null,
+        isOnTheBooks: false,
+        exchangeRateBCV: RATE,
+        creditTerms: null,
+        operatorId: 'op',
+        lines: [rollLine(bid, 'R1', 0.004)],
+        payments: { paidUsdCash: 1, paidUsdTransfer: 0, paidBs: 0 },
+      });
+    }
+
+    const r1 = (await db.get(productIdOf(bid, 'R1'))) as { currentWeightKg: number };
+    expect(r1.currentWeightKg).toBe(9.988); // cache matches the ledger, not 10.00
+
+    await recomputeBatchCounters(db, bid); // idempotent: rewrites the SAME value
+
+    const r1b = (await db.get(productIdOf(bid, 'R1'))) as { currentWeightKg: number };
+    expect(r1b.currentWeightKg).toBe(9.988);
+  });
 });
 
 describe('resolveDocConflicts — counters resolve via the ledger', () => {
