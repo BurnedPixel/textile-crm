@@ -15,7 +15,7 @@ import {
   type MovementLineItem,
   type CartLineItem,
 } from './types';
-import { round2 } from './format';
+import { round2, round3 } from './format';
 import { computePaymentStatus, saleTaxes, uuidv4, IVA_RATE, IGTF_RATE } from './queries';
 import { writeWithCounters, type CounterWrite } from './inventory';
 import { recomputeBatchCounters } from './conflicts';
@@ -110,11 +110,11 @@ async function attemptCheckout(
     if (batch.productType === 'ROLL') {
       // ROLL: deduct Kg from the specific roll's currentWeightKg.
       const staged = rollDeductKg.get(product._id) ?? 0;
-      const available = round2(product.currentWeightKg - staged);
+      const available = round3(product.currentWeightKg - staged);
       if (available < line.quantity) {
         throw new Error(`Stock insuficiente en ${line.description}: quedan ${available} kg.`);
       }
-      rollDeductKg.set(product._id, round2(staged + line.quantity));
+      rollDeductKg.set(product._id, round3(staged + line.quantity));
       rollBatchOf.set(product._id, batch._id);
     } else {
       // COMBO/PIECE: deduct whole units from batch.currentUnits (single pool product).
@@ -217,7 +217,7 @@ async function attemptCheckout(
       initial: products.get(productId) ?? null,
       build: (fresh) => {
         const cur = (fresh as ProductDoc | null) ?? products.get(productId)!;
-        const next = Math.max(0, round2(cur.currentWeightKg - deductKg)); // clamp float dust
+        const next = Math.max(0, round3(cur.currentWeightKg - deductKg)); // clamp float dust
         // The empty transition is read off the SAME rev this write lands on.
         // Deciding it once, from the first read, is how a stale transition ends
         // up on the batch counter after a rebuild.

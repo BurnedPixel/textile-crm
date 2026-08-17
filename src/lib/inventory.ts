@@ -19,7 +19,7 @@ import {
   type InventoryMovementDoc,
   type MovementLineItem,
 } from './types';
-import { round2 } from './format';
+import { round2, round3 } from './format';
 import { uuidv4 } from './queries';
 
 type DB = PouchDB.Database;
@@ -259,7 +259,7 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
       const buildRoll = (cur: CounterDoc | null): ProductDoc => {
         const c = cur as ProductDoc | null;
         const prevWeight = c?.currentWeightKg ?? 0;
-        const nextWeight = round2(prevWeight + roll.weightKg);
+        const nextWeight = round3(prevWeight + roll.weightKg);
         // The batch's roll count is "rolls holding stock", so it moves on an
         // empty→non-empty TRANSITION — not on "the document did not exist".
         // Refilling a sold-out roll creates no document but does put a roll back
@@ -274,7 +274,7 @@ export async function ingressStock(db: DB, input: IngressInput): Promise<Invento
           type: 'product',
           batchId,
           pieceId: roll.pieceId,
-          initialWeightKg: c?.initialWeightKg ?? round2(roll.weightKg),
+          initialWeightKg: c?.initialWeightKg ?? round3(roll.weightKg),
           currentWeightKg: nextWeight,
           purchaseValueUsd: round2(roll.purchaseValueUsd),
           salePriceUsd: round2(roll.salePriceUsd),
@@ -462,10 +462,10 @@ export async function returnStock(db: DB, input: ReturnInput): Promise<Inventory
   if (already) return already;
 
   assertAmount(input.weightKg, 'El peso devuelto');
-  // Weights are stored rounded to the cent of a kilo, so anything under half a
+  // Weights are stored rounded to the gram (0.001 kg), so anything under half a
   // gram lands as 0.000 kg: a roll document holding nothing, and the returned
   // fabric lost. Reject it rather than write a roll that is empty on arrival.
-  if (!hasRollStock(round2(input.weightKg))) {
+  if (!hasRollStock(round3(input.weightKg))) {
     throw new Error('El peso devuelto es demasiado pequeño para registrarse.');
   }
 
@@ -508,7 +508,7 @@ export async function returnStock(db: DB, input: ReturnInput): Promise<Inventory
   const buildReturned = (cur: CounterDoc | null): ProductDoc => {
     const c = cur as ProductDoc | null;
     const prevReturnKg = c?.currentWeightKg ?? 0;
-    const nextReturnKg = round2(prevReturnKg + input.weightKg);
+    const nextReturnKg = round3(prevReturnKg + input.weightKg);
     // BOTH sides of the transition, exactly as ingressStock tests it. Checking
     // only "was it empty before" counts a roll onto the shelf that the recompute
     // from the ledger would not count — and the cache and the ledger then disagree
@@ -521,7 +521,7 @@ export async function returnStock(db: DB, input: ReturnInput): Promise<Inventory
       type: 'product',
       batchId: batch._id,
       pieceId: newPieceId,
-      initialWeightKg: c?.initialWeightKg ?? round2(input.weightKg),
+      initialWeightKg: c?.initialWeightKg ?? round3(input.weightKg),
       currentWeightKg: nextReturnKg,
       purchaseValueUsd: original.purchaseValueUsd,
       salePriceUsd: original.salePriceUsd,
@@ -567,7 +567,7 @@ export async function returnStock(db: DB, input: ReturnInput): Promise<Inventory
     const replacementTally = { units: 0, created: 0 };
     const buildReplacement = (cur: CounterDoc | null): ProductDoc => {
       const c = (cur as ProductDoc | null) ?? out;
-      const next = round2(c.currentWeightKg - takenKg);
+      const next = round3(c.currentWeightKg - takenKg);
       if (next < 0) throw new Error(`Stock insuficiente en ${c.pieceId}.`);
       // Emptying the replacement takes it off the batch's roll count — the same
       // rule checkout applies when a sale finishes a roll, read off the rev this
@@ -935,7 +935,7 @@ export async function adjustStock(db: DB, input: AdjustInput): Promise<Inventory
     let rollDelta = 0;
     const buildProduct = (cur: CounterDoc | null): ProductDoc => {
       const c = (cur as ProductDoc | null) ?? product;
-      const next = round2(c.currentWeightKg + input.quantityChanged);
+      const next = round3(c.currentWeightKg + input.quantityChanged);
       if (next < 0) throw new Error('El ajuste dejaría el peso en negativo.');
       rollDelta = (hasRollStock(next) ? 1 : 0) - (hasRollStock(c.currentWeightKg) ? 1 : 0);
       return { ...c, currentWeightKg: next };
