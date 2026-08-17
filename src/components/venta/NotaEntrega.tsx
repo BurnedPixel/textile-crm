@@ -31,7 +31,7 @@ export default function NotaEntrega({ sale, client, fiscal }: NotaEntregaProps) 
 
   return (
     <section className="nota-entrega" aria-label="Nota de entrega" style={sheet}>
-      <header style={{ borderBottom: '1px solid var(--color-ink)', paddingBottom: 10, marginBottom: 12 }}>
+      <header className="nota-header" style={{ borderBottom: '1px solid var(--color-ink)', paddingBottom: 10, marginBottom: 12 }}>
         <div style={{ fontFamily: 'var(--font-sans)', fontSize: 15, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
           {fiscal?.businessName ?? '—'}
         </div>
@@ -44,7 +44,7 @@ export default function NotaEntrega({ sale, client, fiscal }: NotaEntregaProps) 
         </div>
       </header>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 12 }}>
+      <div className="nota-meta-row" style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 12 }}>
         <div>
           <div style={label}>Cliente</div>
           <div style={value}>{client?.name ?? 'Sin cliente'}</div>
@@ -59,7 +59,7 @@ export default function NotaEntrega({ sale, client, fiscal }: NotaEntregaProps) 
         </div>
       </div>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
+      <table className="nota-table" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
         <thead>
           <tr>
             <th style={th}>Descripción</th>
@@ -82,8 +82,8 @@ export default function NotaEntrega({ sale, client, fiscal }: NotaEntregaProps) 
         </tbody>
       </table>
 
-      <div style={{ marginLeft: 'auto', maxWidth: 300, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <Row label="Base imponible" usd={taxes.baseUsd} rate={rate} />
+      <div className="nota-totals" style={{ marginLeft: 'auto', maxWidth: 300, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <Row label="Base" usd={taxes.baseUsd} rate={rate} />
         {(sale.ivaRate ?? 0) > 0 && (
           <Row label={`IVA ${((sale.ivaRate ?? 0) * 100).toFixed(0)} %`} usd={taxes.ivaUsd} rate={rate} />
         )}
@@ -101,7 +101,7 @@ export default function NotaEntrega({ sale, client, fiscal }: NotaEntregaProps) 
       {sale.creditTerms && (
         <div style={{ ...meta, marginTop: 12 }}>Condiciones: {sale.creditTerms}</div>
       )}
-      <div style={{ ...meta, marginTop: 12, fontSize: 10 }}>
+      <div className="nota-footer" style={{ ...meta, marginTop: 12, fontSize: 10 }}>
         Documento interno de entrega. La factura fiscal la emite la máquina homologada por el SENIAT.
       </div>
     </section>
@@ -111,15 +111,15 @@ export default function NotaEntrega({ sale, client, fiscal }: NotaEntregaProps) 
 function Row({ label, usd, rate, strong }: { label: string; usd: number; rate: number; strong?: boolean }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
-      <span style={{ fontFamily: 'var(--font-sans)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: strong ? 'var(--color-ink)' : 'var(--color-thread)', fontWeight: strong ? 700 : 400 }}>
+      <span className="nota-row-label" style={{ fontFamily: 'var(--font-sans)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: strong ? 'var(--color-ink)' : 'var(--color-thread)', fontWeight: strong ? 700 : 400 }}>
         {label}
       </span>
       <span style={{ textAlign: 'right' }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontWeight: strong ? 700 : 400, fontSize: strong ? 14 : 12 }}>
+        <span className="nota-row-usd" style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontWeight: strong ? 700 : 400, fontSize: strong ? 14 : 12 }}>
           {fmtUsd(usd)}
         </span>
         {rate > 0 && (
-          <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-thread)' }}>
+          <span className="nota-row-bs" style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-thread)' }}>
             {fmtBs(toBs(usd, rate))}
           </span>
         )}

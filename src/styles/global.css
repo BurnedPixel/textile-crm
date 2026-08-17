@@ -342,6 +342,7 @@
    `visibility` rather than `display`: the nota lives inside the island's
    layout, and display:none on an ancestor would take it with it. */
 @media print {
+  @page { margin: 10mm; }
   body { background: #fff; }
   body * { visibility: hidden; }
   .nota-entrega, .nota-entrega * { visibility: visible; }
@@ -353,6 +354,16 @@
     padding: 0;
   }
   .no-print { display: none !important; }
+  /* Density pass: fewer, tighter rows so more CartLineItems fit per page. */
+  .nota-header { padding-bottom: 4px !important; margin-bottom: 6px !important; }
+  .nota-meta-row { margin-bottom: 6px !important; }
+  .nota-table { margin-bottom: 6px !important; }
+  .nota-table th, .nota-table td { padding: 2px 4px !important; font-size: 9px !important; }
+  .nota-totals { gap: 1px !important; }
+  .nota-row-label { font-size: 9px !important; }
+  .nota-row-usd { font-size: 11px !important; }
+  .nota-row-bs { font-size: 8px !important; }
+  .nota-footer { margin-top: 6px !important; }
   /* Ancestors of the nota that can't be display:none'd (that would take the
      nota with them) but are tall — e.g. the /ventas table the nota expands
      inside. Collapse their height so the invisible content doesn't generate
