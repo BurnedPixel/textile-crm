@@ -357,8 +357,9 @@
   /* Density pass: fewer, tighter rows so more CartLineItems fit per page. */
   .nota-header { padding-bottom: 4px !important; margin-bottom: 6px !important; }
   .nota-meta-row { margin-bottom: 6px !important; }
-  .nota-table { margin-bottom: 6px !important; }
-  .nota-table th, .nota-table td { padding: 2px 4px !important; font-size: 9px !important; }
+  .nota-items { margin-bottom: 6px !important; gap: 3px !important; }
+  .nota-item { padding: 1px 0 !important; }
+  .nota-item-desc, .nota-item-math { font-size: 9px !important; }
   .nota-totals { gap: 1px !important; }
   .nota-row-label { font-size: 9px !important; }
   .nota-row-usd { font-size: 11px !important; }
