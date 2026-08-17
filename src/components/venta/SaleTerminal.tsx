@@ -1257,7 +1257,7 @@ export default function SaleTerminal() {
         <div data-tax-panel style={{ padding: '16px', border: '1px dashed var(--color-thread)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {ivaRate > 0 && (
             <>
-              <TaxRow label="Base imponible" usd={taxes.baseUsd} />
+              <TaxRow label="Base" usd={taxes.baseUsd} />
               <TaxRow label={`IVA ${(ivaRate * 100).toFixed(0)} %`} usd={taxes.ivaUsd} />
               <TaxRow
                 label={`IGTF ${(igtfRate * 100).toFixed(0)} % · divisas`}
@@ -1624,7 +1624,7 @@ export default function SaleTerminal() {
           <div style={{ padding: '12px 16px', borderTop: '2px dashed var(--color-thread)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {ivaRate > 0 && (
               <>
-                <TaxRow label="Base imponible" usd={taxes.baseUsd} />
+                <TaxRow label="Base" usd={taxes.baseUsd} />
                 <TaxRow label={`IVA ${(ivaRate * 100).toFixed(0)} %`} usd={taxes.ivaUsd} />
               </>
             )}
