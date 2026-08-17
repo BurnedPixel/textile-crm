@@ -6,12 +6,13 @@ import tailwindcss from '@tailwindcss/vite';
 import AstroPWA from '@vite-pwa/astro';
 
 export default defineConfig({
-  // CSP hashes for the inline scripts Astro itself emits (island bootstrap,
-  // HOTKEYS): every page gets a <meta http-equiv=csp> with sha256 hashes, and
-  // the deploy lifts the same hashes into the Caddy header, dropping
-  // 'unsafe-inline' from script-src/style-src (audit S-1). Experimental flag —
-  // re-verify the meta tag on any Astro bump.
-  experimental: { csp: true },
+  // CSP note (audit S-1): script-src drops 'unsafe-inline' via sha256 hashes
+  // of the inline scripts Astro emits (island bootstrap, HOTKEYS), computed at
+  // DEPLOY time by scripts/csp-hashes.py and set in the Caddy header. Astro's
+  // experimental.csp was tried and reverted: its <meta> also hashes style-src,
+  // and hashes can never cover the style="" ATTRIBUTES the React islands use —
+  // the meta policy blocked them on every page (intersection with the header),
+  // with no config to opt styles out. Header-only hashing has none of that.
   // The dashboard lives at / (nav: "Panel") — catch the URLs people guess.
   // '/ingreso' is the pre-rename inventory URL — kept so bookmarks and any
   // service-worker-cached link still land (Astro emits a precached meta-refresh stub).
