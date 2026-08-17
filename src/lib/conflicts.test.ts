@@ -133,6 +133,43 @@ describe('resolveDocConflicts — counters resolve via the ledger', () => {
     expect(resolved._conflicts ?? []).toHaveLength(0);
     expect(resolved.colorCode).toBe('215'); // folded from the losing rev
   });
+
+  it('folds a roll\'s lot metadata too — a stale fork must not erase a correction', async () => {
+    // Same hazard one level down: lotNumber/pantone/fiberComposition are not
+    // derivable from the ledger either, so a fork that predates a Buscar-y-
+    // corregir correction used to silently delete it when it won.
+    const db = makeTestDb();
+    await ingressStock(db, {
+      color: 'Verde', nm: '30', fabricType: 'Jersey', productType: 'ROLL', operatorId: 'op',
+      lotNumber: '7892', pantone: '15-0343 TCX', fiberComposition: '65/35',
+      rolls: [{ pieceId: 'R1', weightKg: 20, purchaseValueUsd: 5, salePriceUsd: 8 }],
+    });
+    const bid = batchIdOf('Verde', '30', 'Jersey');
+    const pid = productIdOf(bid, 'R1');
+
+    const bare = { ...((await db.get(pid)) as Record<string, unknown>) };
+    delete bare.lotNumber;
+    delete bare.pantone;
+    delete bare.fiberComposition;
+    bare._rev = '2-' + 'f'.repeat(32); // sorts above the stored rev → it wins
+    await db.bulkDocs([bare], { new_edits: false } as never);
+    expect(((await db.get(pid)) as { lotNumber?: string }).lotNumber).toBeUndefined();
+
+    await resolveDocConflicts(db, pid);
+
+    const resolved = (await db.get(pid, { conflicts: true })) as {
+      _conflicts?: string[];
+      lotNumber?: string;
+      pantone?: string;
+      fiberComposition?: string;
+      currentWeightKg: number;
+    };
+    expect(resolved._conflicts ?? []).toHaveLength(0);
+    expect(resolved.lotNumber).toBe('7892');
+    expect(resolved.pantone).toBe('15-0343 TCX');
+    expect(resolved.fiberComposition).toBe('65/35');
+    expect(resolved.currentWeightKg).toBe(20); // counters still rebuilt from the ledger
+  });
 });
 
 // A new config document that falls through this resolver lands in the

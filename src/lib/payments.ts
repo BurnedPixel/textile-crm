@@ -139,7 +139,7 @@ export interface RecordPaymentInput {
   paidBs: number;
   note?: string;
   operatorId: string;
-  /** ISO; defaults to now. Part of the _id, so it is also the idempotency key. */
+  /** ISO; defaults to now. */
   date?: string;
   /**
    * Operator confirmed there is no change to give right now: the excess becomes
@@ -147,6 +147,14 @@ export interface RecordPaymentInput {
    * stored — the document just records what was actually handed over.
    */
   allowOverpayment?: boolean;
+  /**
+   * Idempotency: the DIALOG mints this uuid once when it opens (with `date`),
+   * making the _id deterministic across retries — a double-submit finds the
+   * existing doc and returns it, never a second collection on paper. Same
+   * mechanism as recordRefund's refundUid / checkout's transactionId. Omitted
+   * (scripts): a fresh uuid per call.
+   */
+  paymentUid?: string;
 }
 
 /**
@@ -166,6 +174,11 @@ export async function recordPayment(db: DB, input: RecordPaymentInput): Promise<
   const amountUsd = usdPaid(paidUsdCash, paidUsdTransfer, paidBs, input.exchangeRateBCV);
   if (!(amountUsd > 0)) throw new Error('El cobro debe ser mayor que cero.');
 
+  const date = input.date ?? new Date().toISOString();
+  const _id = paymentIdOf(date, input.paymentUid ?? uuidv4());
+  const existing = await getById<PaymentDoc>(db, _id);
+  if (existing) return existing;
+
   const sale = await getSale(db, input.saleId);
   if (!sale) throw new Error(`Venta no encontrada: ${input.saleId}`);
 
@@ -173,20 +186,19 @@ export async function recordPayment(db: DB, input: RecordPaymentInput): Promise<
   // "pagada" and leave the difference unaccounted for anywhere. When the
   // operator explicitly confirms it (client pays a $20 debt with a $100 bill,
   // no change available), the excess derives as creditUsd instead.
-  const { owedUsd } = saleBalance(
-    sale,
-    await getPayments(db, { saleId: input.saleId }),
-    await getRefunds(db, { saleId: input.saleId }),
-  );
+  const [payments, refunds] = await Promise.all([
+    getPayments(db, { saleId: input.saleId }),
+    getRefunds(db, { saleId: input.saleId }),
+  ]);
+  const { owedUsd } = saleBalance(sale, payments, refunds);
   if (!input.allowOverpayment && amountUsd > owedUsd + SETTLED_EPSILON) {
     throw new Error(
       `El cobro (${round2(amountUsd)} $) excede el saldo pendiente de la venta (${owedUsd} $).`,
     );
   }
 
-  const date = input.date ?? new Date().toISOString();
   const payment: PaymentDoc = {
-    _id: paymentIdOf(date, uuidv4()),
+    _id,
     type: 'payment',
     paymentId: `${input.saleId}:cobro:${date}`,
     saleId: input.saleId,
@@ -255,11 +267,11 @@ export async function recordRefund(db: DB, input: RecordRefundInput): Promise<Re
 
   // Never hand back more than the business holds for this sale. No escape
   // hatch here — there is no business case for over-refunding.
-  const { creditUsd } = saleBalance(
-    sale,
-    await getPayments(db, { saleId: input.saleId }),
-    await getRefunds(db, { saleId: input.saleId }),
-  );
+  const [payments, refunds] = await Promise.all([
+    getPayments(db, { saleId: input.saleId }),
+    getRefunds(db, { saleId: input.saleId }),
+  ]);
+  const { creditUsd } = saleBalance(sale, payments, refunds);
   if (amountUsd > creditUsd + SETTLED_EPSILON) {
     throw new Error(
       `El vuelto (${round2(amountUsd)} $) excede el saldo a favor del cliente (${creditUsd} $).`,

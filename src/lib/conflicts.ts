@@ -56,11 +56,26 @@ export async function resolveDocConflicts(db: DB, id: string): Promise<void> {
 
   if (id.startsWith('batch:') || id.startsWith('product:')) {
     // Counters are a cache — the ledger is truth. Drop every conflicting rev,
-    // then rebuild from movements. But colorCode/location are NOT derivable
-    // from the ledger: fold them across every rev BEFORE the losers die, or
-    // they survive only when CouchDB's arbitrary winner happens to carry them
-    // (device B's code-less top-up beating device A's coded ingress).
-    if (id.startsWith('batch:')) await foldBatchMeta(db, id, conflicts);
+    // then rebuild from movements. But not every field derives from the ledger:
+    // fold those across every rev BEFORE the losers die, or they survive only
+    // when CouchDB's arbitrary winner happens to carry them (device B's
+    // code-less top-up beating device A's coded ingress; a stale fork of a roll
+    // beating the Buscar-y-corregir correction of its lot number).
+    //
+    // A roll's purchaseValueUsd/salePriceUsd/conditionTag are NOT folded: they
+    // are always present, so "first non-empty" says nothing about which rev is
+    // the newer one, and ProductDoc carries no updatedAt to break the tie —
+    // CouchDB's winner stands for those. Accepted caveat, the same one the batch
+    // fold has always had: first-non-empty RESURRECTS a value a later rev
+    // deliberately cleared (a lot number blanked on purpose comes back).
+    await foldMeta(
+      db,
+      id,
+      conflicts,
+      id.startsWith('batch:')
+        ? ['colorCode', 'location']
+        : ['lotNumber', 'pantone', 'fiberComposition'],
+    );
     await deleteRevs(db, id, conflicts);
     const batchId = id.startsWith('batch:') ? id : (await getBatchIdOfProduct(db, id));
     if (batchId) await recomputeBatchCounters(db, batchId);
@@ -88,34 +103,41 @@ export async function resolveDocConflicts(db: DB, id: string): Promise<void> {
   await deleteRevs(db, id, conflicts);
 }
 
+type MetaDoc = Record<string, unknown> & { _rev?: string };
+
 /**
- * Batch fields the ledger cannot rebuild (colorCode, location): keep the
- * winner's value when it has one, otherwise adopt the first non-empty value
- * among the conflicting revs. Revs are sorted descending so every device
- * folding the same rev set converges on the same doc — which rev donates is
- * arbitrary, determinism is what matters.
+ * Fields the ledger cannot rebuild (a batch's colorCode/location, a roll's
+ * lot metadata): keep the winner's value when it has one, otherwise adopt the
+ * first non-empty value among the conflicting revs. Revs are sorted descending
+ * so every device folding the same rev set converges on the same doc — which
+ * rev donates is arbitrary, determinism is what matters.
  */
-async function foldBatchMeta(db: DB, id: string, conflicts: string[]): Promise<void> {
-  const winner = (await db.get(id).catch(() => null)) as BatchDoc | null;
+async function foldMeta(
+  db: DB,
+  id: string,
+  conflicts: string[],
+  fields: string[],
+): Promise<void> {
+  const winner = (await db.get(id).catch(() => null)) as MetaDoc | null;
   if (!winner) return;
   const revs = await Promise.all(
-    conflicts.map((rev) => (db.get(id, { rev }) as Promise<BatchDoc>).catch(() => null)),
+    conflicts.map((rev) => (db.get(id, { rev }) as Promise<MetaDoc>).catch(() => null)),
   );
   const ordered = [
     winner,
     ...revs
-      .filter((r): r is BatchDoc => r !== null)
+      .filter((r): r is MetaDoc => r !== null)
       .sort((a, b) => (a._rev! < b._rev! ? 1 : -1)),
   ];
-  const colorCode = ordered.find((r) => r.colorCode)?.colorCode;
-  const location = ordered.find((r) => r.location)?.location;
-  if (colorCode !== winner.colorCode || (location ?? '') !== (winner.location ?? '')) {
-    await db.put({
-      ...winner,
-      ...(colorCode ? { colorCode } : {}),
-      ...(location ? { location } : {}),
-    });
+  const folded: MetaDoc = {};
+  let changed = false;
+  for (const field of fields) {
+    const value = ordered.find((r) => r[field])?.[field];
+    if (value === undefined) continue; // nobody has one — leave the winner alone
+    folded[field] = value;
+    if (value !== winner[field]) changed = true;
   }
+  if (changed) await db.put({ ...winner, ...folded });
 }
 
 /** Delete a set of revisions of a doc (used to collapse conflicting branches). */
@@ -165,7 +187,11 @@ async function getBatchIdOfProduct(db: DB, productId: string): Promise<string | 
  * ponytail: O(all movements) full-ledger scan on every conflict — fine at factory
  * scale (thousands of movements). Add a per-batch movement index if it ever isn't.
  */
-export async function recomputeBatchCounters(db: DB, batchId: string): Promise<void> {
+export async function recomputeBatchCounters(
+  db: DB,
+  batchId: string,
+  isRetry = false,
+): Promise<void> {
   const batch = (await db.get(batchId).catch(() => null)) as BatchDoc | null;
   if (!batch) return;
 
@@ -212,5 +238,18 @@ export async function recomputeBatchCounters(db: DB, batchId: string): Promise<v
   }
 
   writes.push({ ...batch, currentUnits: Math.max(0, batchUnits) });
-  await db.bulkDocs(writes);
+  const results = await db.bulkDocs(writes);
+
+  // bulkDocs is per-document: a concurrent write can 409 one counter while the
+  // others land, leaving exactly the drift this function exists to remove — and
+  // it used to be discarded silently. Everything here derives from the ledger,
+  // so re-running is idempotent: one bounded re-run on fresh revs, then warn.
+  const failed = results.filter((r) => r && 'error' in r);
+  if (!failed.length) return;
+  if (!isRetry) return recomputeBatchCounters(db, batchId, true);
+  console.warn(
+    `[conflicts] recompute could not write: ${failed
+      .map((f) => (f as { id?: string }).id ?? '?')
+      .join(', ')}`,
+  );
 }

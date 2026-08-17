@@ -128,6 +128,22 @@ describe('recordPayment — boundary validation', () => {
     ).rejects.toThrow(/excede el saldo pendiente/);
   });
 
+  it('is idempotent on the dialog-minted uid+date — a double submit returns the same doc', async () => {
+    const db = makeTestDb();
+    const sale = await creditSale(db); // $100 owed
+    const minted = { date: new Date().toISOString(), paymentUid: 'uid-dialog-1' };
+    const first = await recordPayment(db, {
+      saleId: sale._id, exchangeRateBCV: RATE, operatorId: 'op',
+      paidUsdCash: 40, paidUsdTransfer: 0, paidBs: 0, ...minted, // PARTIAL: overpay guard doesn't apply
+    });
+    const second = await recordPayment(db, {
+      saleId: sale._id, exchangeRateBCV: RATE, operatorId: 'op',
+      paidUsdCash: 40, paidUsdTransfer: 0, paidBs: 0, ...minted,
+    });
+    expect(second._id).toBe(first._id);
+    expect(await getPayments(db)).toHaveLength(1); // $40 collected once, not twice
+  });
+
   it('rejects zero, negative and rate-less collections, and unknown sales', async () => {
     const db = makeTestDb();
     const sale = await creditSale(db);

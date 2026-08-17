@@ -29,6 +29,9 @@ export function CollectDialog({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // Minted once when the dialog opens — every submit (including a retry after a
+  // dropped connection) carries the same paymentUid, so recordPayment is idempotent.
+  const paymentMeta = useRef({ date: new Date().toISOString(), paymentUid: uuidv4() });
   // The balance is the usual collection — prefill cash, let the operator split it.
   const [cash, setCash] = useState(owedUsd.toFixed(2));
   const [transfer, setTransfer] = useState('');
@@ -64,6 +67,8 @@ export function CollectDialog({
         note,
         operatorId: cachedUser()?.name ?? 'desconocido',
         allowOverpayment,
+        date: paymentMeta.current.date,
+        paymentUid: paymentMeta.current.paymentUid,
       });
       onClose();
     } catch (err) {

@@ -103,6 +103,188 @@ describe('ingressStock/adjustStock — counter 409 retries instead of dropping t
     const movements = await getMovements(db, { limit: 50 });
     expect(movements.filter((m) => m.movementType === 'ADJUST')).toHaveLength(1); // no dup ledger
   });
+
+  // The transition, not just the weight, has to come off the rev the write lands
+  // on. Frozen from the first read, a roll that no longer empties still takes a
+  // unit off the batch — and nothing on screen looks wrong.
+  it('adjustStock un-does the batch transition when the roll write is rebuilt', async () => {
+    const db = makeTestDb();
+    const bid = batchIdOf('Verde', '30', 'Jersey');
+    const pid = productIdOf(bid, 'R1');
+    await ingressStock(db, {
+      color: 'Verde', nm: '30', fabricType: 'Jersey', productType: 'ROLL', operatorId: 'op',
+      rolls: [{ pieceId: 'R1', weightKg: 5, purchaseValueUsd: 5, salePriceUsd: 8 }],
+    });
+
+    const orig = db.bulkDocs.bind(db);
+    let tripped = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (db as any).bulkDocs = async (docs: any, ...rest: any[]) => {
+      if (tripped || !Array.isArray(docs) || docs.length < 3) return orig(docs, ...rest);
+      tripped = true;
+      // Another device adds 5 kg to the roll first, so the -5 no longer empties it.
+      const live = (await db.get(pid)) as ProductDoc;
+      await orig([{ ...live, currentWeightKg: 10 }] as never);
+      const landed = await orig(docs.filter((d: any) => d._id !== pid), ...rest);
+      const byId = new Map((landed as any[]).map((r) => [r.id, r]));
+      return docs.map((d: any) =>
+        d._id === pid ? { id: pid, error: true, status: 409, name: 'conflict' } : byId.get(d._id),
+      );
+    };
+
+    await adjustStock(db, {
+      batchId: bid, productId: pid, quantityChanged: -5, operatorId: 'op', reason: 'merma',
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (db as any).bulkDocs = orig;
+
+    expect(tripped).toBe(true);
+    expect(((await db.get(pid)) as ProductDoc).currentWeightKg).toBe(5); // 10 - 5, still stocked
+    expect(((await db.get(bid)) as BatchDoc).currentUnits).toBe(1); // NOT decremented
+  });
+
+  // Same rule on the way IN: a refill only puts a roll back on the shelf if the
+  // roll was empty on the rev the write lands on. Another device refilling it
+  // first already counted that roll — adding a second transition invents a roll.
+  it('ingressStock does not re-count a roll another device already refilled', async () => {
+    const db = makeTestDb();
+    const bid = batchIdOf('Rojo', '30', 'Jersey');
+    const pid = productIdOf(bid, 'R1');
+    await ingressStock(db, {
+      color: 'Rojo', nm: '30', fabricType: 'Jersey', productType: 'ROLL', operatorId: 'op',
+      rolls: [{ pieceId: 'R1', weightKg: 12, purchaseValueUsd: 5, salePriceUsd: 8 }],
+    });
+    // Sell it out: empty roll, batch back to zero rolls, initialUnitCount stays 1.
+    await checkout(db, {
+      transactionId: 'tx', createdAt: new Date().toISOString(), clientId: null,
+      isOnTheBooks: false, exchangeRateBCV: RATE, creditTerms: null, operatorId: 'op',
+      lines: [rollLine(bid, 'R1', 12)],
+      payments: { paidUsdCash: 96, paidUsdTransfer: 0, paidBs: 0 },
+    });
+    expect(((await db.get(bid)) as BatchDoc).currentUnits).toBe(0);
+
+    const orig = db.bulkDocs.bind(db);
+    let tripped = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (db as any).bulkDocs = async (docs: any, ...rest: any[]) => {
+      if (!tripped && Array.isArray(docs) && docs.length >= 3) {
+        tripped = true;
+        // Another device refills the SAME roll and counts it back onto the batch.
+        // Our roll and batch docs then carry stale revs and 409 for real.
+        const roll = (await db.get(pid)) as ProductDoc;
+        const batch = (await db.get(bid)) as BatchDoc;
+        await orig([{ ...roll, currentWeightKg: 4 }, { ...batch, currentUnits: 1 }] as never);
+      }
+      return orig(docs, ...rest);
+    };
+
+    await ingressStock(db, {
+      color: 'Rojo', nm: '30', fabricType: 'Jersey', productType: 'ROLL', operatorId: 'op',
+      rolls: [{ pieceId: 'R1', weightKg: 6, purchaseValueUsd: 5, salePriceUsd: 8 }],
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (db as any).bulkDocs = orig;
+
+    expect(tripped).toBe(true);
+    expect(((await db.get(pid)) as ProductDoc).currentWeightKg).toBe(10); // 4 + 6
+    const batch = (await db.get(bid)) as BatchDoc;
+    expect(batch.currentUnits).toBe(1); // one stocked roll, counted ONCE
+    expect(batch.initialUnitCount).toBe(1); // "rolls ever received" never followed the cache
+  });
+});
+
+// returnStock's two legs each decide a batch transition. Both have to read it
+// off the rev their own write lands on — the batch counter depends on them and
+// is re-derived when either is rebuilt.
+describe('returnStock — batch transitions follow the rev the roll write lands on', () => {
+  it('returnStock keeps the roll on the batch when the replacement is rebuilt', async () => {
+    const db = makeTestDb();
+    const bid = batchIdOf('Azul', '30', 'Jersey');
+    const r1 = productIdOf(bid, 'R1');
+    const r2 = productIdOf(bid, 'R2');
+    await ingressStock(db, {
+      color: 'Azul', nm: '30', fabricType: 'Jersey', productType: 'ROLL', operatorId: 'op',
+      rolls: [
+        { pieceId: 'R1', weightKg: 20, purchaseValueUsd: 5, salePriceUsd: 8 },
+        { pieceId: 'R2', weightKg: 4, purchaseValueUsd: 5, salePriceUsd: 8 },
+      ],
+    });
+
+    const orig = db.bulkDocs.bind(db);
+    let tripped = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (db as any).bulkDocs = async (docs: any, ...rest: any[]) => {
+      if (!tripped && Array.isArray(docs) && docs.length >= 3) {
+        tripped = true;
+        // Someone tops the replacement roll up first: taking 4 kg no longer
+        // empties it, so it must NOT come off the batch's roll count.
+        const roll = (await db.get(r2)) as ProductDoc;
+        await orig([{ ...roll, currentWeightKg: 9 }] as never);
+      }
+      return orig(docs, ...rest);
+    };
+
+    await returnStock(db, {
+      returnId: 'u1', date: '2026-01-02T10:00:00.000Z', productId: r1, weightKg: 3,
+      operatorId: 'op', replacement: { productId: r2, weightKg: 4 },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (db as any).bulkDocs = orig;
+
+    expect(tripped).toBe(true);
+    expect(((await db.get(r2)) as ProductDoc).currentWeightKg).toBe(5); // 9 - 4, still stocked
+    const batch = (await db.get(bid)) as BatchDoc;
+    expect(batch.currentUnits).toBe(3); // R1 + R2 + the returned roll
+    expect(batch.initialUnitCount).toBe(3);
+  });
+
+  it('returnStock does not re-count a returned roll another device refilled', async () => {
+    const db = makeTestDb();
+    const bid = batchIdOf('Gris', '30', 'Jersey');
+    const r1 = productIdOf(bid, 'R1');
+    const dId = productIdOf(bid, returnPieceId('R1', 'u1'));
+    await ingressStock(db, {
+      color: 'Gris', nm: '30', fabricType: 'Jersey', productType: 'ROLL', operatorId: 'op',
+      rolls: [{ pieceId: 'R1', weightKg: 20, purchaseValueUsd: 5, salePriceUsd: 8 }],
+    });
+    // Create the -D roll, then empty it, so the next return of the same
+    // submission id is a genuine empty→stocked transition on an existing doc.
+    await returnStock(db, {
+      returnId: 'u1', date: '2026-01-01T10:00:00.000Z', productId: r1, weightKg: 3,
+      operatorId: 'op',
+    });
+    await adjustStock(db, {
+      batchId: bid, productId: dId, quantityChanged: -3, operatorId: 'op', reason: 'merma',
+    });
+    expect(((await db.get(bid)) as BatchDoc).currentUnits).toBe(1);
+
+    const orig = db.bulkDocs.bind(db);
+    let tripped = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (db as any).bulkDocs = async (docs: any, ...rest: any[]) => {
+      if (!tripped && Array.isArray(docs) && docs.length >= 3) {
+        tripped = true;
+        // Another device puts fabric back on the returned roll and counts it.
+        const roll = (await db.get(dId)) as ProductDoc;
+        const batch = (await db.get(bid)) as BatchDoc;
+        await orig([{ ...roll, currentWeightKg: 2 }, { ...batch, currentUnits: 2 }] as never);
+      }
+      return orig(docs, ...rest);
+    };
+
+    await returnStock(db, {
+      returnId: 'u1', date: '2026-01-02T10:00:00.000Z', productId: r1, weightKg: 3,
+      operatorId: 'op',
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (db as any).bulkDocs = orig;
+
+    expect(tripped).toBe(true);
+    expect(((await db.get(dId)) as ProductDoc).currentWeightKg).toBe(5); // 2 + 3
+    const batch = (await db.get(bid)) as BatchDoc;
+    expect(batch.currentUnits).toBe(2); // R1 + the returned roll, counted ONCE
+    expect(batch.initialUnitCount).toBe(2); // the -D roll was never received twice
+  });
 });
 
 // The builder-erasure finding: buildRoll rebuilds the doc from an explicit field
