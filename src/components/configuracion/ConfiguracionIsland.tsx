@@ -10,7 +10,8 @@ import { useLiveQuery } from '../../lib/hooks';
 import { fmtDateTime } from '../../lib/format';
 import { Button, Input, NumberInput, Field, Badge } from '../ui';
 
-type SyncState = 'idle' | 'active' | 'error' | 'offline' | 'unauthorized';
+// ONE definition, in db.ts — a local copy is how this union already drifted once.
+type SyncState = import('../../lib/db').SyncState;
 
 const SYNC_LABEL: Record<SyncState, string> = {
   idle:         'Sincronizado',
@@ -18,6 +19,7 @@ const SYNC_LABEL: Record<SyncState, string> = {
   error:        'Error de sincronización',
   offline:      'Sin conexión — trabajando local',
   unauthorized: 'Sesión expirada — inicia sesión de nuevo',
+  denied:       'Cambios rechazados por el servidor',
 };
 
 const SYNC_TONE: Record<SyncState, 'ok' | 'warn' | 'danger' | 'neutral'> = {
@@ -26,6 +28,7 @@ const SYNC_TONE: Record<SyncState, 'ok' | 'warn' | 'danger' | 'neutral'> = {
   error:        'danger',
   offline:      'warn',
   unauthorized: 'danger',
+  denied:       'danger',
 };
 
 export default function ConfiguracionIsland() {

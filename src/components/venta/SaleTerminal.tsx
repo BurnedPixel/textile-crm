@@ -5,6 +5,7 @@
 import {
   useState,
   useEffect,
+  useMemo,
   useRef,
   useImperativeHandle,
   type KeyboardEvent as RKE,
@@ -428,32 +429,50 @@ export default function SaleTerminal() {
   }, []);
 
   // Facet option universe = distinct values across all stocked batches.
-  const colors = [...new Set(stocked.map((e) => e.batch.color))].sort();
-  const nms = [...new Set(stocked.map((e) => e.batch.nm))].sort();
-  const fabrics = [...new Set(stocked.map((e) => e.batch.fabricType))].sort();
+  const { colors, nms, fabrics, codeByColor } = useMemo(() => {
+    const colors = [...new Set(stocked.map((e) => e.batch.color))].sort();
+    const nms = [...new Set(stocked.map((e) => e.batch.nm))].sort();
+    const fabrics = [...new Set(stocked.map((e) => e.batch.fabricType))].sort();
+    // Colour → chart code, for the option row and the type-ahead. Keyed on the
+    // colour STRING because that is what the facet's option value is; when several
+    // articles share a colour the last code wins, which is harmless — the same
+    // colour is the same chart entry. Batches that predate colorCode (INFORME
+    // import, legacy) resolve theirs from the chart by name; stored code wins.
+    const codeByColor = new Map(
+      stocked.flatMap((e) => {
+        const code = e.batch.colorCode ?? chartColorByName(chart, e.batch.color)?.code;
+        return code ? [[e.batch.color, code] as const] : [];
+      }),
+    );
+    return { colors, nms, fabrics, codeByColor };
+  }, [stocked, chart]);
 
-  // Colour → chart code, for the option row and the type-ahead. Keyed on the
-  // colour STRING because that is what the facet's option value is; when several
-  // articles share a colour the last code wins, which is harmless — the same
-  // colour is the same chart entry. Batches that predate colorCode (INFORME
-  // import, legacy) resolve theirs from the chart by name; stored code wins.
-  const codeByColor = new Map(
-    stocked.flatMap((e) => {
-      const code = e.batch.colorCode ?? chartColorByName(chart, e.batch.color)?.code;
-      return code ? [[e.batch.color, code] as const] : [];
-    }),
-  );
+  // Per-facet availability = stocked values consistent with the OTHER two
+  // facets' current (non-null) selections. One pass over `stocked`, reused by
+  // all three listboxes instead of a full re-scan per option per render.
+  const availability = useMemo(() => {
+    const color = new Set<string>();
+    const nm = new Set<string>();
+    const fabric = new Set<string>();
+    for (const e of stocked) {
+      const b = e.batch;
+      if ((selNm === null || b.nm === selNm) && (selFabric === null || b.fabricType === selFabric)) {
+        color.add(b.color);
+      }
+      if ((selColor === null || b.color === selColor) && (selFabric === null || b.fabricType === selFabric)) {
+        nm.add(b.nm);
+      }
+      if ((selColor === null || b.color === selColor) && (selNm === null || b.nm === selNm)) {
+        fabric.add(b.fabricType);
+      }
+    }
+    return { color, nm, fabric };
+  }, [stocked, selColor, selNm, selFabric]);
 
   // A value is available for its facet iff some stocked batch has that value AND
   // matches the (non-null) selections of the OTHER two facets.
   function available(facet: Facet, v: string): boolean {
-    return stocked.some((e) => {
-      const b = e.batch;
-      const okColor = facet === 'color' ? b.color === v : selColor === null || b.color === selColor;
-      const okNm = facet === 'nm' ? b.nm === v : selNm === null || b.nm === selNm;
-      const okFabric = facet === 'fabric' ? b.fabricType === v : selFabric === null || b.fabricType === selFabric;
-      return okColor && okNm && okFabric;
-    });
+    return availability[facet].has(v);
   }
 
   // The matched batch (once all 3 are selected → unique key)
@@ -527,8 +546,12 @@ export default function SaleTerminal() {
   // Accent-insensitive fold (same logic as colorFor uses).
   const fold = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-  const filteredClients = clients.filter((c) =>
-    fold(c.name).includes(fold(clientSearch)) || fold(c.documentId).includes(fold(clientSearch)),
+  const filteredClients = useMemo(
+    () =>
+      clients.filter((c) =>
+        fold(c.name).includes(fold(clientSearch)) || fold(c.documentId).includes(fold(clientSearch)),
+      ),
+    [clients, clientSearch],
   );
 
   const selectedClient = cart?.clientId

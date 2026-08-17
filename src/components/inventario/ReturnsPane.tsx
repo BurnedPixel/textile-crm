@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef, type KeyboardEvent } from 'react';
 import { db } from '../../lib/db';
 import { cachedUser } from '../../lib/auth';
-import { getBatches, getBatchProducts, getStockedBatches } from '../../lib/queries';
+import { getBatchProducts, getProductsWithBatch } from '../../lib/queries';
 import { getColorChart } from '../../lib/catalog';
 import { returnStock, returnPieceId } from '../../lib/inventory';
 import { useLiveQuery } from '../../lib/hooks';
@@ -99,10 +99,18 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
 
   // ─── Data ────────────────────────────────────────────────────────────────────
 
+  // ONE product+batch join covers both the article cascade and the same-lot
+  // availability list below — was a separate getBatches + getStockedBatches
+  // (3 prefix scans; now 2). ponytail caveat: getProductsWithBatch only sees
+  // batches with at least one product doc, which is every batch in practice —
+  // validateIngressForm requires a weight on at least one roll.
+  const { data: productRows } = useLiveQuery(() => getProductsWithBatch(db), []);
+  const rows = productRows ?? [];
   // Every ROLL article, including ones with nothing on the shelf: a roll sold to
   // zero is precisely the one most likely to come back.
-  const { data: allBatches } = useLiveQuery(() => getBatches(db), []);
-  const rollBatches = (allBatches ?? []).filter((b) => b.productType === 'ROLL');
+  const rollBatches = [...new Map(
+    rows.filter((r) => r.batch.productType === 'ROLL').map((r) => [r.batch._id, r.batch]),
+  ).values()];
   // «405» finds «Azul rey» — same one-field name-or-code rule as Tela nueva.
   const { data: chart = null } = useLiveQuery(() => getColorChart(db), []);
   const codeByColorName = new Map((chart?.colors ?? []).map((c) => [norm(c.name), c.code]));
@@ -127,9 +135,6 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
     ? articleRolls.filter((r) => (r.lotNumber ?? '').trim() === lotFilter.trim())
     : articleRolls;
 
-  // The same query /venta runs. No sale scan, no date window.
-  const { data: stocked } = useLiveQuery(() => getStockedBatches(db), []);
-
   const colorOptions = [...new Set(rollBatches.map((b) => b.color))].sort();
   const nmOptions = color
     ? [...new Set(rollBatches.filter((b) => norm(b.color) === norm(color)).map((b) => b.nm))].sort()
@@ -142,9 +147,9 @@ export default function ReturnsPane({ onDone }: ReturnsPaneProps) {
 
   // ─── Same-lot availability ───────────────────────────────────────────────────
 
-  const everyStockedRoll: Candidate[] = (stocked ?? [])
-    .filter((e) => e.batch.productType === 'ROLL')
-    .flatMap((e) => e.products.filter((p) => hasRollStock(p.currentWeightKg)).map((p) => ({ batch: e.batch, product: p })));
+  const everyStockedRoll: Candidate[] = rows
+    .filter((r) => r.batch.productType === 'ROLL' && r.batch.currentUnits > 0 && hasRollStock(r.product.currentWeightKg))
+    .map((r) => ({ batch: r.batch, product: r.product }));
 
   const lot = selRoll?.lotNumber?.trim();
   const sameLot = lot ? everyStockedRoll.filter((c) => c.product.lotNumber?.trim() === lot) : [];

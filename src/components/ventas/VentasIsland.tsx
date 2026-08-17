@@ -32,11 +32,25 @@ export default function VentasIsland() {
   const [estado, setEstado] = useState<EstadoFilter>('ALL');
 
   // ---- Live data (unwindowed, descending — deliberate: no date bounds) ----
-  const { data: sales } = useLiveQuery((d) => getSales(d));
-  const { data: payments } = useLiveQuery((d) => getPayments(d));
-  const { data: refunds } = useLiveQuery((d) => getRefunds(d));
-  const { data: clients } = useLiveQuery((d) => getClients(d));
-  const { data: fiscal } = useLiveQuery((d) => getFiscalConfig(d));
+  // Collapsed into one useLiveQuery (was 5) so a single DB change fires one
+  // re-run instead of five — same pattern as ClientsPage's combined ledger read.
+  const { data: ledgerData } = useLiveQuery(async (d) => {
+    const [sales, payments, refunds, clients, fiscal] = await Promise.all([
+      getSales(d),
+      getPayments(d),
+      getRefunds(d),
+      getClients(d),
+      getFiscalConfig(d),
+    ]);
+    return { sales, payments, refunds, clients, fiscal };
+  });
+  const { sales, payments, refunds, clients, fiscal } = ledgerData ?? {
+    sales: undefined,
+    payments: undefined,
+    refunds: undefined,
+    clients: undefined,
+    fiscal: undefined,
+  };
 
   const paymentsFor = useMemo(() => paymentsBySale(payments ?? []), [payments]);
   const refundsFor = useMemo(() => refundsBySale(refunds ?? []), [refunds]);
