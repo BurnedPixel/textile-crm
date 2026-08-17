@@ -24,12 +24,21 @@ export const cartDb: PouchDB.Database = new PouchDB(`${BRAND.dbName}-cart`);
 // ---- Sync ----
 
 let syncHandle: PouchDB.Replication.Sync<object> | null = null;
-type SyncState = 'idle' | 'active' | 'error' | 'offline' | 'unauthorized';
+export type SyncState = 'idle' | 'active' | 'error' | 'offline' | 'unauthorized' | 'denied';
 const syncStateListeners = new Set<(s: SyncState) => void>();
 // 'offline' until a sync actually reaches the server — never claim "synced" untried.
 let lastSyncState: SyncState = 'offline';
+// Sticky until the sync cycle settles cleanly: 'change'/'active' events fire
+// continuously while replication runs and must not flash a server rejection
+// back to 'active' before the operator sees it.
+let deniedSticky = false;
 
 function emitSyncState(s: SyncState): void {
+  if (s === 'denied') deniedSticky = true;
+  else if (deniedSticky) {
+    if (s === 'active') return; // don't let routine activity mask the rejection
+    deniedSticky = false; // idle/offline/unauthorized/error: cycle settled, clear it
+  }
   lastSyncState = s;
   for (const cb of syncStateListeners) cb(s);
 }
@@ -56,7 +65,15 @@ export function startSync(): () => void {
     .on('active', () => emitSyncState('active'))
     .on('change', () => emitSyncState('active'))
     .on('paused', (err?: unknown) => emitSyncState(err ? 'offline' : 'idle'))
-    .on('denied', (err: unknown) => emitSyncState(isAuthError(err) ? 'unauthorized' : 'error'))
+    .on('denied', (err: unknown) => {
+      if (isAuthError(err)) { emitSyncState('unauthorized'); return; }
+      // sync's 'denied' carries { direction, doc } — the server-rejected document,
+      // not a generic error (see pouchdb sync.js pushDenied/pullDenied).
+      const info = err as { direction?: string; doc?: { _id?: string } };
+      // eslint-disable-next-line no-console
+      console.error('CouchDB rejected write:', info.direction, info.doc?._id, err);
+      emitSyncState('denied');
+    })
     .on('error', (err: unknown) => {
       // 401 = session expired → let the UI route to /login (see SyncStatus).
       if (isAuthError(err)) { emitSyncState('unauthorized'); return; }

@@ -21,9 +21,12 @@ export function useLiveQuery<T>(
   const queryRef = useRef(query);
   queryRef.current = query;
 
+  // Returns a cancel fn plus `done`, a promise that settles once the query
+  // has resolved/rejected — used by the effect below to know when a run has
+  // actually finished (not just been kicked off).
   const run = useCallback(() => {
     let cancelled = false;
-    void dbReady.then(() =>
+    const done = dbReady.then(() =>
       queryRef
         .current(db)
         .then((result) => {
@@ -33,24 +36,46 @@ export function useLiveQuery<T>(
           if (!cancelled) console.error('[useLiveQuery]', err);
         }),
     );
-    return () => {
-      cancelled = true;
-    };
+    return { cancel: () => (cancelled = true), done };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
   useEffect(() => {
-    // Each change fires a fresh run(); cancel the in-flight one first so a stale
-    // query can't setData after unmount (only the latest run's cancel is kept).
-    let latestCancel = run();
+    // Single-flight: a change event while a run is in flight only sets a
+    // pending bit instead of starting a second overlapping scan; the
+    // in-flight run's completion (success or error) drains the pending bit
+    // by starting exactly one more run. Latest-run-wins is preserved because
+    // only one run is ever in flight at a time.
+    let latestCancel = () => {};
+    let inFlight = false;
+    let pending = false;
+    let unmounted = false;
+
+    const startAndDrain = () => {
+      inFlight = true;
+      pending = false;
+      const { cancel, done } = run();
+      latestCancel = cancel;
+      void done.finally(() => {
+        inFlight = false;
+        if (pending && !unmounted) startAndDrain();
+      });
+    };
+
+    startAndDrain();
     const off = onDbChange(() => {
-      latestCancel();
-      latestCancel = run();
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+      startAndDrain();
     });
     return () => {
+      unmounted = true;
       latestCancel();
       off();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run]);
 
   const reload = useCallback(() => {

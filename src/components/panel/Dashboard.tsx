@@ -69,7 +69,12 @@ async function fetchAll(): Promise<DashboardData> {
   const todayStart = isoToday();
 
   // ponytail: one full sale scan per load is acceptable for typical factory
-  // volume (<10k sales/yr). Upgrade to a Mango index if perf becomes an issue.
+  // volume (<10k sales/yr). Not upgradable to a Mango index — pendingSales/
+  // creditSales filter on owedUsd/creditUsd, derived at read from three doc
+  // types, and only the frozen checkout snapshot is indexable. If perf
+  // becomes an issue, the real upgrade path is a device-local `_local/`
+  // rollup ({lastSeq, openSaleIds} advanced from db.changes since lastSeq,
+  // rebuildable by a full scan; never replicates).
   // UNWINDOWED on purpose (2026-08-16): the INFORME import carries real
   // January dates, and a 90-day window hid those debts from «Cobros
   // pendientes» while /clientes (full ledger) showed them.
@@ -856,8 +861,18 @@ export default function Dashboard() {
   const [collecting, setCollecting] = useState<{ sale: SaleDoc; owedUsd: number } | null>(null);
   const [refunding, setRefunding] = useState<{ sale: SaleDoc; creditUsd: number } | null>(null);
 
+  // The 150ms debounce (onDbChange) is shorter than a full include_docs scan,
+  // so overlapping loads can resolve out of order. A monotonic generation
+  // counter drops any setData that isn't from the latest load — otherwise a
+  // stale run can overwrite a settled debt back onto the Panel.
+  const generationRef = useRef(0);
   const load = useCallback(() => {
-    void fetchAll().then(setData).catch((err) => console.error('[Dashboard]', err));
+    const generation = ++generationRef.current;
+    void fetchAll()
+      .then((result) => {
+        if (generation === generationRef.current) setData(result);
+      })
+      .catch((err) => console.error('[Dashboard]', err));
   }, []);
 
   useEffect(() => {

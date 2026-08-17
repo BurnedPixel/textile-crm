@@ -2,7 +2,7 @@
 // Imports auth/db via contract; never SSR'd.
 import { useEffect, useState, useCallback } from 'react';
 
-type SyncState = 'idle' | 'active' | 'error' | 'offline' | 'unauthorized';
+type SyncState = import('../lib/db').SyncState;
 type SessionUser = import('../lib/types').SessionUser;
 
 // Deferred imports — db.ts and auth.ts are browser-only modules written in parallel.
@@ -31,6 +31,7 @@ const stateConfig: Record<SyncState, { dot: string; label: string; color: string
   error:        { dot: '#B97718', label: 'Sin conexión',    color: '#B97718' },
   offline:      { dot: '#B97718', label: 'Trabajo local',   color: '#B97718' },
   unauthorized: { dot: '#A32E2E', label: 'Sesión expirada', color: '#A32E2E' },
+  denied:       { dot: '#7A2E8C', label: 'Cambios rechazados por el servidor', color: '#7A2E8C' },
 };
 
 export default function SyncStatus() {
