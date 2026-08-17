@@ -5,6 +5,7 @@
 import PouchDB from 'pouchdb-browser';
 import { registerValidation } from './validation';
 import { startConflictWatcher } from './conflicts';
+import { drainToRemote } from './drain';
 import { BRAND } from '../../brand.mjs';
 
 // Local validation layer — reject derived fields on every local write (layer 1 of 2).
@@ -55,10 +56,15 @@ function isAuthError(err: unknown): boolean {
   return e?.status === 401 || e?.name === 'unauthorized';
 }
 
+/** Same-origin CouchDB handle. skip_setup: the server db already exists. */
+function remoteDb(): PouchDB.Database {
+  return new PouchDB(location.origin + '/db/' + BRAND.dbName, { skip_setup: true });
+}
+
 export function startSync(): () => void {
   if (syncHandle) return stopSync;
 
-  const remote = new PouchDB(location.origin + '/db/' + BRAND.dbName, { skip_setup: true });
+  const remote = remoteDb();
   syncHandle = db.sync(remote, { live: true, retry: true });
 
   syncHandle
@@ -91,6 +97,26 @@ export function stopSync(): void {
     syncHandle = null;
     emitSyncState('offline');
   }
+}
+
+/**
+ * Shared-device purge: stop sync, PUSH everything to the server, and only then
+ * destroy the local databases. Throws (destroying NOTHING) if the push fails or
+ * times out — unsynced sales must never be erased. Untested glue: the drain
+ * itself is drainToRemote (drain.test.ts). Explicit logout only — see auth.ts.
+ */
+export async function purgeLocalData(): Promise<void> {
+  stopSync();
+  try {
+    await drainToRemote(db, remoteDb());
+  } catch (err) {
+    // Nothing destroyed. Put live sync back: the user stays logged in and the
+    // pending changes must keep trying to reach the server.
+    startSync();
+    throw err;
+  }
+  await db.destroy();
+  await cartDb.destroy(); // NEVER SYNC CART: nothing to drain, just erase it
 }
 
 /** Subscribe to sync state. Returns an unsubscribe fn. Fires current state immediately. */

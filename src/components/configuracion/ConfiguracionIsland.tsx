@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { db } from '../../lib/db';
 import { getConfig, saveDailyRate, getFiscalConfig, saveFiscalConfig } from '../../lib/queries';
 import { onSyncState } from '../../lib/db';
-import { cachedUser, logout } from '../../lib/auth';
+import { cachedUser, logoutExplicit, isSharedDevice, setSharedDevice } from '../../lib/auth';
 import { useLiveQuery } from '../../lib/hooks';
 import { fmtDateTime } from '../../lib/format';
 import { Button, Input, NumberInput, Field, Badge } from '../ui';
@@ -105,6 +105,21 @@ export default function ConfiguracionIsland() {
 
   // ---- Session card ----
   const user = cachedUser();
+  // Device-scoped setting (localStorage), never synced — survives the purge.
+  const [shared, setShared] = useState(isSharedDevice);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutErr, setLogoutErr] = useState<string | null>(null);
+
+  async function handleLogout() {
+    setLogoutErr(null);
+    setLoggingOut(true);
+    try {
+      await logoutExplicit(); // redirects on success
+    } catch (err) {
+      setLogoutErr((err as Error).message);
+      setLoggingOut(false); // still logged in, on purpose
+    }
+  }
 
   // ---- Sync card ----
   const [syncState, setSyncState] = useState<SyncState>('idle');
@@ -250,21 +265,43 @@ export default function ConfiguracionIsland() {
         <h2 style={cardTitle}>Sesión</h2>
 
         {user ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <p style={{ fontFamily: 'var(--font-sans)', fontSize: '15px', fontWeight: 600, color: 'var(--color-ink)', margin: '0 0 4px' }}>
-                {user.name}
-              </p>
-              {user.roles.length > 0 && (
-                <p style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--color-thread)', margin: 0 }}>
-                  {user.roles.join(', ')}
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <p style={{ fontFamily: 'var(--font-sans)', fontSize: '15px', fontWeight: 600, color: 'var(--color-ink)', margin: '0 0 4px' }}>
+                  {user.name}
                 </p>
-              )}
+                {user.roles.length > 0 && (
+                  <p style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--color-thread)', margin: 0 }}>
+                    {user.roles.join(', ')}
+                  </p>
+                )}
+              </div>
+              <Button variant="danger" onClick={() => void handleLogout()} disabled={loggingOut}>
+                {loggingOut ? 'Cerrando…' : 'Cerrar sesión'}
+              </Button>
             </div>
-            <Button variant="danger" onClick={() => void logout()}>
-              Cerrar sesión
-            </Button>
-          </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ink)', marginTop: '1rem' }}>
+              <input
+                type="checkbox"
+                checked={shared}
+                onChange={(e) => { setSharedDevice(e.target.checked); setShared(e.target.checked); }}
+              />
+              Este equipo es compartido
+            </label>
+            <p className="config-note" style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)', margin: '6px 0 0' }}>
+              Al cerrar sesión se borran los datos locales de este equipo. Primero se envían al
+              servidor los cambios pendientes; si no se pueden enviar, no se borra nada. Al volver
+              a entrar hará falta conexión para descargar los datos de nuevo.
+            </p>
+
+            {logoutErr && (
+              <div role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)', marginTop: '10px' }}>
+                {logoutErr}
+              </div>
+            )}
+          </>
         ) : (
           <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-thread)', margin: 0 }}>
             No hay sesión activa.
