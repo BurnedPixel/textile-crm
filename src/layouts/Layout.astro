@@ -9,7 +9,6 @@ interface Props {
 }
 
 const { title, active } = Astro.props;
-const isDev = import.meta.env.DEV;
 
 const navItems = [
   { label: 'Panel',         href: '/',             key: 'p', hint: 'g p', icon: 'grid' },
@@ -40,9 +39,13 @@ const icons: Record<string, string> = {
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>{title} — {BRAND.name}</title>
 
-    {/* AUTH GATE — runs before paint, no flash */}
-    <script is:inline define:vars={{ dev: isDev, userKey: `${BRAND.dbName}:user` }}>
-      if (!dev && !localStorage.getItem(userKey) && location.pathname !== '/login') {
+    {/* AUTH GATE — bundled/external (CSP script-src 'self', no inline).
+        Pages are client:only islands (blank until JS), so losing
+        inline-synchronous execution adds no visible flash. */}
+    <script>
+      import { BRAND } from '../../brand.mjs';
+      const userKey = `${BRAND.dbName}:user`;
+      if (!import.meta.env.DEV && !localStorage.getItem(userKey) && location.pathname !== '/login') {
         location.replace('/login');
       }
     </script>

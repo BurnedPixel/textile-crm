@@ -30,6 +30,15 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
+        // The "Compartir PDF" chunk graph (nota-pdf + html2canvas + dompurify,
+        // ~625 kB) is reached only from a dynamic import off the checkout-
+        // success button — precaching it blocks every first SW install.
+        // Fetched once on first real use, then CacheFirst below.
+        globIgnores: [
+          '**/_astro/nota-pdf.*.js',
+          '**/_astro/html2canvas.esm.*.js',
+          '**/_astro/purify.es.*.js',
+        ],
         navigateFallback: '/',
         // Never intercept CouchDB traffic — sync must hit the network.
         navigateFallbackDenylist: [/^\/db\//],
@@ -38,7 +47,14 @@ export default defineConfig({
         // precache — otherwise such a navigation misses the cache and the
         // fallback serves the panel instead of the page asked for.
         ignoreURLParametersMatching: [/.*/],
-        runtimeCaching: [],
+        runtimeCaching: [
+          {
+            // Same-origin /_astro/ chunk files ONLY — cannot ever match /db/*.
+            urlPattern: /^\/_astro\/(nota-pdf|html2canvas\.esm|purify\.es)\.[^/]+\.js$/,
+            handler: 'CacheFirst',
+            options: { cacheName: 'pdf-share-chunks' },
+          },
+        ],
       },
     }),
   ],
