@@ -11,7 +11,10 @@ let _onSyncState: ((cb: (s: SyncState) => void) => () => void) | null = null;
 let _startSync: (() => () => void) | null = null;
 let _cachedUser: (() => SessionUser | null) | null = null;
 let _getSession: (() => Promise<SessionUser | null>) | null = null;
+// _logout = the session-expiry path: NEVER purges. _logoutExplicit = the Salir
+// button: purges the device when it is marked as shared. Keep them apart.
 let _logout: (() => Promise<void>) | null = null;
+let _logoutExplicit: (() => Promise<void>) | null = null;
 
 async function loadModules() {
   const [dbMod, authMod] = await Promise.all([
@@ -23,6 +26,7 @@ async function loadModules() {
   _cachedUser = authMod.cachedUser;
   _getSession = authMod.getSession;
   _logout = authMod.logout;
+  _logoutExplicit = authMod.logoutExplicit;
 }
 
 const stateConfig: Record<SyncState, { dot: string; label: string; color: string }> = {
@@ -39,6 +43,7 @@ export default function SyncStatus() {
   const [syncState, setSyncState] = useState<SyncState>('offline');
   const [userName, setUserName] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [logoutErr, setLogoutErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,8 +78,14 @@ export default function SyncStatus() {
   }, [ready]);
 
   const handleLogout = useCallback(async () => {
-    await _logout?.();
-    location.replace('/login');
+    setLogoutErr(null);
+    try {
+      await _logoutExplicit?.(); // purges only on a device marked as shared
+      location.replace('/login');
+    } catch (err) {
+      // Shared-device purge aborted: nothing erased, session still open.
+      setLogoutErr((err as Error).message);
+    }
   }, []);
 
   const cfg = stateConfig[syncState];
@@ -165,6 +176,32 @@ export default function SyncStatus() {
           Salir
         </span>
       </button>
+
+      {/* Shared-device purge aborted — the rail is too narrow for the message. */}
+      {logoutErr && (
+        <div
+          role="alert"
+          onClick={() => setLogoutErr(null)}
+          style={{
+            position: 'fixed',
+            left: '12px',
+            bottom: '12px',
+            zIndex: 100,
+            maxWidth: '320px',
+            padding: '10px 12px',
+            borderRadius: '8px',
+            background: 'var(--color-cloth)',
+            border: '1px solid var(--color-danger)',
+            color: 'var(--color-danger)',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '12px',
+            lineHeight: 1.35,
+            cursor: 'pointer',
+          }}
+        >
+          {logoutErr}
+        </div>
+      )}
 
       {/* Pulse keyframe — injected inline to avoid a separate CSS dependency */}
       <style>{`

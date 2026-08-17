@@ -3,10 +3,12 @@
 // boundary — see couch/README.md. Passwords are NEVER stored anywhere.
 
 import type { SessionUser } from './types';
-import { startSync, stopSync } from './db';
+import { startSync, stopSync, purgeLocalData } from './db';
 import { BRAND } from '../../brand.mjs';
 
 const CACHE_KEY = `${BRAND.dbName}:user`;
+/** Device-scoped, NEVER synced and never cleared by a purge: it describes the equipment. */
+const SHARED_KEY = `${BRAND.dbName}:shared-device`;
 
 function cache(user: SessionUser): void {
   try {
@@ -90,7 +92,12 @@ export async function getSession(): Promise<SessionUser | null> {
   return user;
 }
 
-/** Log out: end the server session, stop sync, clear cache, go to /login. */
+/**
+ * Log out: end the server session, stop sync, clear cache, go to /login.
+ * NEVER purges local data — this is also the session-expiry path (SyncStatus
+ * forces it on a 401), where the device is very likely offline and holding
+ * unsynced sales. Explicit logout goes through logoutExplicit().
+ */
 export async function logout(): Promise<void> {
   try {
     await fetch('/db/_session', { method: 'DELETE', credentials: 'include' });
@@ -100,4 +107,59 @@ export async function logout(): Promise<void> {
   stopSync();
   clearCache();
   location.replace('/login');
+}
+
+// ---- Shared device (per-device setting; explicit logout wipes this equipment) ----
+
+/** Is this device marked as shared? Device-scoped localStorage, never synced. */
+export function isSharedDevice(): boolean {
+  try {
+    return localStorage.getItem(SHARED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setSharedDevice(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(SHARED_KEY, '1');
+    else localStorage.removeItem(SHARED_KEY);
+  } catch {
+    /* private mode / quota — non-fatal */
+  }
+}
+
+/** Every app key for this brand except SHARED_KEY (a property of the device). */
+function clearBrandStorage(): void {
+  try {
+    const prefix = `${BRAND.dbName}:`;
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(prefix) && key !== SHARED_KEY) localStorage.removeItem(key);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+const PURGE_FAILED_MSG =
+  'No se borraron los datos: hay cambios sin sincronizar. Conéctese e intente de nuevo.';
+
+/**
+ * Explicit logout (the «Salir» buttons). On a shared device the local databases
+ * are drained to the server and then destroyed. If the drain fails, NOTHING is
+ * destroyed and the user stays logged IN — a half-logout that promised a wipe
+ * and delivered neither is worse than staying. Throws PURGE_FAILED_MSG then.
+ */
+export async function logoutExplicit(): Promise<void> {
+  if (isSharedDevice()) {
+    try {
+      // BEFORE the session is deleted — the drain push needs the auth cookie.
+      await purgeLocalData();
+    } catch (err) {
+      console.error('[logout] purge aborted, local data kept', err);
+      throw new Error(PURGE_FAILED_MSG);
+    }
+    clearBrandStorage();
+  }
+  await logout();
 }
