@@ -6,6 +6,12 @@ import tailwindcss from '@tailwindcss/vite';
 import AstroPWA from '@vite-pwa/astro';
 
 export default defineConfig({
+  // CSP hashes for the inline scripts Astro itself emits (island bootstrap,
+  // HOTKEYS): every page gets a <meta http-equiv=csp> with sha256 hashes, and
+  // the deploy lifts the same hashes into the Caddy header, dropping
+  // 'unsafe-inline' from script-src/style-src (audit S-1). Experimental flag —
+  // re-verify the meta tag on any Astro bump.
+  experimental: { csp: true },
   // The dashboard lives at / (nav: "Panel") — catch the URLs people guess.
   // '/ingreso' is the pre-rename inventory URL — kept so bookmarks and any
   // service-worker-cached link still land (Astro emits a precached meta-refresh stub).
