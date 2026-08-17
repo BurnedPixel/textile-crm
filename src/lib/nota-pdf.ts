@@ -74,36 +74,28 @@ export function buildNotaPdf(
   doc.text(`Tasa BCV ${fmtBs(rate)} / $`, rightX, y, { align: 'right' });
   y += 6;
 
-  // Line items table
+  // Line items — TWO lines per item: full description, then its math right-aligned below.
   const colDesc = MARGIN;
-  const colQty = 120;
-  const colPrice = 150;
+  const colPrice = 150; // totals-block label x anchor, kept from the old table layout
   const colSub = rightX;
+  const LINE_H = 3.4;
+  const ITEM_GAP = 1.2; // slightly more space between items than between the two lines of one
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
-  doc.text('DESCRIPCIÓN', colDesc, y);
-  doc.text('CANT.', colQty, y, { align: 'right' });
-  doc.text('P. UNIT.', colPrice, y, { align: 'right' });
-  doc.text('SUBTOTAL', colSub, y, { align: 'right' });
-  y += 2;
-  doc.line(MARGIN, y, rightX, y);
-  y += 3.6;
-
-  doc.setFont('courier', 'normal');
-  doc.setFontSize(8);
   for (const l of sale.lineItems) {
-    const descLines = doc.splitTextToSize(l.description, colQty - colDesc - 4);
-    const rowHeight = Math.max(3.6, descLines.length * 3.4);
-    ensureRoom(rowHeight + 1.5);
+    const math = `${l.quantity} ${l.unitOfMeasure === 'Kg' ? 'kg' : 'ud'} × ${fmtUsd(l.unitPriceAtSale)} = ${fmtUsd(l.lineSubtotalUsd)}`;
+    // No parsing of the frozen description — split only for genuine overflow.
+    const descLines = doc.splitTextToSize(l.description, colSub - colDesc);
+    const itemHeight = descLines.length * LINE_H + LINE_H;
+    ensureRoom(itemHeight + ITEM_GAP);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
     doc.text(descLines, colDesc, y);
-    const qtyLabel = `${l.quantity} ${l.unitOfMeasure === 'Kg' ? 'kg' : 'ud'}`;
-    doc.text(qtyLabel, colQty, y, { align: 'right' });
-    doc.text(fmtUsd(l.unitPriceAtSale), colPrice, y, { align: 'right' });
-    doc.text(fmtUsd(l.lineSubtotalUsd), colSub, y, { align: 'right' });
-    y += rowHeight;
+    y += descLines.length * LINE_H;
+    doc.setFont('courier', 'normal');
+    doc.text(math, colSub, y, { align: 'right' });
+    y += LINE_H + ITEM_GAP;
   }
-  y += 1.5;
+  y += 0.5;
   ensureRoom(30);
   doc.setLineWidth(0.2);
   doc.line(MARGIN, y, rightX, y);

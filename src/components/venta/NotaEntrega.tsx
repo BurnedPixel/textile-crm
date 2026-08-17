@@ -59,28 +59,23 @@ export default function NotaEntrega({ sale, client, fiscal }: NotaEntregaProps) 
         </div>
       </div>
 
-      <table className="nota-table" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
-        <thead>
-          <tr>
-            <th style={th}>Descripción</th>
-            <th style={{ ...th, textAlign: 'right' }}>Cant.</th>
-            <th style={{ ...th, textAlign: 'right' }}>P. unit.</th>
-            <th style={{ ...th, textAlign: 'right' }}>Subtotal</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sale.lineItems.map((l, i) => (
-            <tr key={`${l.productId}-${i}`}>
-              <td style={td}>{l.description}</td>
-              <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                {l.quantity} {l.unitOfMeasure === 'Kg' ? 'kg' : 'ud'}
-              </td>
-              <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtUsd(l.unitPriceAtSale)}</td>
-              <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtUsd(l.lineSubtotalUsd)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="nota-items" style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {sale.lineItems.map((l, i) => (
+          <div
+            key={`${l.productId}-${i}`}
+            className="nota-item"
+            style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1.25, padding: '2px 0', borderBottom: '1px dashed rgba(138,131,113,0.35)' }}
+          >
+            <span className="nota-item-desc" style={{ fontFamily: 'var(--font-sans)', fontSize: 12 }}>{l.description}</span>
+            <span
+              className="nota-item-math"
+              style={{ display: 'block', textAlign: 'right', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 12, whiteSpace: 'nowrap' }}
+            >
+              {l.quantity} {l.unitOfMeasure === 'Kg' ? 'kg' : 'ud'} × {fmtUsd(l.unitPriceAtSale)} = {fmtUsd(l.lineSubtotalUsd)}
+            </span>
+          </div>
+        ))}
+      </div>
 
       <div className="nota-totals" style={{ marginLeft: 'auto', maxWidth: 300, display: 'flex', flexDirection: 'column', gap: 4 }}>
         <Row label="Base" usd={taxes.baseUsd} rate={rate} />
@@ -145,12 +140,3 @@ const label: React.CSSProperties = {
 const value: React.CSSProperties = { fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 600 };
 
 const meta: React.CSSProperties = { fontFamily: 'var(--font-sans)', fontSize: 11, color: 'var(--color-thread)' };
-
-const th: React.CSSProperties = {
-  ...label, textAlign: 'left', padding: '4px 6px', borderBottom: '1px solid var(--color-thread)',
-};
-
-const td: React.CSSProperties = {
-  fontFamily: 'var(--font-sans)', fontSize: 12, padding: '5px 6px',
-  borderBottom: '1px dashed rgba(138,131,113,0.35)', verticalAlign: 'top',
-};
