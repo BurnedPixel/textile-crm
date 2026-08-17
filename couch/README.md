@@ -10,14 +10,77 @@ any time. It reads secrets from a sibling `../.env` (never commit that file).
 3. Creates the application database (`APP_DB`, default `crm`).
 4. Writes `_security` so only the app role (`APP_ROLE`, default `crm`) and
    server admins can read/write.
-5. Pushes the `validate_doc_update` design doc from `validate_doc_update.js`
+5. Writes `_security` on `_users` (see *Roles* below).
+6. Pushes the `validate_doc_update` design doc from `validate_doc_update.js`
    (substituting `APP_ROLE` for its `__APP_ROLE__` placeholder), which rejects
    derived fields (`totalBs`, `amountBs`), any write from a user lacking the
-   app role, and any mutation of an existing `sale:`/`payment:`/`expense:`/
-   `movement:` document.
-6. Creates the first application user in `_users` with the app role.
+   app role, any mutation of an existing `sale:`/`payment:`/`refund:`/
+   `expense:`/`movement:` document, and any write the writer's **function role**
+   does not allow.
+7. Creates the first application user in `_users` with the base + `-operador`
+   roles. Existing users are never touched — see *Roles* → migration.
+
+## Roles (2026-08-17)
+
+Four roles, all derived from `APP_ROLE` inside the validator (no new `.env`
+values, no new placeholders):
+
+| Role | Who | May write |
+|---|---|---|
+| `$APP_ROLE` | everyone | nothing by itself — it is the **sync** role (`_security` membership) and what lets the conflict watcher delete losing revs |
+| `$APP_ROLE-operador` | sellers / warehouse | `sale:` `payment:` `refund:` `expense:` `movement:` `client:` `batch:` `product:` and any future prefix |
+| `$APP_ROLE-admin` | owner | everything an operador can, plus every `config:` document and `rate:` — and db-admin rights on `_users` (create users, reset passwords) |
+| `$APP_ROLE-rates` | the VPS BCV timer only | `rate:{date}` + `config:system`. **No** operational access — its `sale:` writes are rejected |
+
+`_admin` (server admin) still bypasses everything; that is what conflict cleanup
+and the immutability exemption run as.
+
+**Deletions only ever need the base role.** `src/lib/conflicts.ts` deletes losing
+revs of `batch:`/`product:`/`client:`/`config:` docs on every device, under
+whoever is logged in there; gating deletes would break the watcher on operador
+devices and let the cached counters drift. Deleting an append-only doc is already
+rejected by the immutability rule, which runs first. The matrix is covered by
+`src/lib/validate-ddoc.test.ts`, which evaluates this exact file.
+
+### `_users` security
+
+```json
+{"admins": {"names": [], "roles": ["_admin", "$APP_ROLE-admin"]},
+ "members": {"names": [], "roles": []}}
+```
+
+Empty `members` is deliberate and safe — verified against the CouchDB 3.5 sources
+(the reasoning is spelled out in `setup.sh` step 5):
+
+- `_users/_all_docs` and `_users/_changes` remain **server-admin only** no matter
+  what the security object says (`chttpd_auth_request.erl`) — so there is no way
+  to enumerate accounts, and an in-app Usuarios panel can only work with ids it
+  already knows.
+- A non-admin can read/write **only their own** user doc; someone else's comes
+  back with every field stripped → `404` (`couch_users_db.erl`). No hash leaks.
+- Nobody but a `_users` admin can change roles, and no role starting with `_` can
+  ever be granted (the built-in `_design/_auth` validator).
+
+That gives everyone self-service password change, and gives `$APP_ROLE-admin`
+user management, without a server-admin credential in the browser. It depends on
+`require_valid_user` staying enabled (step 1).
+
+### One-time role migration
+
+`setup.sh` does **not** re-role existing accounts. The exact commands are in the
+marked comment block in `setup.sh` (after step 7): round-trip each `_users` doc
+(GET → add role → PUT the whole document) and add `-operador` to the app user,
+`-rates` to `svc-rates`, `-admin` to the owner. Run it **before** the new
+validation ddoc lands — a user without a function role has every write rejected
+at replication, which looks like success in the browser and silently loses the
+document. Never hand-write a user doc body: omitting `derived_key`/`salt`
+destroys the password.
 
 ## Design-doc history
+
+**2026-08-17 — function roles** (see *Roles*). ⚠️ Needs BOTH: the one-time role
+migration first, then `setup.sh` (ddoc + `_users` `_security`) on **every** node.
+A node still running the old validator accepts writes this one rejects.
 
 **2026-07-30 — `payment:` added to the append-only regex** (payment ledger).
 Pushed to the **cloud node**; verified by reading `_design/validation` back:
@@ -45,14 +108,15 @@ COUCH_URL=https://app.example.com/db      # your cloud node (or http://pi.local:
 
 ## Adding more users
 
-Each cashier/manager/owner gets their own `_users` document with the app role
-(`$APP_ROLE`):
+Each cashier/manager/owner gets their own `_users` document with the base role
+**plus a function role** (`-operador` or `-admin`; the base role alone can sync
+but not write):
 
 ```sh
 curl -f -u "$COUCH_USER:$COUCH_PASS" \
   -H 'Content-Type: application/json' \
   -X PUT "$COUCH_URL/_users/org.couchdb.user:NUEVO_USUARIO" \
-  -d "{\"name\":\"NUEVO_USUARIO\",\"password\":\"***\",\"roles\":[\"$APP_ROLE\"],\"type\":\"user\"}"
+  -d "{\"name\":\"NUEVO_USUARIO\",\"password\":\"***\",\"roles\":[\"$APP_ROLE\",\"$APP_ROLE-operador\"],\"type\":\"user\"}"
 ```
 
 Rotate a password by PUTting the user doc again with its current `_rev` and a new

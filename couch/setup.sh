@@ -66,7 +66,34 @@ echo "==> Setting _security on ${DB}"
   "members": { "names": [], "roles": ["'"${APP_ROLE}"'"] }
 }' >/dev/null
 
-# 5. Push the validation design doc (preserving its _rev if it already exists).
+# 5. _users security: let the app's own admins manage accounts, and let every
+#    authenticated user reach their OWN user doc (self-service password change).
+#
+#    Verified against the CouchDB 3.5 sources before writing an EMPTY members
+#    section (apache/couchdb tag 3.5.0):
+#      · src/chttpd/src/chttpd_auth_request.erl — GET/PUT of /_users/<docid>
+#        goes through db_authorization_check, i.e. the security object below.
+#        Empty members = every authenticated user passes it (require_valid_user
+#        above is what keeps "authenticated" meaningful — do not disable it).
+#        _users/_all_docs and _users/_changes stay SERVER-admin only, always:
+#        that clause runs before the security object is even consulted.
+#      · src/couch/src/couch_users_db.erl — before_doc_update throws not_found
+#        unless the writer is a db admin or the doc IS their own; after_doc_read
+#        strips every non-public field (default: all of them) from someone
+#        else's doc. So an operador can read/write only their own account, and
+#        no password hash leaks to a peer.
+#      · src/couch/include/couch_js_functions.hrl (the built-in _design/_auth
+#        validator) — a non-admin cannot change roles at all, and NOBODY can
+#        grant a role starting with "_". "Admin" there counts db admins BY ROLE,
+#        which is exactly why ${APP_ROLE}-admin is listed below: it is what lets
+#        the in-app Usuarios panel create users and reset passwords.
+echo "==> Setting _security on _users (admins: ${APP_ROLE}-admin)"
+"${CURL[@]}" -X PUT "${COUCH_URL}/_users/_security" -d '{
+  "admins":  { "names": [], "roles": ["_admin", "'"${APP_ROLE}"'-admin"] },
+  "members": { "names": [], "roles": [] }
+}' >/dev/null
+
+# 6. Push the validation design doc (preserving its _rev if it already exists).
 echo "==> Pushing validation design doc"
 VALIDATE_FN="$(sed "s/__APP_ROLE__/${APP_ROLE}/g" "${SCRIPT_DIR}/validate_doc_update.js")"
 DDOC_ID="_design/validation"
@@ -85,18 +112,20 @@ PY
 )"
 "${CURL[@]}" -X PUT "${COUCH_URL}/${DB}/${DDOC_ID}" -d "${DDOC_JSON}" >/dev/null
 
-# 6. Create the first app user in _users with the app role (skip if present).
-echo "==> Ensuring app user (role: ${APP_ROLE})"
+# 7. Create the first app user in _users (skip if present). Fresh installs get the
+#    base sync role + operador; the base role alone no longer authorizes any write.
+echo "==> Ensuring app user (roles: ${APP_ROLE}, ${APP_ROLE}-operador)"
 USER_ID="org.couchdb.user:${APP_USER}"
 if curl -fsS "${AUTH[@]}" "${COUCH_URL}/_users/${USER_ID}" >/dev/null 2>&1; then
-  echo "    app user already exists"
+  echo "    app user already exists (roles NOT touched — see migration note below)"
 else
   USER_JSON="$(APP_USER="${APP_USER}" APP_PASS="${APP_PASS}" APP_ROLE="${APP_ROLE}" python3 - <<'PY'
 import json, os
+role = os.environ["APP_ROLE"]
 print(json.dumps({
   "name": os.environ["APP_USER"],
   "password": os.environ["APP_PASS"],
-  "roles": [os.environ["APP_ROLE"]],
+  "roles": [role, role + "-operador"],
   "type": "user",
 }))
 PY
@@ -105,13 +134,43 @@ PY
   echo "    app user created"
 fi
 
-# 7. DoS hardening: cap document size (app docs are small by design; embedded
+# ─── ONE-TIME ROLE MIGRATION (existing nodes) — RUN MANUALLY AT DEPLOY ────────
+# Deliberately NOT automated here: existing accounts may already carry per-person
+# roles this script knows nothing about, and rewriting them blind is how a user
+# loses sync at 7am. Run these BEFORE (or in the same maintenance window as) the
+# new validation ddoc — until a user has a function role, every write they make
+# is rejected at replication, which looks like success in the browser.
+#
+# ALWAYS round-trip the document: GET it, add the role, PUT the whole thing back.
+# Hand-writing the body drops derived_key/salt/iterations and the account can
+# never log in again (couch_users_db only re-hashes when a "password" field is
+# present; everything else you omit is simply gone).
+#
+#   printf 'machine %s login %s password %s\n' "$COUCH_HOST" "$COUCH_USER" "$COUCH_PASS" > ~/.nc
+#   chmod 600 ~/.nc                       # netrc, never -u: argv is world-readable
+#   NC=(curl -fsS --netrc-file ~/.nc -H 'Content-Type: application/json')
+#
+#   ADD='import json,os,sys; d=json.load(sys.stdin); d["roles"]=sorted(set(d["roles"])|{os.environ["ROLE"]}); print(json.dumps(d))'
+#   add_role() {   # add_role <username> <role>
+#     U="$COUCH_URL/_users/org.couchdb.user:$1"
+#     "${NC[@]}" "$U" | ROLE="$2" python3 -c "$ADD" | "${NC[@]}" -X PUT "$U" -d @-
+#   }
+#   add_role "$APP_USER" "${APP_ROLE}-operador"   # shared app user keeps working
+#   add_role svc-rates   "${APP_ROLE}-rates"      # VPS BCV timer (rate: + config:system)
+#   add_role DUENO       "${APP_ROLE}-admin"      # the owner's account (create it first if absent)
+#
+#   rm -f ~/.nc
+#   # Verify (server admin only): each doc's roles came back as expected.
+#   "${NC[@]}" "$COUCH_URL/_users/org.couchdb.user:$APP_USER"
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 8. DoS hardening: cap document size (app docs are small by design; embedded
 #    line-item arrays are bounded — 1 MB is generous).
 echo "==> Capping max_document_size (1 MB)"
 "${CURL[@]}" -X PUT "${COUCH_URL}/_node/_local/_config/couchdb/max_document_size" \
   -d '"1048576"' >/dev/null
 
-# 8. Pin password hashing. These match CouchDB 3.5's defaults (the live node's
+# 9. Pin password hashing. These match CouchDB 3.5's defaults (the live node's
 #    _users hashes were verified at exactly these values, 2026-08-16) — pinned
 #    so a rebuilt node or an older CouchDB cannot silently drift below them.
 #    A config change never re-hashes existing _users docs.

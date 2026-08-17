@@ -194,6 +194,29 @@ export interface FiscalConfigDoc extends Doc {
   lastUpdate: string;
 }
 
+export type UserRole = 'admin' | 'operador' | 'rates' | 'none';
+
+export interface RosterUser {
+  name: string;
+  role: UserRole;
+}
+
+/**
+ * _id: config:users. A DISPLAY roster of the CouchDB `_users` accounts —
+ * CouchDB 3.5 requires a SERVER admin for `_all_docs`/`_changes` on `_users`
+ * regardless of `_security` (chttpd_auth_request.erl), so the app's db-admin
+ * role can never list `_users` directly. The Usuarios panel keeps this doc in
+ * sync AFTER each `/db/_users` mutation succeeds; `_users` stays the actual
+ * source of truth for auth. Being a `config:` id, it is admin-only-writable
+ * under the server validation matrix and covered by the newest-lastUpdate
+ * conflict rule, like every other config document.
+ */
+export interface UsersRosterDoc extends Doc {
+  type: 'config';
+  users: RosterUser[];
+  lastUpdate: string;
+}
+
 /**
  * _id: payment:{ISO date}:{uuid}. A collection recorded AFTER checkout.
  * Append-only and immutable, like sale/expense/movement — sales can never be
@@ -338,6 +361,7 @@ export const refundIdOf = (date: string, uuid: string): string => `refund:${date
 
 export const SYSTEM_CONFIG_ID = 'config:system';
 export const FISCAL_CONFIG_ID = 'config:fiscal';
+export const USERS_CONFIG_ID = 'config:users';
 export const CART_ID = 'cart:current';
 
 // ---- Field validation (shared by the logic modules AND the forms) ----
@@ -361,6 +385,7 @@ export const FIELD_MAX = {
   text: 60,
   /** A colour-chart code is three digits in practice; 12 leaves room for "215-A". */
   colorCode: 12,
+  username: 40,
 } as const;
 
 const tooLong = (label: string, max: number) => `${label} no puede superar ${max} caracteres.`;
@@ -446,6 +471,21 @@ export function validatePhone(value: string): string | null {
   if (normalizePhone(v) === null) {
     return 'Teléfono inválido — incluye el código de país. Ej.: +58 412-1234567.';
   }
+  return null;
+}
+
+/**
+ * CouchDB `_users` account name (Usuarios panel). Lowercase only — CouchDB doc
+ * ids are case-sensitive and the login form does not fold case, so a mixed-case
+ * name would be unreachable to type back in.
+ */
+export function validateUsername(value: string): string | null {
+  const v = value.trim();
+  if (!v) return 'El usuario es obligatorio.';
+  if (v.length < 3 || v.length > FIELD_MAX.username) {
+    return `El usuario debe tener entre 3 y ${FIELD_MAX.username} caracteres.`;
+  }
+  if (!/^[a-z0-9._-]+$/.test(v)) return 'Solo minúsculas, números, punto (.), guion (-) y guion bajo (_).';
   return null;
 }
 
