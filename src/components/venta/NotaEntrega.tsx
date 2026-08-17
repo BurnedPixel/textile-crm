@@ -64,12 +64,12 @@ export default function NotaEntrega({ sale, client, fiscal }: NotaEntregaProps) 
           <div
             key={`${l.productId}-${i}`}
             className="nota-item"
-            style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1.25, padding: '2px 0', borderBottom: '1px dashed rgba(138,131,113,0.35)' }}
+            style={{ display: 'flex', flexWrap: 'wrap', columnGap: 12, rowGap: 0, lineHeight: 1.25, padding: '2px 0', borderBottom: '1px dashed rgba(138,131,113,0.35)' }}
           >
-            <span className="nota-item-desc" style={{ fontFamily: 'var(--font-sans)', fontSize: 12 }}>{l.description}</span>
+            <span className="nota-item-desc" style={{ flex: '1 1 auto', fontFamily: 'var(--font-sans)', fontSize: 12 }}>{l.description}</span>
             <span
               className="nota-item-math"
-              style={{ display: 'block', textAlign: 'right', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 12, whiteSpace: 'nowrap' }}
+              style={{ marginLeft: 'auto', textAlign: 'right', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 12, whiteSpace: 'nowrap' }}
             >
               {l.quantity} {l.unitOfMeasure === 'Kg' ? 'kg' : 'ud'} × {fmtUsd(l.unitPriceAtSale)} = {fmtUsd(l.lineSubtotalUsd)}
             </span>

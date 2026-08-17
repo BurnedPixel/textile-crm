@@ -74,26 +74,46 @@ export function buildNotaPdf(
   doc.text(`Tasa BCV ${fmtBs(rate)} / $`, rightX, y, { align: 'right' });
   y += 6;
 
-  // Line items — TWO lines per item: full description, then its math right-aligned below.
+  // Line items — one line per item (description left, math right on the SAME
+  // baseline) unless the description is too long to share the line, in which
+  // case it wraps full-width and the math drops to its own right-aligned line.
   const colDesc = MARGIN;
   const colPrice = 150; // totals-block label x anchor, kept from the old table layout
   const colSub = rightX;
+  const contentW = colSub - colDesc;
   const LINE_H = 3.4;
-  const ITEM_GAP = 1.2; // slightly more space between items than between the two lines of one
+  const ITEM_GAP = 1.2;
+  const MATH_GAP = 3; // breathing room between description text and math on a shared line
 
   for (const l of sale.lineItems) {
     const math = `${l.quantity} ${l.unitOfMeasure === 'Kg' ? 'kg' : 'ud'} × ${fmtUsd(l.unitPriceAtSale)} = ${fmtUsd(l.lineSubtotalUsd)}`;
-    // No parsing of the frozen description — split only for genuine overflow.
-    const descLines = doc.splitTextToSize(l.description, colSub - colDesc);
-    const itemHeight = descLines.length * LINE_H + LINE_H;
-    ensureRoom(itemHeight + ITEM_GAP);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.text(descLines, colDesc, y);
-    y += descLines.length * LINE_H;
     doc.setFont('courier', 'normal');
-    doc.text(math, colSub, y, { align: 'right' });
-    y += LINE_H + ITEM_GAP;
+    const mathW = doc.getTextWidth(math);
+    doc.setFont('helvetica', 'normal');
+    const descW = doc.getTextWidth(l.description);
+
+    if (descW + MATH_GAP + mathW <= contentW) {
+      // Fits on one line: description left, math right, same baseline.
+      ensureRoom(LINE_H + ITEM_GAP);
+      doc.setFont('helvetica', 'normal');
+      doc.text(l.description, colDesc, y);
+      doc.setFont('courier', 'normal');
+      doc.text(math, colSub, y, { align: 'right' });
+      y += LINE_H + ITEM_GAP;
+    } else {
+      // Too long to share the line: description wraps full-width, math on its own line below.
+      const descLines = doc.splitTextToSize(l.description, contentW);
+      const itemHeight = descLines.length * LINE_H + LINE_H;
+      ensureRoom(itemHeight + ITEM_GAP);
+      doc.setFont('helvetica', 'normal');
+      doc.text(descLines, colDesc, y);
+      y += descLines.length * LINE_H;
+      doc.setFont('courier', 'normal');
+      doc.text(math, colSub, y, { align: 'right' });
+      y += LINE_H + ITEM_GAP;
+    }
   }
   y += 0.5;
   ensureRoom(30);
