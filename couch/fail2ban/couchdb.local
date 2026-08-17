@@ -1,0 +1,9 @@
+[couchdb-auth]
+enabled = true
+filter = couchdb-auth
+port = http,https
+logpath = /var/log/couchdb/couchdb.log
+backend = polling
+maxretry = 8
+findtime = 300
+bantime = 900

@@ -4,6 +4,7 @@ dist/
 .astro/
 dev-dist/
 *.local
+!couch/fail2ban/couchdb.local
 qa-screenshots/
 __pycache__/
 site/

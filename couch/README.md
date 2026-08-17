@@ -111,16 +111,20 @@ old-interim-name.example.com {
 ```
 
 The CSP is scoped to the static app only (`handle`) — Fauxton under `/db/_utils`
-needs its own inline scripts. `script-src 'unsafe-inline'` is required by the
-Astro `is:inline` auth-gate script in `Layout.astro`; re-verify the CSP against
-the real bundle when the app is deployed.
+needs its own inline scripts. `script-src 'unsafe-inline'` is still required —
+not by the auth gate anymore (external since 2026-08-16) but by Astro's own
+`client:only` island bootstrap, which the compiler renders inline on every page
+with an island. Revisit when Astro's CSP-hash support leaves experimental.
 
 **Login rate limiting — two layers.** CouchDB 3.5 has a built-in lockout
 (after ~5 failed logins it answers `403` for a while). fail2ban watches
 `/_session` 401s **and** those lockout 403s and escalates to a network ban.
 Note: fail2ban strips the timestamp from each line before matching, so the
-regex must NOT account for the timestamp field. Deployed config (ban verified
-end-to-end: 8 failures → IP blocked at the firewall, then unbanned):
+regex must NOT account for the timestamp field. The deployed files are vendored
+in `couch/fail2ban/` (copy to `/etc/fail2ban/filter.d/` and `/etc/fail2ban/jail.d/`
+on a new node, then `systemctl reload fail2ban` — a rebuilt VPS must not silently
+lose the jail). Deployed config (ban verified end-to-end: 8 failures → IP blocked
+at the firewall, then unbanned):
 
 ```ini
 # /etc/fail2ban/filter.d/couchdb-auth.conf
@@ -151,6 +155,12 @@ is abuse, not data.
 **Session lifetime.** Default `chttpd_auth/timeout` is 600 s but the cookie is
 refreshed on activity. Offline work never depends on the session — the app is
 local-first; an expired session only pauses sync until the next login.
+
+**Password hashing.** `setup.sh` pins `chttpd_auth` to `pbkdf2` / `sha256` /
+600 000 iterations — CouchDB 3.5's own defaults (the live `_users` hashes were
+verified at exactly these values, 2026-08-16), made explicit so a rebuilt or
+older node cannot drift below them. Pinning never re-hashes existing user docs;
+rotate a password (see above) if a hash predates the pin.
 
 ## Trust boundary — read this
 

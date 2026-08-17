@@ -27,7 +27,16 @@ APP_ROLE="${APP_ROLE:-crm}"
 COUCH_URL="${COUCH_URL%/}"
 
 DB="${APP_DB}"
-AUTH=(-u "${COUCH_USER}:${COUCH_PASS}")
+
+# Admin credentials go through a mode-600 netrc file removed on exit, never argv:
+# `-u user:pass` sits in /proc/<pid>/cmdline, world-readable for the whole run.
+COUCH_HOST="$(printf '%s' "${COUCH_URL}" | sed -E 's#^[a-z]+://##; s#[/:].*$##')"
+NETRC="$(mktemp)"
+chmod 600 "${NETRC}"
+trap 'rm -f "${NETRC}"' EXIT
+printf 'machine %s login %s password %s\n' \
+  "${COUCH_HOST}" "${COUCH_USER}" "${COUCH_PASS}" > "${NETRC}"
+AUTH=(--netrc-file "${NETRC}")
 # -f: fail on HTTP >=400 (except we tolerate 412 "already exists" below via || true checks).
 CURL=(curl -fsS --retry 3 "${AUTH[@]}" -H 'Content-Type: application/json')
 
@@ -101,5 +110,21 @@ fi
 echo "==> Capping max_document_size (1 MB)"
 "${CURL[@]}" -X PUT "${COUCH_URL}/_node/_local/_config/couchdb/max_document_size" \
   -d '"1048576"' >/dev/null
+
+# 8. Pin password hashing. These match CouchDB 3.5's defaults (the live node's
+#    _users hashes were verified at exactly these values, 2026-08-16) — pinned
+#    so a rebuilt node or an older CouchDB cannot silently drift below them.
+#    A config change never re-hashes existing _users docs.
+echo "==> Pinning password hashing (pbkdf2-sha256, 600k iterations)"
+for kv in 'password_scheme "pbkdf2"' 'pbkdf2_prf "sha256"' 'iterations "600000"'; do
+  key="${kv%% *}"; val="${kv#* }"
+  "${CURL[@]}" -X PUT "${COUCH_URL}/_node/_local/_config/chttpd_auth/${key}" \
+    -d "${val}" >/dev/null
+done
+
+# fail2ban is OS-level, not reachable over this HTTP API: the deployed jail is
+# vendored in ./fail2ban/ — on a NEW node, copy couchdb-auth.conf to
+# /etc/fail2ban/filter.d/ and couchdb.local to /etc/fail2ban/jail.d/, then
+# `systemctl reload fail2ban` (see README.md → Hardening).
 
 echo "==> Done. ${DB} is ready on ${COUCH_URL}"

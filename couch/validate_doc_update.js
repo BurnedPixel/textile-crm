@@ -36,6 +36,16 @@ function (newDoc, oldDoc, userCtx, secObj) {
   // Deletions carry no business fields to validate.
   if (newDoc._deleted) return;
 
+  // config:system is read at every checkout on every device — one junk rate
+  // replicates everywhere and breaks every terminal. The app's saveDailyRate
+  // asserts this locally; this guards replicated and hand-crafted writes.
+  if (newDoc._id === 'config:system') {
+    var rate = newDoc.currentDailyRateBCV;
+    if (typeof rate !== 'number' || !isFinite(rate) || rate <= 0) {
+      throw { forbidden: 'config:system: currentDailyRateBCV debe ser un número finito y positivo.' };
+    }
+  }
+
   var FORBIDDEN = ['totalBs', 'amountBs'];
   for (var i = 0; i < FORBIDDEN.length; i++) {
     if (Object.prototype.hasOwnProperty.call(newDoc, FORBIDDEN[i])) {
