@@ -15,11 +15,16 @@ let _getSession: (() => Promise<SessionUser | null>) | null = null;
 // button: purges the device when it is marked as shared. Keep them apart.
 let _logout: (() => Promise<void>) | null = null;
 let _logoutExplicit: (() => Promise<void>) | null = null;
+// Nómina: admin-only second database. nominaDb() is lazy, so importing the
+// module creates nothing — only startNominaSync() does.
+let _isAdmin: (() => boolean) | null = null;
+let _startNominaSync: (() => void) | null = null;
 
 async function loadModules() {
-  const [dbMod, authMod] = await Promise.all([
+  const [dbMod, authMod, nominaMod] = await Promise.all([
     import('../lib/db'),
     import('../lib/auth'),
+    import('../lib/nominadb'),
   ]);
   _onSyncState = dbMod.onSyncState;
   _startSync = dbMod.startSync;
@@ -27,6 +32,8 @@ async function loadModules() {
   _getSession = authMod.getSession;
   _logout = authMod.logout;
   _logoutExplicit = authMod.logoutExplicit;
+  _isAdmin = authMod.isAdmin;
+  _startNominaSync = nominaMod.startNominaSync;
 }
 
 const stateConfig: Record<SyncState, { dot: string; label: string; color: string }> = {
@@ -63,6 +70,10 @@ export default function SyncStatus() {
       // This island loads on every authenticated page, so it's the durable place
       // to (re)start sync. startSync() is idempotent — safe on every load.
       _startSync?.();
+      // Same idempotent (re)start for nómina, but ONLY for an admin — a
+      // vendedor's device must never create or replicate the payroll database.
+      // getSession() just refreshed the cached roles this reads.
+      if (_isAdmin?.()) _startNominaSync?.();
     });
     return () => { cancelled = true; };
   }, []);

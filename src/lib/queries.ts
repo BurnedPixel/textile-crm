@@ -44,7 +44,7 @@ async function getById<T>(db: DB, id: string): Promise<T | null> {
 }
 
 /** Scan all docs whose _id starts with `prefix`. */
-async function scanPrefix<T>(
+export async function scanPrefix<T>(
   db: DB,
   prefix: string,
   opts: { descending?: boolean; limit?: number } = {},
@@ -278,7 +278,7 @@ export interface ListOpts {
  * Scan a time-ordered ledger prefix (sale:/expense:/movement:) between dates.
  * ids embed the ISO date right after the prefix, so date bounds are pure id math.
  */
-async function scanLedger<T>(db: DB, prefix: string, opts: ListOpts = {}): Promise<T[]> {
+export async function scanLedger<T>(db: DB, prefix: string, opts: ListOpts = {}): Promise<T[]> {
   const { startDate, endDate, limit, descending = true } = opts;
   const low = prefix + (startDate ?? '');
   const high = prefix + (endDate ?? '') + HIGH;

@@ -4,7 +4,14 @@ import { ingressStock } from './inventory';
 import { checkout } from './checkout';
 import { recomputeBatchCounters, resolveDocConflicts } from './conflicts';
 import { saveFiscalConfig, getFiscalConfig } from './queries';
-import { batchIdOf, productIdOf, FISCAL_CONFIG_ID, type CartLineItem } from './types';
+import {
+  batchIdOf,
+  productIdOf,
+  workerIdOf,
+  FISCAL_CONFIG_ID,
+  type CartLineItem,
+  type WorkerDoc,
+} from './types';
 
 const RATE = 36.5;
 
@@ -245,5 +252,56 @@ describe('resolveDocConflicts — every config: doc resolves by newest lastUpdat
     expect(winner.taxId).toBe('J-40123456-7');
     expect(((await db.get(FISCAL_CONFIG_ID, { conflicts: true })) as { _conflicts?: string[] })._conflicts)
       .toBeUndefined();
+  });
+});
+
+// A worker: doc is edited by hand (a raise, a new bono, a deactivation) on
+// whichever device the admin has open, so two offline edits are ordinary, not
+// exotic. Nothing about a worker derives from a ledger — fall through to the
+// append-only branch and CouchDB's arbitrary rev stands, which means the amount
+// the app says is due can silently be the one the admin already corrected.
+describe('resolveDocConflicts — worker: resolves by newest updatedAt', () => {
+  it('keeps the newer worker edit and deletes the stale winning rev', async () => {
+    const db = makeTestDb();
+    const id = workerIdOf('V-12345678');
+    const base: WorkerDoc = {
+      _id: id,
+      type: 'worker',
+      documentId: 'V-12345678',
+      name: 'ANA PEREZ',
+      active: true,
+      concepts: [{ label: 'Salario', amountUsd: 50, frequency: 'WEEKLY' }],
+      updatedAt: '2026-08-01T10:00:00.000Z',
+    };
+    await db.put(base);
+    const stored = (await db.get(id)) as WorkerDoc;
+
+    // The raise, entered later on the other device.
+    await db.put({
+      ...stored,
+      concepts: [{ label: 'Salario', amountUsd: 70, frequency: 'WEEKLY' }],
+      updatedAt: '2026-08-16T10:00:00.000Z',
+    });
+
+    // The stale branch replicates in with a rev id that SORTS ABOVE the stored
+    // one, so CouchDB's deterministic winner rule picks the pre-raise doc.
+    await db.bulkDocs(
+      [{ ...base, _rev: '2-' + 'f'.repeat(32) }],
+      { new_edits: false } as never,
+    );
+    const beforeResolve = (await db.get(id, { conflicts: true })) as WorkerDoc & {
+      _conflicts?: string[];
+    };
+    expect(beforeResolve.concepts[0].amountUsd).toBe(50); // stale rev won — the hazard is real
+    expect(beforeResolve._conflicts?.length).toBe(1);
+
+    await resolveDocConflicts(db, id);
+
+    const resolved = (await db.get(id, { conflicts: true })) as WorkerDoc & {
+      _conflicts?: string[];
+    };
+    expect(resolved._conflicts ?? []).toHaveLength(0); // loser revs deleted
+    expect(resolved.updatedAt).toBe('2026-08-16T10:00:00.000Z');
+    expect(resolved.concepts[0].amountUsd).toBe(70);
   });
 });

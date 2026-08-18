@@ -17,7 +17,10 @@ any time. It reads secrets from a sibling `../.env` (never commit that file).
    app role, any mutation of an existing `sale:`/`payment:`/`refund:`/
    `expense:`/`movement:` document, and any write the writer's **function role**
    does not allow.
-7. Creates the first application user in `_users` with the base + `-operador`
+7. Creates the nómina database (`${APP_DB}-nomina`), locks its `_security` to
+   `$APP_ROLE-admin` in both sections, and pushes `validate_nomina.js` there —
+   see *Nómina database*.
+8. Creates the first application user in `_users` with the base + `-operador`
    roles. Existing users are never touched — see *Roles* → migration.
 
 ## Roles (2026-08-17)
@@ -68,7 +71,7 @@ user management, without a server-admin credential in the browser. It depends on
 ### One-time role migration
 
 `setup.sh` does **not** re-role existing accounts. The exact commands are in the
-marked comment block in `setup.sh` (after step 7): round-trip each `_users` doc
+marked comment block in `setup.sh` (after step 8): round-trip each `_users` doc
 (GET → add role → PUT the whole document) and add `-operador` to the app user,
 `-rates` to `svc-rates`, `-admin` to the owner. Run it **before** the new
 validation ddoc lands — a user without a function role has every write rejected
@@ -76,7 +79,43 @@ at replication, which looks like success in the browser and silently loses the
 document. Never hand-write a user doc body: omitting `derived_key`/`salt`
 destroys the password.
 
+## Nómina database (2026-08-17)
+
+Salaries live in a **second database**, `${APP_DB}-nomina` (prod
+`ml-textiles-nomina`), created by `setup.sh` step 7. It is admin-only in **both**
+sections of `_security`:
+
+```json
+{"admins":  {"names": [], "roles": ["$APP_ROLE-admin"]},
+ "members": {"names": [], "roles": ["$APP_ROLE-admin"]}}
+```
+
+`members` is what CouchDB checks on read and on replication, so a vendedor's
+device cannot pull the database at all — nómina never reaches its IndexedDB.
+That read separation is the whole reason for a second database (role-based
+hiding inside the main db would be cosmetic: every synced device holds the full
+database locally).
+
+`couch/validate_nomina.js` is pushed as `_design/validation` **in that database**
+and re-checks the same role on every write (belt over `_security`), plus:
+`payrollpay:` is append-only, `totalBs`/`amountBs` are rejected (concepts are
+USD-only; Bs is derived at render from the rate locked on the payment), and both
+doc shapes are checked (worker: documentId/name present, ≤ 20 concepts with a
+finite positive `amountUsd` and `WEEKLY|MONTHLY`; payrollpay: finite positive
+`totalUsd` and `exchangeRateBCV`, 1–40 lines). `src/lib/validate-nomina-ddoc.test.ts`
+evaluates that exact file — keep the two in sync.
+
+⚠️ **Deploy order:** re-run `setup.sh` on every node **before** the app build
+that ships /nómina. Until it runs, the database does not exist and an admin
+session's nomina sync fails; after it runs, an older app build simply never
+touches the database. Server admins bypass `_security`, so `_admin` (and only
+`_admin`) can still read it for backups — `vps/couch-backup.sh` picks it up
+automatically from `_all_dbs`.
+
 ## Design-doc history
+
+**2026-08-17 — nómina database + `validate_nomina.js`** (see *Nómina database*).
+Needs `setup.sh` re-run on every node before the app build ships.
 
 **2026-08-17 — function roles** (see *Roles*). ⚠️ Needs BOTH: the one-time role
 migration first, then `setup.sh` (ddoc + `_users` `_security`) on **every** node.

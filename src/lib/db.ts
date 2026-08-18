@@ -119,6 +119,15 @@ export async function purgeLocalData(): Promise<void> {
   await cartDb.destroy(); // NEVER SYNC CART: nothing to drain, just erase it
 }
 
+/**
+ * Report a sync state coming from ANOTHER database's replication (nominadb.ts)
+ * through this one shared indicator. Import direction is nominadb → db only:
+ * db.ts must never import nominadb (the nómina replica stays admin-lazy).
+ */
+export function reportSyncState(s: SyncState): void {
+  emitSyncState(s);
+}
+
 /** Subscribe to sync state. Returns an unsubscribe fn. Fires current state immediately. */
 export function onSyncState(cb: (s: SyncState) => void): () => void {
   syncStateListeners.add(cb);

@@ -2,10 +2,11 @@
 // Never accept CouchDB's arbitrary default winner. Rules per CLAUDE.md:
 //   batch:/product:  → delete ALL conflicting revs, recompute counters from the ledger.
 //   config:            → newest lastUpdate wins (system AND fiscal).
-//   client:          → newest updatedAt wins.
-//   sale:/payment:/refund:/expense:/movement: → append-only unique ids; must not conflict.
-//                              If they somehow do, keep the winner and warn.
-// Takes `db` first; no browser imports (the watcher is started from db.ts).
+//   client:/worker:  → newest updatedAt wins.
+//   sale:/payment:/refund:/expense:/movement:/payrollpay: → append-only unique ids;
+//                              must not conflict. If they somehow do, keep the winner and warn.
+// Takes `db` first; no browser imports (the watcher is started from db.ts — and,
+// for the worker:/payrollpay: ids, from nominadb.ts over the separate nómina DB).
 
 import {
   hasRollStock,
@@ -13,6 +14,7 @@ import {
   type ProductDoc,
   type SystemConfigDoc,
   type ClientDoc,
+  type WorkerDoc,
   type InventoryMovementDoc,
 } from './types';
 import { round3 } from './format';
@@ -98,7 +100,18 @@ export async function resolveDocConflicts(db: DB, id: string): Promise<void> {
     return;
   }
 
-  // sale:/payment:/refund:/expense:/movement: are append-only with unique ids — should be impossible.
+  // Same rule as client:, one database over — a worker's salary/bonos are edited
+  // by hand on whatever device the admin has, so the newest edit is the intent.
+  // Without this branch a worker: doc falls through to the append-only warning
+  // below and keeps CouchDB's arbitrary rev: a raise entered offline loses to a
+  // stale fork, silently, and the wrong amount is what the app says is due.
+  if (id.startsWith('worker:')) {
+    await keepBy<WorkerDoc>(db, id, conflicts, (a, b) => (a.updatedAt >= b.updatedAt ? a : b));
+    return;
+  }
+
+  // sale:/payment:/refund:/expense:/movement:/payrollpay: are append-only with
+  // unique ids (payrollpay embeds the dialog's payId) — should be impossible.
   console.warn(`[conflicts] unexpected conflict on append-only doc ${id}; keeping winner.`);
   await deleteRevs(db, id, conflicts);
 }
