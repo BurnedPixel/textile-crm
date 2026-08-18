@@ -4,6 +4,7 @@
 
 import type { SessionUser } from './types';
 import { startSync, stopSync, purgeLocalData } from './db';
+import { startNominaSync, purgeNominaData } from './nominadb';
 import { BRAND } from '../../brand.mjs';
 
 const CACHE_KEY = `${BRAND.dbName}:user`;
@@ -60,6 +61,10 @@ export async function login(name: string, password: string): Promise<SessionUser
   const user: SessionUser = { name: body.name ?? name, roles: body.roles ?? [] };
   cache(user);
   startSync();
+  // Nómina is admin-only: its local replica must never be created on a
+  // vendedor's device. Gate on the FRESH roles from this response — cache()
+  // swallows storage failures, so isAdmin() could read a stale/absent cache.
+  if (user.roles.includes(ADMIN_ROLE)) startNominaSync();
   return user;
 }
 
@@ -180,6 +185,14 @@ export async function logoutExplicit(): Promise<void> {
   if (isSharedDevice()) {
     try {
       // BEFORE the session is deleted — the drain push needs the auth cookie.
+      // Nómina first: if ITS drain fails, nothing at all has been destroyed.
+      // (Only admins ever hold a local nómina replica; a non-admin call would
+      // create the database just to fail the drain against a 403 remote.
+      // Ceiling, same as the main DB: data left by an admin session that ended
+      // through the purge-free 401/expiry path is not reachable from here.)
+      if (isAdmin()) await purgeNominaData();
+      // If THIS fails after nómina was destroyed, nothing is lost: nómina was
+      // fully drained to the server and the next admin login re-pulls it.
       await purgeLocalData();
     } catch (err) {
       console.error('[logout] purge aborted, local data kept', err);

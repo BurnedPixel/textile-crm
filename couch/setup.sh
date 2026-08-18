@@ -6,6 +6,7 @@
 #   COUCH_USER, COUCH_PASS          — CouchDB server admin
 #   APP_USER, APP_PASS              — first application user (gets APP_ROLE)
 #   APP_DB, APP_ROLE                — database and role names (default: crm)
+#   NOMINA_DB                       — optional; defaults to ${APP_DB}-nomina
 #   COUCH_URL                       — required, e.g. https://app.example.com/db
 #
 # NEVER echoes passwords. curl -f fails loudly on any HTTP error.
@@ -27,6 +28,9 @@ APP_ROLE="${APP_ROLE:-crm}"
 COUCH_URL="${COUCH_URL%/}"
 
 DB="${APP_DB}"
+# Nómina lives in its OWN database (admin-only _security) — salaries never
+# replicate to a non-admin device.
+NOMINA_DB="${NOMINA_DB:-${APP_DB}-nomina}"
 
 # Admin credentials go through a mode-600 netrc file removed on exit, never argv:
 # `-u user:pass` sits in /proc/<pid>/cmdline, world-readable for the whole run.
@@ -101,14 +105,18 @@ echo "==> Setting _security on _users (admins: ${APP_ROLE}-admin)"
   -d '"false"' >/dev/null
 
 # 6. Push the validation design doc (preserving its _rev if it already exists).
-echo "==> Pushing validation design doc"
-VALIDATE_FN="$(sed "s/__APP_ROLE__/${APP_ROLE}/g" "${SCRIPT_DIR}/validate_doc_update.js")"
-DDOC_ID="_design/validation"
-REV="$(curl -fsS "${AUTH[@]}" "${COUCH_URL}/${DB}/${DDOC_ID}" 2>/dev/null \
-  | grep -o '"_rev":"[^"]*"' | cut -d'"' -f4 || true)"
+#    push_ddoc <database> <validator file> — substitutes __APP_ROLE__ and PUTs
+#    _design/validation, carrying the current _rev so a re-run is an update.
+push_ddoc() {
+  local db="$1" file="$2"
+  local ddoc_id="_design/validation"
+  local fn rev json
+  fn="$(sed "s/__APP_ROLE__/${APP_ROLE}/g" "${file}")"
+  rev="$(curl -fsS "${AUTH[@]}" "${COUCH_URL}/${db}/${ddoc_id}" 2>/dev/null \
+    | grep -o '"_rev":"[^"]*"' | cut -d'"' -f4 || true)"
 
-# Build the design doc JSON with the function embedded as a JSON string.
-DDOC_JSON="$(VALIDATE_FN="${VALIDATE_FN}" REV="${REV}" DDOC_ID="${DDOC_ID}" python3 - <<'PY'
+  # Build the design doc JSON with the function embedded as a JSON string.
+  json="$(VALIDATE_FN="${fn}" REV="${rev}" DDOC_ID="${ddoc_id}" python3 - <<'PY'
 import json, os
 doc = {"_id": os.environ["DDOC_ID"], "validate_doc_update": os.environ["VALIDATE_FN"]}
 rev = os.environ.get("REV")
@@ -117,9 +125,30 @@ if rev:
 print(json.dumps(doc))
 PY
 )"
-"${CURL[@]}" -X PUT "${COUCH_URL}/${DB}/${DDOC_ID}" -d "${DDOC_JSON}" >/dev/null
+  "${CURL[@]}" -X PUT "${COUCH_URL}/${db}/${ddoc_id}" -d "${json}" >/dev/null
+}
 
-# 7. Create the first app user in _users (skip if present). Fresh installs get the
+echo "==> Pushing validation design doc"
+push_ddoc "${DB}" "${SCRIPT_DIR}/validate_doc_update.js"
+
+# 7. Nómina database — SEPARATE database, admin-only in BOTH sections of
+#    _security: salaries must never replicate to a vendedor's device, and
+#    `members` is what CouchDB checks on read/replication. Its validator
+#    (validate_nomina.js) re-checks the same role on every write.
+echo "==> Ensuring database ${NOMINA_DB}"
+curl -fsS "${AUTH[@]}" -X PUT "${COUCH_URL}/${NOMINA_DB}" >/dev/null 2>&1 \
+  || echo "    ${NOMINA_DB} already exists"
+
+echo "==> Setting _security on ${NOMINA_DB} (admins+members: ${APP_ROLE}-admin)"
+"${CURL[@]}" -X PUT "${COUCH_URL}/${NOMINA_DB}/_security" -d '{
+  "admins":  { "names": [], "roles": ["'"${APP_ROLE}"'-admin"] },
+  "members": { "names": [], "roles": ["'"${APP_ROLE}"'-admin"] }
+}' >/dev/null
+
+echo "==> Pushing nómina validation design doc"
+push_ddoc "${NOMINA_DB}" "${SCRIPT_DIR}/validate_nomina.js"
+
+# 8. Create the first app user in _users (skip if present). Fresh installs get the
 #    base sync role + operador; the base role alone no longer authorizes any write.
 echo "==> Ensuring app user (roles: ${APP_ROLE}, ${APP_ROLE}-operador)"
 USER_ID="org.couchdb.user:${APP_USER}"
@@ -171,13 +200,13 @@ fi
 #   "${NC[@]}" "$COUCH_URL/_users/org.couchdb.user:$APP_USER"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 8. DoS hardening: cap document size (app docs are small by design; embedded
+# 9. DoS hardening: cap document size (app docs are small by design; embedded
 #    line-item arrays are bounded — 1 MB is generous).
 echo "==> Capping max_document_size (1 MB)"
 "${CURL[@]}" -X PUT "${COUCH_URL}/_node/_local/_config/couchdb/max_document_size" \
   -d '"1048576"' >/dev/null
 
-# 9. Pin password hashing. These match CouchDB 3.5's defaults (the live node's
+# 10. Pin password hashing. These match CouchDB 3.5's defaults (the live node's
 #    _users hashes were verified at exactly these values, 2026-08-16) — pinned
 #    so a rebuilt node or an older CouchDB cannot silently drift below them.
 #    A config change never re-hashes existing _users docs.
@@ -193,4 +222,4 @@ done
 # /etc/fail2ban/filter.d/ and couchdb.local to /etc/fail2ban/jail.d/, then
 # `systemctl reload fail2ban` (see README.md → Hardening).
 
-echo "==> Done. ${DB} is ready on ${COUCH_URL}"
+echo "==> Done. ${DB} + ${NOMINA_DB} are ready on ${COUCH_URL}"

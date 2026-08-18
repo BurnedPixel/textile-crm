@@ -11,6 +11,9 @@ import {
   getRefunds, refundsBySale,
 } from '../../lib/payments';
 import { getColorChart, chartColorByName, type ColorChartDoc } from '../../lib/catalog';
+import { isAdmin } from '../../lib/auth';
+import { nominaDb } from '../../lib/nominadb';
+import { listWorkers, listPayrollPays, dueSummary, inMonthEndWindow } from '../../lib/payroll';
 import { CollectDialog, RefundDialog } from '../shared/PaymentDialogs';
 import {
   fmtUsd, fmtBs, fmtDateTime, toBs, round2, fmtLots,
@@ -63,6 +66,8 @@ interface DashboardData {
   clients: ClientDoc[];
   /** The colour chart — resolves a code for batches that predate `colorCode`. */
   chart: ColorChartDoc | null;
+  /** Admin-only nómina dues (weekly always, monthly only in the month-end window). null = not admin or read failed. */
+  nominaDue: { count: number; totalUsd: number } | null;
 }
 
 async function fetchAll(): Promise<DashboardData> {
@@ -92,6 +97,26 @@ async function fetchAll(): Promise<DashboardData> {
   const paymentsFor = paymentsBySale(payments);
   const refundsFor = refundsBySale(refunds);
 
+  // Admin-only. Never touches the nómina database for a non-admin — its local
+  // replica must never be created on a vendedor's device. A read failure
+  // (offline admin, denied sync) hides the card rather than breaking the Panel.
+  let nominaDue: DashboardData['nominaDue'] = null;
+  if (isAdmin()) {
+    try {
+      const ndb = nominaDb();
+      const [workers, pays] = await Promise.all([listWorkers(ndb), listPayrollPays(ndb)]);
+      const now = new Date();
+      const monthlyOk = inMonthEndWindow(now);
+      const due = dueSummary(workers, pays, now).flatMap((w) =>
+        w.due.filter((d) => d.frequency === 'WEEKLY' || monthlyOk),
+      );
+      nominaDue = { count: due.length, totalUsd: round2(due.reduce((s, d) => s + d.amountUsd, 0)) };
+    } catch (err) {
+      console.error('[Dashboard] nómina', err);
+      nominaDue = null;
+    }
+  }
+
   const todaySales = allSales.filter((s) => s.date.slice(0, 10) === todayStart);
   const recentSales = allSales.slice(0, 8);
 
@@ -106,7 +131,7 @@ async function fetchAll(): Promise<DashboardData> {
 
   return {
     config, stocked, todaySales, recentSales, pendingSales, creditSales, paymentsFor, refundsFor,
-    clients: allClients, chart,
+    clients: allClients, chart, nominaDue,
   };
 }
 
@@ -899,7 +924,7 @@ export default function Dashboard() {
     );
   }
 
-  const { config, stocked, todaySales, recentSales, pendingSales, creditSales, paymentsFor, refundsFor, clients, chart } = data;
+  const { config, stocked, todaySales, recentSales, pendingSales, creditSales, paymentsFor, refundsFor, clients, chart, nominaDue } = data;
   const rate = config?.currentDailyRateBCV;
 
   // Client id → name map (single pass)
@@ -945,6 +970,29 @@ export default function Dashboard() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1400px' }}>
       <Header config={config} />
+
+      {/* Admin-only nómina notice — weekly dues always, monthly only in the month-end window */}
+      {nominaDue && nominaDue.count > 0 && (
+        <a
+          href="/nomina"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            padding: '12px 16px',
+            background: 'rgba(181,23,92,0.06)',
+            border: '1px dashed var(--color-dye)',
+            borderRadius: '8px',
+            textDecoration: 'none',
+          }}
+        >
+          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 600, color: 'var(--color-ink)' }}>
+            Nómina: {nominaDue.count} pago{nominaDue.count !== 1 ? 's' : ''} pendiente{nominaDue.count !== 1 ? 's' : ''} — {fmtUsd(nominaDue.totalUsd)}
+          </span>
+          <Badge tone="warn">Ver</Badge>
+        </a>
+      )}
 
       {/* Stat row */}
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>

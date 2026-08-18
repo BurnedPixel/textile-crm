@@ -8,6 +8,7 @@ export type PaymentStatus = 'PENDING' | 'PARTIAL' | 'PAID';
 export type ConditionTag = 'FIRST' | 'SECONDS' | 'DEFECT';
 export type EntityType = 'PERSON' | 'COMPANY';
 export type EntryMethod = 'CASH' | 'TRANSFER';
+export type PayrollFrequency = 'WEEKLY' | 'MONTHLY';
 
 /** productType determines the unit of measure — never mix Kg with Units. */
 export const UNIT_FOR: Record<ProductType, UnitOfMeasure> = {
@@ -123,6 +124,53 @@ export interface ExpenseDoc extends Doc {
   amountUsd: number;
   /** Locked at creation from SystemConfig. Never recompute old records. */
   exchangeRateBCV: number;
+}
+
+/** One salary/bono line on a WorkerDoc. USD only (client decision, 2026-08-17). */
+export interface PayrollConcept {
+  label: string;
+  amountUsd: number;
+  frequency: PayrollFrequency;
+}
+
+/**
+ * _id: worker:{documentId normalized} — nómina DB (admin-only, separate from
+ * the main DB). documentId is canonicalized at CREATE only (normalizeDocumentId);
+ * UPDATE keeps the stored id verbatim, same rule as ClientDoc.
+ */
+export interface WorkerDoc extends Doc {
+  type: 'worker';
+  documentId: string;
+  name: string;
+  active: boolean;
+  concepts: PayrollConcept[];
+  /** Conflict resolution: newest updatedAt wins. */
+  updatedAt: string;
+}
+
+/** One paid concept on a PayrollPayDoc. */
+export interface PayrollPayLine {
+  label: string;
+  amountUsd: number;
+  /** Period this line covers: 'YYYY-Www' (ISO week) or 'YYYY-MM'. */
+  periodKey: string;
+}
+
+/**
+ * _id: payrollpay:{date}:{payId} — nómina DB, append-only, immutable.
+ * totalBs/amountBs are FORBIDDEN — Bs is always derived at render.
+ */
+export interface PayrollPayDoc extends Doc {
+  type: 'payrollpay';
+  payId: string;
+  workerId: string;
+  date: string;
+  entryMethod: EntryMethod;
+  /** Locked at creation from SystemConfig (main DB) — the caller's job to read. */
+  exchangeRateBCV: number;
+  lines: PayrollPayLine[];
+  totalUsd: number;
+  operatorId: string;
 }
 
 /** Immutable once written — unitPriceAtSale is locked at checkout. */
@@ -359,6 +407,11 @@ export const paymentIdOf = (date: string, uuid: string): string => `payment:${da
 
 export const refundIdOf = (date: string, uuid: string): string => `refund:${date}:${uuid}`;
 
+export const workerIdOf = (documentId: string): string => `worker:${norm(documentId)}`;
+
+export const payrollPayIdOf = (date: string, payId: string): string =>
+  `payrollpay:${date}:${payId}`;
+
 export const SYSTEM_CONFIG_ID = 'config:system';
 export const FISCAL_CONFIG_ID = 'config:fiscal';
 export const USERS_CONFIG_ID = 'config:users';
@@ -386,6 +439,7 @@ export const FIELD_MAX = {
   /** A colour-chart code is three digits in practice; 12 leaves room for "215-A". */
   colorCode: 12,
   username: 40,
+  payrollLabel: 60,
 } as const;
 
 const tooLong = (label: string, max: number) => `${label} no puede superar ${max} caracteres.`;

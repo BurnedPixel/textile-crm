@@ -1,0 +1,8 @@
+---
+import Layout from '../layouts/Layout.astro';
+import NominaIsland from '../components/nomina/NominaIsland.tsx';
+---
+
+<Layout title="Nómina" active="/nomina">
+  <NominaIsland client:only="react" />
+</Layout>

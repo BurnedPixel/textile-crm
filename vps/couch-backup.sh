@@ -19,6 +19,10 @@ mkdir -p "$(dirname "$STATE")"; touch "$STATE"
 ALERT_ABS="${ALERT_ABS:-1000}"   # docs/day; legit use is ~200/day at peak
 ALERT_PCT="${ALERT_PCT:-25}"     # or >25% one-day growth (min 100 docs, so tiny dbs don't cry)
 
+# Every database on the node, no allow-list — that is what already covers the
+# admin-only nómina db (`$APP_DB-nomina`, salaries) and whatever comes next.
+# Do NOT narrow this loop to a fixed list: a db added later would silently stop
+# being backed up and stop being watched for doc-count anomalies.
 for db in $(curl -sf -u "$COUCH_USER:$COUCH_PASS" http://127.0.0.1:5984/_all_dbs | jq -r '.[]'); do
   count=$(curl -sf -u "$COUCH_USER:$COUCH_PASS" "http://127.0.0.1:5984/$db" | jq -r '.doc_count')
   prev=$(awk -v db="$db" '$1==db{print $2}' "$STATE")

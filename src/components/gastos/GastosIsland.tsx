@@ -13,11 +13,13 @@ import type { ExpenseDoc } from '../../lib/types';
 
 const CATEGORIES = [
   'Materia prima',
-  'Nómina',
   'Servicios',
   'Transporte',
   'Mantenimiento',
   'Alquiler',
+  'Limpieza',
+  'Empaques',
+  'Publicidad',
   'Otros',
 ] as const;
 
