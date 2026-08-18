@@ -345,8 +345,10 @@
   @page { margin: 10mm; }
   body { background: #fff; }
   body * { visibility: hidden; }
-  .nota-entrega, .nota-entrega * { visibility: visible; }
-  .nota-entrega {
+  .nota-entrega, .nota-entrega *,
+  .informe-report, .informe-report * { visibility: visible; }
+  .nota-entrega,
+  .informe-report {
     position: absolute;
     inset: 0 auto auto 0;
     width: 100%;
@@ -354,6 +356,7 @@
     padding: 0;
   }
   .no-print { display: none !important; }
+  .print-only { display: block !important; }
   /* Density pass: fewer, tighter rows so more CartLineItems fit per page. */
   .nota-header { padding-bottom: 4px !important; margin-bottom: 6px !important; }
   .nota-meta-row { margin-bottom: 6px !important; }

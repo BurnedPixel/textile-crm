@@ -37,12 +37,18 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
-        // The "Compartir PDF" chunk graph (nota-pdf + html2canvas + dompurify,
-        // ~625 kB) is reached only from a dynamic import off the checkout-
-        // success button — precaching it blocks every first SW install.
-        // Fetched once on first real use, then CacheFirst below.
+        // The "Compartir PDF"/"Imprimir" chunk graph (nota-pdf + informe-pdf +
+        // their shared jspdf chunk + html2canvas + dompurify) is reached only
+        // from dynamic imports off the checkout-success and informes buttons —
+        // precaching it blocks every first SW install. Fetched once on first
+        // real use, then CacheFirst below. informe-pdf.ts joining nota-pdf.ts
+        // as a second jspdf importer split jspdf into its OWN shared chunk
+        // (was bundled inside nota-pdf.*.js before) — both new chunk names
+        // needed adding here or ~390 kB silently re-entered precache.
         globIgnores: [
           '**/_astro/nota-pdf.*.js',
+          '**/_astro/informe-pdf.*.js',
+          '**/_astro/jspdf.es.min.*.js',
           '**/_astro/html2canvas.esm.*.js',
           '**/_astro/purify.es.*.js',
         ],
@@ -57,7 +63,7 @@ export default defineConfig({
         runtimeCaching: [
           {
             // Same-origin /_astro/ chunk files ONLY — cannot ever match /db/*.
-            urlPattern: /^\/_astro\/(nota-pdf|html2canvas\.esm|purify\.es)\.[^/]+\.js$/,
+            urlPattern: /^\/_astro\/(nota-pdf|informe-pdf|jspdf\.es\.min|html2canvas\.esm|purify\.es)\.[^/]+\.js$/,
             handler: 'CacheFirst',
             options: { cacheName: 'pdf-share-chunks' },
           },

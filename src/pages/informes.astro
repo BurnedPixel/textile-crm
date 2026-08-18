@@ -1,0 +1,8 @@
+---
+import Layout from '../layouts/Layout.astro';
+import InformesIsland from '../components/informes/InformesIsland.tsx';
+---
+
+<Layout title="Informes" active="/informes">
+  <InformesIsland client:only="react" />
+</Layout>
