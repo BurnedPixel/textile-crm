@@ -438,7 +438,7 @@ export default function IngressForm({ onDone }: IngressFormProps) {
 
   // ─── Running totals ──────────────────────────────────────────────────────────
 
-  const totalKg = rolls.reduce((s, r) => s + (parseFloat(r.weightKg) || 0), 0);
+  const totalKg = rolls.reduce((s, r) => s + (Number(r.weightKg) || 0), 0);
 
   // ─── Cascade keyboard: Enter advances to next field ──────────────────────────
 

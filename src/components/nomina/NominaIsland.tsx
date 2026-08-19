@@ -390,7 +390,7 @@ function ConceptsEditor({ concepts, onChange }: { concepts: PayrollConcept[]; on
     onChange([...concepts, { label: '', amountUsd: 0, frequency: 'WEEKLY' }]);
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+    <div className="concepts-editor" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {concepts.map((c, idx) => (
         <div key={idx} className="concept-row">
           <div>

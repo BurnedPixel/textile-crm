@@ -104,7 +104,7 @@ export default function ConfiguracionIsland() {
   async function handleSaveRate(e: React.FormEvent) {
     e.preventDefault();
     setSaveError(null);
-    const rate = parseFloat(rateInput);
+    const rate = Number(rateInput);
     if (!(rate > 0)) {
       setSaveError('La tasa debe ser mayor que cero.');
       return;

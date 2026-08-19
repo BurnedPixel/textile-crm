@@ -123,8 +123,18 @@
 
   /* /nomina: worker list + form side by side → stacked */
   .nomina-split { display: flex; }
+  .concepts-editor { container-type: inline-size; }
   .concept-row { display: flex; gap: 8px; align-items: flex-end; }
   .concept-row > :first-child { flex: 2; min-width: 0; }
+  /* The fixed-width Monto/Frecuencia/Quitar trio needs ~340px; below ~520px of
+     CONTAINER (not viewport — the form is a half-width column on tablets) the
+     flexible Concepto would starve, so the row wraps: Concepto full line,
+     the rest below with Monto turning flexible. */
+  @container (max-width: 519px) {
+    .concept-row { flex-wrap: wrap; }
+    .concept-row > :first-child { flex: 1 1 100%; }
+    .concept-row > :nth-child(2) { width: auto !important; flex: 1 1 90px; }
+  }
 
   /* Form field grids → single column */
   .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -162,12 +172,7 @@
     .venta-divider { display: none; }
     .clients-split { grid-template-columns: 1fr; }
     .nomina-split { flex-direction: column; }
-    /* phone: the fixed-width Monto/Frecuencia/Quitar trio starves the flexible
-       Concepto to 0px (labels overprint) — wrap instead: Concepto full line,
-       the rest below with Monto turning flexible */
-    .concept-row { flex-wrap: wrap; }
-    .concept-row > :first-child { flex: 1 1 100%; }
-    .concept-row > :nth-child(2) { width: auto !important; flex: 1 1 90px; }
+
     .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; }
     /* Short numeric fields pair two-up; saves ~90-100px vs single-column */
     .form-grid-compact { grid-template-columns: 1fr 1fr; }
