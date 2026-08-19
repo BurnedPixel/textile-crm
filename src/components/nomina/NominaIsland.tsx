@@ -392,8 +392,8 @@ function ConceptsEditor({ concepts, onChange }: { concepts: PayrollConcept[]; on
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {concepts.map((c, idx) => (
-        <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-          <div style={{ flex: 2, minWidth: 0 }}>
+        <div key={idx} className="concept-row">
+          <div>
             <Field label="Concepto">
               <Combobox
                 value={c.label}
