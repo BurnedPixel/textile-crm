@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { makeTestDb } from './testdb';
 import { weekPeriod, monthPeriod, shiftPeriod, buildReport, buildPayrollSummary } from './report';
+import { round2 } from './format';
 import {
   saleIdOf, expenseIdOf, movementIdOf, paymentIdOf, refundIdOf,
   type SaleDoc, type ExpenseDoc, type InventoryMovementDoc, type PaymentDoc, type RefundDoc,
-  type PayrollPayDoc,
+  type PayrollPayDoc, type ClientDoc, type BatchDoc, type ProductDoc,
 } from './types';
 
 // ---- Period math ----
@@ -207,6 +208,152 @@ describe('buildReport — seeded scenario', () => {
     expect(report.collections).toEqual({ paymentsCount: 0, collectedUsd: 0, refundsCount: 0, refundedUsd: 0 });
     expect(report.expenses).toEqual({ count: 0, totalUsd: 0, fixedUsd: 0, variableUsd: 0, byCategory: [] });
     expect(report.movements).toEqual({ byReason: [], kgIn: 0, kgOut: 0, unitsIn: 0, unitsOut: 0 });
+    expect(report.daily.every((d) => d.facturadoUsd === 0 && d.cobradoUsd === 0)).toBe(true);
+    expect(report.avgTicketUsd).toBe(0);
+    expect(report.bestDay).toBeNull();
+    expect(report.topClients).toEqual([]);
+    expect(report.topArticles).toEqual([]);
+    expect(report.cogs).toEqual({ costUsd: 0, grossMarginUsd: 0, marginPct: 0, coverage: 0 });
+    expect(report.previous).toEqual({ count: 0, grandTotalUsd: 0, expensesTotalUsd: 0, collectedUsd: 0 });
+    expect(report.inventory).toEqual({ topOut: [], topIn: [] });
+    expect(report.stockNow).toEqual({ batches: 0, kg: 0, units: 0, valueUsd: 0 });
+  });
+});
+
+describe('buildReport — period boundary', () => {
+  it('attributes a sale by its LOCAL calendar day, not by the UTC day in its id', async () => {
+    const db = makeTestDb();
+    // 23:30 on the last local day of August. West of Greenwich that instant is
+    // already September in UTC — which is what the id (and the scan) carry.
+    const date = new Date(2026, 7, 31, 23, 30).toISOString();
+    const db_id = saleIdOf(date, 'Z');
+    await db.put(sale(db_id, date, { totalUsd: 100 }));
+
+    const agosto = await buildReport(db, monthPeriod(new Date(2026, 7, 1)));
+    expect(agosto.sales.count).toBe(1);
+    expect(agosto.daily[agosto.daily.length - 1]).toMatchObject({ date: '2026-08-31', facturadoUsd: 100 });
+
+    const septiembre = await buildReport(db, monthPeriod(new Date(2026, 8, 1)));
+    expect(septiembre.sales.count).toBe(0);
+  });
+});
+
+describe('buildReport — performance metrics', () => {
+  it('computes daily series, top clients/articles, COGS, previous period and stock snapshot', async () => {
+    const db = makeTestDb();
+    const day1 = '2026-08-03T10:00:00.000Z';
+    const day2 = '2026-08-04T10:00:00.000Z';
+
+    await db.put({
+      _id: 'client:v-1', type: 'client', documentId: 'V-1', entityType: 'PERSON',
+      name: 'ANA PEREZ', address: '', phoneNumber: '', email: '', specialty: [],
+      updatedAt: day1,
+    } as ClientDoc);
+
+    await db.put({
+      _id: 'batch:azul:30:jersey', type: 'batch', color: 'Azul', nm: '30', fabricType: 'Jersey',
+      productType: 'ROLL', initialUnitCount: 1, currentUnits: 1, location: '', createdAt: day1,
+    } as BatchDoc);
+    await db.put({
+      _id: 'product:batch:azul:30:jersey:R1', type: 'product', batchId: 'batch:azul:30:jersey',
+      pieceId: 'R1', initialWeightKg: 20, currentWeightKg: 15, purchaseValueUsd: 2, salePriceUsd: 5,
+      conditionTag: 'FIRST', createdAt: day1,
+    } as ProductDoc);
+
+    // Second batch, whose lone product carries NO cost — exercises `coverage`.
+    await db.put({
+      _id: 'batch:negro:20:algodon', type: 'batch', color: 'Negro', nm: '20', fabricType: 'Algodón',
+      productType: 'COMBO', initialUnitCount: 10, currentUnits: 4, location: '', createdAt: day1,
+    } as BatchDoc);
+    await db.put({
+      _id: 'product:batch:negro:20:algodon:stock', type: 'product', batchId: 'batch:negro:20:algodon',
+      pieceId: 'stock', initialWeightKg: 0, currentWeightKg: 0, purchaseValueUsd: 0, salePriceUsd: 3,
+      conditionTag: 'FIRST', createdAt: day1,
+    } as ProductDoc);
+
+    // Sale day 1: client Ana, one line off the Jersey roll (cost known) → $50.
+    await db.put(sale(saleIdOf(day1, 'A'), day1, {
+      clientId: 'client:v-1', totalUsd: 50,
+      lineItems: [{
+        productId: 'product:batch:azul:30:jersey:R1', batchId: 'batch:azul:30:jersey',
+        description: 'Azul · 30 · Jersey', quantity: 5, unitOfMeasure: 'Kg',
+        unitPriceAtSale: 10, lineSubtotalUsd: 50,
+      }],
+    }));
+    // Sale day 2: walk-in (Contado), Negro combo line (cost UNKNOWN) → $30, bigger than day 1.
+    await db.put(sale(saleIdOf(day2, 'B'), day2, {
+      clientId: null, totalUsd: 90,
+      lineItems: [{
+        productId: 'product:batch:negro:20:algodon:stock', batchId: 'batch:negro:20:algodon',
+        description: 'Negro · 20 · Algodón', quantity: 10, unitOfMeasure: 'Units',
+        unitPriceAtSale: 9, lineSubtotalUsd: 90,
+      }],
+    }));
+
+    // Movement: 5 Kg IN and 5 Kg OUT on the same jersey roll product (mixed signs, one line each).
+    await db.put(movement(movementIdOf(day1, 'm1'), day1, {
+      movementType: 'ADJUST', reason: 'Ajuste',
+      lineItems: [
+        { productId: 'product:batch:azul:30:jersey:R1', quantityChanged: 8, unitOfMeasure: 'Kg', conditionTag: 'FIRST' },
+        { productId: 'product:batch:azul:30:jersey:R1', quantityChanged: -3, unitOfMeasure: 'Kg', conditionTag: 'FIRST' },
+      ],
+    }));
+
+    // Previous period (the week before day1's week) — one sale, for the `previous` comparison.
+    const prevDate = '2026-07-27T10:00:00.000Z';
+    await db.put(sale(saleIdOf(prevDate, 'P'), prevDate, { totalUsd: 40 }));
+
+    const period = weekPeriod(new Date(2026, 7, 3)); // Monday 3 Aug 2026 .. Sunday 9 Aug
+    const report = await buildReport(db, period);
+
+    // Daily series covers the whole week, zero-filled, matching each day's totals.
+    expect(report.daily).toHaveLength(7);
+    expect(report.daily[0].date).toBe(period.start);
+    const d1 = report.daily.find((d) => d.date === '2026-08-03')!;
+    const d2 = report.daily.find((d) => d.date === '2026-08-04')!;
+    expect(d1.facturadoUsd).toBe(50);
+    expect(d2.facturadoUsd).toBe(90);
+
+    expect(report.avgTicketUsd).toBe(70); // (50+90)/2
+    expect(report.bestDay).toEqual({ date: '2026-08-04', totalUsd: 90 });
+
+    expect(report.topClients).toEqual(expect.arrayContaining([
+      { label: 'ANA PEREZ', value: 50 },
+      { label: 'Contado', value: 90 },
+    ]));
+
+    expect(report.topArticles).toEqual(expect.arrayContaining([
+      { label: 'Negro · 20 · Algodón', usd: 90, kg: 0, units: 10 },
+      { label: 'Azul · 30 · Jersey', usd: 50, kg: 5, units: 0 },
+    ]));
+
+    // Cost: only the Jersey line has a costed product (5kg * $2 = $10); Negro's product costs 0.
+    expect(report.cogs.costUsd).toBe(10);
+    expect(report.cogs.grossMarginUsd).toBe(round2(report.sales.baseUsd - 10));
+    expect(report.cogs.coverage).toBe(0.3571); // only the Jersey line's $50 is costed of $140
+
+    expect(report.previous.count).toBe(1);
+    expect(report.previous.grandTotalUsd).toBe(40);
+
+    expect(report.inventory.topIn).toEqual([{ label: 'Azul · 30 · Jersey', value: 8 }]);
+    expect(report.inventory.topOut).toEqual([{ label: 'Azul · 30 · Jersey', value: 3 }]);
+
+    // Stock now: jersey roll has 15kg left (worth $2/kg), Negro combo has 4 units (worth $0/unit).
+    expect(report.stockNow).toEqual({ batches: 2, kg: 15, units: 4, valueUsd: 30 });
+  });
+
+  it('empty base never throws and zeroes every new field', async () => {
+    const db = makeTestDb();
+    const report = await buildReport(db, monthPeriod(new Date(2020, 0, 1)));
+    expect(report.daily.length).toBeGreaterThan(0);
+    expect(report.daily.every((d) => d.facturadoUsd === 0)).toBe(true);
+    expect(report.avgTicketUsd).toBe(0);
+    expect(report.bestDay).toBeNull();
+    expect(report.topClients).toEqual([]);
+    expect(report.topArticles).toEqual([]);
+    expect(report.cogs).toEqual({ costUsd: 0, grossMarginUsd: 0, marginPct: 0, coverage: 0 });
+    expect(report.inventory).toEqual({ topOut: [], topIn: [] });
+    expect(report.stockNow).toEqual({ batches: 0, kg: 0, units: 0, valueUsd: 0 });
   });
 });
 

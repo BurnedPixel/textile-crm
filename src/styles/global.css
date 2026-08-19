@@ -428,10 +428,8 @@
   @page { margin: 10mm; }
   body { background: #fff; }
   body * { visibility: hidden; }
-  .nota-entrega, .nota-entrega *,
-  .informe-report, .informe-report * { visibility: visible; }
-  .nota-entrega,
-  .informe-report {
+  .nota-entrega, .nota-entrega * { visibility: visible; }
+  .nota-entrega {
     position: absolute;
     inset: 0 auto auto 0;
     width: 100%;

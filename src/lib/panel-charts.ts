@@ -26,6 +26,12 @@ export function dailySalesSeries(
   refunds: RefundDoc[],
   days: number,
   todayIso: string,
+  /**
+   * Instant -> day key. Default: UTC day (the Panel's convention, same as
+   * todaySales); report.ts passes a local-day key so its buckets match the
+   * local calendar its periods are built from.
+   */
+  dayOf: (iso: string) => string = (iso) => iso.slice(0, 10),
 ): DayPoint[] {
   const points = new Map<string, DayPoint>();
   const end = new Date(`${todayIso}T00:00:00Z`).getTime();
@@ -34,17 +40,17 @@ export function dailySalesSeries(
     points.set(date, { date, facturadoUsd: 0, cobradoUsd: 0 });
   }
   for (const s of sales) {
-    const p = points.get(s.date.slice(0, 10));
+    const p = points.get(dayOf(s.date));
     if (!p) continue;
     p.facturadoUsd += grandTotalUsd(s);
     p.cobradoUsd += usdPaid(s.paidUsdCash, s.paidUsdTransfer, s.paidBs, s.exchangeRateBCV);
   }
   for (const pay of payments) {
-    const p = points.get(pay.date.slice(0, 10));
+    const p = points.get(dayOf(pay.date));
     if (p) p.cobradoUsd += usdPaid(pay.paidUsdCash, pay.paidUsdTransfer, pay.paidBs, pay.exchangeRateBCV);
   }
   for (const r of refunds) {
-    const p = points.get(r.date.slice(0, 10));
+    const p = points.get(dayOf(r.date));
     if (p) p.cobradoUsd -= usdPaid(r.givenUsdCash, r.givenUsdTransfer, r.givenBs, r.exchangeRateBCV);
   }
   return [...points.values()].map((p) => ({
