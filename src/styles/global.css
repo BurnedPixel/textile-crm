@@ -25,6 +25,11 @@
   --color-rose: #CB9DA2;     /* status pastel: PENDING */
   --color-amber: #65451D;    /* warm tag-border accent */
 
+  /* Chart series marks (validated: lightness band, chroma, CVD ΔE, contrast).
+     The UI tokens are too dark/gray as data marks — these exist for charts only. */
+  --color-chart-violet: #6C5CA8;
+  --color-chart-brass: #B08A2E;
+
   /* Typography */
   --font-sans: "Archivo Variable", "Archivo", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -171,6 +176,9 @@
   /* /clientes: master-detail split → stacked */
   .clients-split { display: grid; grid-template-columns: 340px 1px 1fr; flex: 1; min-height: 0; }
 
+  /* Panel chart cards: 2-up on desktop → stacked on phones */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+
   /* /nomina: worker list + form side by side → stacked */
   .nomina-split { display: flex; }
   .concepts-editor { container-type: inline-size; }
@@ -222,6 +230,7 @@
     .venta-divider { display: none; }
     .clients-split { grid-template-columns: 1fr; }
     .nomina-split { flex-direction: column; }
+    .chart-grid { grid-template-columns: 1fr; }
 
     .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; }
     /* Short numeric fields pair two-up; saves ~90-100px vs single-column */
