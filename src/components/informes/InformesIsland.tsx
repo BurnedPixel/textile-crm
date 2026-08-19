@@ -3,6 +3,7 @@
 // rates make a single Bs total a lie). Nómina section only for isAdmin(), and
 // only if buildPayrollSummary succeeds — a failure hides the section rather
 // than breaking the page. UI: SPANISH. Code/fields: ENGLISH.
+// Export is .xlsx (buildInformeSheets + buildXlsx) — no PDF, no print.
 
 import { useEffect, useState } from 'react';
 import { db } from '../../lib/db';
@@ -12,14 +13,28 @@ import {
   weekPeriod, monthPeriod, shiftPeriod, buildReport, buildPayrollSummary,
   type ReportPeriod, type ReportData, type PayrollSummary,
 } from '../../lib/report';
+import { buildInformeSheets } from '../../lib/informe-xlsx';
+import { buildXlsx } from '../../lib/xlsx';
+import { fmtUsd, fmtKg, fmtUnits } from '../../lib/format';
 import { Button, Kbd, Money } from '../ui';
+import { ChartCard, SalesLegend, SalesLineChart, BarList, CHART_VIOLET, CHART_BRASS } from '../panel/charts';
+
+const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+// null = no comparable base (an empty previous period is not "+100%" growth).
+function variance(current: number, previous: number): { text: string; positive: boolean } | null {
+  if (previous === 0) return null;
+  const pct = ((current - previous) / previous) * 100;
+  const sign = pct >= 0 ? '+' : '';
+  return { text: `${sign}${pct.toFixed(0)}%`, positive: pct >= 0 };
+}
 
 export default function InformesIsland() {
   const [kind, setKind] = useState<'WEEK' | 'MONTH'>('WEEK');
   const [period, setPeriod] = useState<ReportPeriod>(() => weekPeriod(new Date()));
   const [report, setReport] = useState<ReportData | null>(null);
   const [payroll, setPayroll] = useState<PayrollSummary | null>(null);
-  const [sharingPdf, setSharingPdf] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const admin = isAdmin();
 
   useEffect(() => {
@@ -40,13 +55,14 @@ export default function InformesIsland() {
     setPeriod(next === 'WEEK' ? weekPeriod(new Date()) : monthPeriod(new Date()));
   }
 
-  async function handleSharePdf() {
+  async function handleExportExcel() {
     if (!report) return;
-    setSharingPdf(true);
+    setExporting(true);
     try {
-      const { buildInformePdf } = await import('../../lib/informe-pdf');
-      const buf = buildInformePdf(report, admin ? payroll : null);
-      const file = new File([buf], `informe-${report.period.start}.pdf`, { type: 'application/pdf' });
+      const sheets = await buildInformeSheets(db, period, report, admin ? nominaDb() : null);
+      const bytes = buildXlsx(sheets);
+      const name = `informe-${report.period.start}_${report.period.end}.xlsx`;
+      const file = new File([bytes as BlobPart], name, { type: XLSX_TYPE });
       if (navigator.canShare?.({ files: [file] })) {
         try {
           await navigator.share({ files: [file], title: 'Informe' });
@@ -62,35 +78,38 @@ export default function InformesIsland() {
         URL.revokeObjectURL(url);
       }
     } catch (err) {
-      console.error('informe PDF', err);
+      console.error('informe xlsx', err);
     } finally {
-      setSharingPdf(false);
+      setExporting(false);
     }
   }
 
   if (!report) return null;
 
+  const salesVar = variance(report.sales.grandTotalUsd, report.previous.grandTotalUsd);
+  const countVar = variance(report.sales.count, report.previous.count);
+  const expensesVar = variance(report.expenses.totalUsd, report.previous.expensesTotalUsd);
+  const collectedVar = variance(report.collections.collectedUsd, report.previous.collectedUsd);
+
   return (
     <div className="informe-report" style={{ maxWidth: '860px' }}>
-      {/* Page header + period picker */}
-      <div className="no-print" style={{ marginBottom: '1.5rem', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-end' }}>
+      <div style={{ marginBottom: '1.5rem', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-end' }}>
         <div>
           <h1 className="title-display" style={{ margin: 0 }}>
             Informes
           </h1>
           <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-thread)', marginTop: '4px' }}>
-            Resumen de ventas, cobros, gastos y movimientos. <span className="kbd-hints"><Kbd>g r</Kbd></span>
+            Desempeño y datos de ventas, cobros, gastos y movimientos. <span className="kbd-hints"><Kbd>g r</Kbd></span>
           </p>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          <Button variant="ghost" size="lg" onClick={() => window.print()}>Imprimir</Button>
-          <Button variant="ghost" size="lg" onClick={handleSharePdf} disabled={sharingPdf}>
-            {sharingPdf ? 'Generando…' : 'Compartir PDF'}
+          <Button variant="ghost" size="lg" onClick={handleExportExcel} disabled={exporting}>
+            {exporting ? 'Generando…' : 'Exportar Excel'}
           </Button>
         </div>
       </div>
 
-      <div className="no-print" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', border: '1px solid var(--color-thread)', borderRadius: '8px', overflow: 'hidden' }}>
           {(['WEEK', 'MONTH'] as const).map((k) => (
             <button
@@ -118,19 +137,32 @@ export default function InformesIsland() {
         </div>
       </div>
 
-      {/* Print-only period label */}
-      <div className="print-only" style={{ display: 'none', fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>
-        {report.period.label}
+      {/* ---- KPIs ---- */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '1.5rem' }}>
+        <Kpi label="Total vendido" value={fmtUsd(report.sales.grandTotalUsd)} delta={salesVar} />
+        <Kpi label="Nº de ventas" value={String(report.sales.count)} delta={countVar} />
+        <Kpi label="Ticket promedio" value={fmtUsd(report.avgTicketUsd)} />
+        <Kpi label="Cobros posteriores" value={fmtUsd(report.collections.collectedUsd)} delta={collectedVar} />
+        <Kpi label="Gastos" value={fmtUsd(report.expenses.totalUsd)} delta={expensesVar} invert />
+        <Kpi label="Utilidad bruta estimada" value={fmtUsd(report.cogs.grossMarginUsd)} />
       </div>
 
-      <Section title="Ventas">
-        <StatRow label="Cantidad de ventas" value={String(report.sales.count)} />
-        <StatRow label="Base" money={report.sales.baseUsd} />
-        <StatRow label="IVA" money={report.sales.ivaUsd} />
-        <StatRow label="IGTF" money={report.sales.igtfUsd} />
-        <StatRow label="Total general" money={report.sales.grandTotalUsd} strong />
-        <StatRow label="En libros / no en libros" value={`${report.sales.onBooksCount} / ${report.sales.offBooksCount}`} />
-      </Section>
+      <ChartCard title="Ventas y cobros del periodo" aside={<SalesLegend />}>
+        <SalesLineChart series={report.daily} />
+      </ChartCard>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', margin: '1.5rem 0' }}>
+        <ChartCard title="Top clientes">
+          {report.topClients.length > 0
+            ? <BarList rows={report.topClients} color={CHART_VIOLET} fmt={fmtUsd} />
+            : <Empty />}
+        </ChartCard>
+        <ChartCard title="Top artículos ($)">
+          {report.topArticles.length > 0
+            ? <BarList rows={report.topArticles.map((a) => ({ label: a.label, value: a.usd }))} color={CHART_VIOLET} fmt={fmtUsd} />
+            : <Empty />}
+        </ChartCard>
+      </div>
 
       <Section title="Cobros y vueltos">
         <StatRow label="Cobros posteriores (abonos)" value={String(report.collections.paymentsCount)} />
@@ -145,22 +177,49 @@ export default function InformesIsland() {
         <StatRow label="Fijos" money={report.expenses.fixedUsd} />
         <StatRow label="Variables" money={report.expenses.variableUsd} />
         {report.expenses.byCategory.length > 0 && (
-          <MiniTable
-            headers={['Categoría', '#', 'Total']}
-            rows={report.expenses.byCategory.map((c) => [c.category, String(c.count), <Money key="m" usd={c.totalUsd} />])}
-          />
+          <div style={{ overflowX: 'auto' }}>
+            <MiniTable
+              headers={['Categoría', '#', 'Total']}
+              rows={report.expenses.byCategory.map((c) => [c.category, String(c.count), <Money key="m" usd={c.totalUsd} />])}
+            />
+          </div>
         )}
       </Section>
 
-      <Section title="Movimientos de inventario">
+      <Section title="Inventario">
         <StatRow label="Kg entrada / salida" value={`${report.movements.kgIn} / ${report.movements.kgOut}`} />
         <StatRow label="Unidades entrada / salida" value={`${report.movements.unitsIn} / ${report.movements.unitsOut}`} />
-        {report.movements.byReason.length > 0 && (
-          <MiniTable
-            headers={['Motivo', '#', 'Kg (neto)', 'Unidades (neto)']}
-            rows={report.movements.byReason.map((r) => [r.reason, String(r.count), String(r.kg), String(r.units)])}
-          />
+        {report.inventory.topOut.length > 0 && (
+          <div style={{ marginTop: '8px' }}>
+            <p className="micro-label" style={{ marginBottom: '6px' }}>• Artículos con más salida (Kg)</p>
+            <BarList rows={report.inventory.topOut} color={CHART_BRASS} fmt={fmtKg} />
+          </div>
         )}
+        {report.movements.byReason.length > 0 && (
+          <div style={{ overflowX: 'auto', marginTop: '8px' }}>
+            <MiniTable
+              headers={['Motivo', '#', 'Kg (neto)', 'Unidades (neto)']}
+              rows={report.movements.byReason.map((r) => [r.reason, String(r.count), String(r.kg), String(r.units)])}
+            />
+          </div>
+        )}
+        <p className="micro-label" style={{ marginTop: '10px' }}>• Stock actual (hoy)</p>
+        <StatRow label="Artículos" value={String(report.stockNow.batches)} />
+        <StatRow label="Kg" value={fmtKg(report.stockNow.kg)} />
+        <StatRow label="Unidades" value={fmtUnits(report.stockNow.units)} />
+        <StatRow label="Valor de stock" money={report.stockNow.valueUsd} />
+      </Section>
+
+      <Section title="Rentabilidad">
+        <StatRow label="Base" money={report.sales.baseUsd} />
+        <StatRow label="Costo estimado" money={report.cogs.costUsd} />
+        <StatRow label="Utilidad bruta" money={report.cogs.grossMarginUsd} strong />
+        <StatRow label="Margen" value={`${Math.round(report.cogs.marginPct * 100)}%`} />
+        <p style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--color-thread)', marginTop: '4px' }}>
+          Costo estimado a partir del costo de compra registrado HOY en cada rollo/artículo vendido —
+          cubre el {Math.round(report.cogs.coverage * 100)}% del monto vendido. Si se corrige el costo de un
+          rollo, esta cifra cambia también en informes ya cerrados; no es una cifra contable exacta.
+        </p>
       </Section>
 
       {admin && payroll && (
@@ -168,6 +227,30 @@ export default function InformesIsland() {
           <StatRow label="Cantidad de pagos" value={String(payroll.count)} />
           <StatRow label="Total" money={payroll.totalUsd} strong />
         </Section>
+      )}
+    </div>
+  );
+}
+
+function Empty() {
+  return <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>Sin datos en este periodo.</p>;
+}
+
+function Kpi({ label, value, delta, invert }: { label: string; value: string; delta?: { text: string; positive: boolean } | null; invert?: boolean }) {
+  const good = delta ? (invert ? !delta.positive : delta.positive) : true;
+  return (
+    <div className="card" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
+      <span className="micro-label">{label}</span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-ink)' }}>{value}</span>
+      {delta !== undefined && (
+        <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
+          {delta ? (
+            <span className={`tag ${good ? 'tag-sage' : 'tag-rose'}`} style={{ fontSize: '11px', padding: '2px 8px' }}>{delta.text}</span>
+          ) : (
+            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--color-thread)' }}>—</span>
+          )}
+          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '10px', color: 'var(--color-thread)' }}>vs anterior</span>
+        </span>
       )}
     </div>
   );

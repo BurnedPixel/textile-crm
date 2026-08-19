@@ -5,8 +5,10 @@
 // Money math is never re-derived here: saleTaxes/usdPaid/round2 come from
 // queries.ts, the one definition every other module already shares.
 
-import { scanLedger, saleTaxes, usdPaid } from './queries';
+import { scanLedger, scanPrefix, saleTaxes, usdPaid } from './queries';
 import { round2, round3 } from './format';
+import { dailySalesSeries, type DayPoint, type RankedRow } from './panel-charts';
+import { hasRollStock } from './types';
 import type {
   SaleDoc,
   PaymentDoc,
@@ -14,6 +16,9 @@ import type {
   ExpenseDoc,
   InventoryMovementDoc,
   PayrollPayDoc,
+  BatchDoc,
+  ProductDoc,
+  ClientDoc,
 } from './types';
 
 type DB = PouchDB.Database;
@@ -37,6 +42,12 @@ function fromIsoDate(iso: string): Date {
   const [y, m, day] = iso.split('-').map(Number);
   return new Date(y, m - 1, day);
 }
+
+/** A fraction kept to 2 decimals OF ITS PERCENTAGE (0.357142 -> 0.3571). */
+const pct4 = (v: number): number => Math.round(v * 10000) / 10000;
+
+/** A doc's UTC instant as the LOCAL calendar day it happened on. */
+const localDay = (iso: string): string => toIsoDate(new Date(iso));
 
 export interface ReportPeriod {
   kind: 'WEEK' | 'MONTH';
@@ -116,12 +127,35 @@ export interface MovementsSummary {
   unitsOut: number;
 }
 
+/** batch: color · NM · fabricType — same shape used everywhere else (frozen descriptions, panel). */
+function batchLabel(batch: BatchDoc | undefined, fallback: string): string {
+  return batch ? `${batch.color} · ${batch.nm} · ${batch.fabricType}` : fallback;
+}
+
+/** Top `n` entries of a label→value map, descending, no "Otros" fold (unlike panel-charts' ranked). */
+function topN(m: Map<string, number>, n: number, round: (v: number) => number = round2): RankedRow[] {
+  return [...m.entries()]
+    .map(([label, value]) => ({ label, value: round(value) }))
+    .filter((r) => r.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, n);
+}
+
 export interface ReportData {
   period: ReportPeriod;
   sales: SalesSummary;
   collections: CollectionsSummary;
   expenses: ExpensesSummary;
   movements: MovementsSummary;
+  daily: DayPoint[];
+  avgTicketUsd: number;
+  bestDay: { date: string; totalUsd: number } | null;
+  topClients: RankedRow[];
+  topArticles: { label: string; usd: number; kg: number; units: number }[];
+  cogs: { costUsd: number; grossMarginUsd: number; marginPct: number; coverage: number };
+  previous: { count: number; grandTotalUsd: number; expensesTotalUsd: number; collectedUsd: number };
+  inventory: { topOut: RankedRow[]; topIn: RankedRow[] };
+  stockNow: { batches: number; kg: number; units: number; valueUsd: number };
 }
 
 function summarizeSales(sales: SaleDoc[]): SalesSummary {
@@ -212,22 +246,174 @@ function summarizeMovements(movements: InventoryMovementDoc[]): MovementsSummary
   };
 }
 
+/**
+ * Ledger scan bounds for a period. Ids embed a UTC instant while the period is
+ * local calendar days, so the bounds are the local day's first/last instant —
+ * the bare YYYY-MM-DD shifts the window by the UTC offset, and in VET (-04)
+ * every sale after 20:00 was reported in the following day (and month).
+ */
+export function periodScanOpts(period: ReportPeriod): { startDate: string; endDate: string } {
+  const end = fromIsoDate(period.end);
+  end.setHours(23, 59, 59, 999);
+  return { startDate: fromIsoDate(period.start).toISOString(), endDate: end.toISOString() };
+}
+
 /** Every summary in the period, zeroed (never throws) when it is empty. */
 export async function buildReport(db: DB, period: ReportPeriod): Promise<ReportData> {
-  const opts = { startDate: period.start, endDate: period.end };
-  const [sales, payments, refunds, expenses, movements] = await Promise.all([
+  const opts = periodScanOpts(period);
+  const prevPeriod = shiftPeriod(period, -1);
+  const prevOpts = periodScanOpts(prevPeriod);
+  const [sales, payments, refunds, expenses, movements, batches, products, clients, prevSales, prevPayments, prevRefunds, prevExpenses] = await Promise.all([
     scanLedger<SaleDoc>(db, 'sale:', opts),
     scanLedger<PaymentDoc>(db, 'payment:', opts),
     scanLedger<RefundDoc>(db, 'refund:', opts),
     scanLedger<ExpenseDoc>(db, 'expense:', opts),
     scanLedger<InventoryMovementDoc>(db, 'movement:', opts),
+    scanPrefix<BatchDoc>(db, 'batch:'),
+    scanPrefix<ProductDoc>(db, 'product:'),
+    scanPrefix<ClientDoc>(db, 'client:'),
+    scanLedger<SaleDoc>(db, 'sale:', prevOpts),
+    scanLedger<PaymentDoc>(db, 'payment:', prevOpts),
+    scanLedger<RefundDoc>(db, 'refund:', prevOpts),
+    scanLedger<ExpenseDoc>(db, 'expense:', prevOpts),
   ]);
+
+  const salesSummary = summarizeSales(sales);
+  const batchById = new Map(batches.map((b) => [b._id, b]));
+  const productById = new Map(products.map((p) => [p._id, p]));
+  const productsByBatchId = new Map<string, ProductDoc[]>();
+  for (const p of products) {
+    const arr = productsByBatchId.get(p.batchId) ?? [];
+    arr.push(p);
+    productsByBatchId.set(p.batchId, arr);
+  }
+  const clientById = new Map(clients.map((c) => [c._id, c]));
+
+  // ---- Daily series — exactly the period's calendar days, zero-filled. ----
+  const days = Math.round(
+    (fromIsoDate(period.end).getTime() - fromIsoDate(period.start).getTime()) / 86_400_000,
+  ) + 1;
+  // Local day keys — the same calendar the period bounds use, so every scanned
+  // doc lands in one of the buckets.
+  const daily = dailySalesSeries(sales, payments, refunds, days, period.end, localDay);
+  let bestDay: { date: string; totalUsd: number } | null = null;
+  for (const d of daily) {
+    if (d.facturadoUsd > 0 && (!bestDay || d.facturadoUsd > bestDay.totalUsd)) {
+      bestDay = { date: d.date, totalUsd: d.facturadoUsd };
+    }
+  }
+  const avgTicketUsd = salesSummary.count > 0 ? round2(salesSummary.grandTotalUsd / salesSummary.count) : 0;
+
+  // ---- Top clients / articles / COGS — one pass over lineItems. ----
+  const byClient = new Map<string, number>();
+  const articleUsd = new Map<string, number>();
+  const articleKg = new Map<string, number>();
+  const articleUnits = new Map<string, number>();
+  const articleLabel = new Map<string, string>();
+  let costUsd = 0, coveredSubtotal = 0, totalSubtotal = 0;
+  for (const s of sales) {
+    const clientLabel = s.clientId ? (clientById.get(s.clientId)?.name ?? s.clientId) : 'Contado';
+    byClient.set(clientLabel, (byClient.get(clientLabel) ?? 0) + saleTaxes(s).grandTotalUsd);
+    for (const li of s.lineItems) {
+      articleUsd.set(li.batchId, (articleUsd.get(li.batchId) ?? 0) + li.lineSubtotalUsd);
+      if (li.unitOfMeasure === 'Kg') {
+        articleKg.set(li.batchId, (articleKg.get(li.batchId) ?? 0) + li.quantity);
+      } else {
+        articleUnits.set(li.batchId, (articleUnits.get(li.batchId) ?? 0) + li.quantity);
+      }
+      if (!articleLabel.has(li.batchId)) {
+        articleLabel.set(li.batchId, batchLabel(batchById.get(li.batchId), li.batchId));
+      }
+      const product = productById.get(li.productId);
+      costUsd += li.quantity * (product?.purchaseValueUsd ?? 0);
+      totalSubtotal += li.lineSubtotalUsd;
+      if (product && product.purchaseValueUsd > 0) coveredSubtotal += li.lineSubtotalUsd;
+    }
+  }
+  const topClients = topN(byClient, 8);
+  const topArticles = [...articleUsd.entries()]
+    .map(([batchId, usd]) => ({
+      label: articleLabel.get(batchId) ?? batchId,
+      usd: round2(usd),
+      kg: round3(articleKg.get(batchId) ?? 0),
+      units: round2(articleUnits.get(batchId) ?? 0),
+    }))
+    .sort((a, b) => b.usd - a.usd)
+    .slice(0, 10);
+  const grossMarginUsd = round2(salesSummary.baseUsd - costUsd);
+  const cogs = {
+    costUsd: round2(costUsd),
+    grossMarginUsd,
+    // 4 decimals: these are fractions rendered as percentages, so round2 here
+    // would quantise every margin to whole points.
+    marginPct: salesSummary.baseUsd > 0 ? pct4(grossMarginUsd / salesSummary.baseUsd) : 0,
+    coverage: totalSubtotal > 0 ? pct4(coveredSubtotal / totalSubtotal) : 0,
+  };
+
+  // ---- Previous period, for variance. ----
+  const prevSalesSummary = summarizeSales(prevSales);
+  const prevCollections = summarizeCollections(prevPayments, prevRefunds);
+  const prevExpensesSummary = summarizeExpenses(prevExpenses);
+  const previous = {
+    count: prevSalesSummary.count,
+    grandTotalUsd: prevSalesSummary.grandTotalUsd,
+    expensesTotalUsd: prevExpensesSummary.totalUsd,
+    collectedUsd: prevCollections.collectedUsd,
+  };
+
+  // ---- Inventory movement — top Kg in/out by article, line-level (mixed signs). ----
+  const kgIn = new Map<string, number>();
+  const kgOut = new Map<string, number>();
+  for (const m of movements) {
+    for (const li of m.lineItems) {
+      if (li.unitOfMeasure !== 'Kg') continue;
+      const batchId = productById.get(li.productId)?.batchId;
+      const label = batchLabel(batchId ? batchById.get(batchId) : undefined, li.productId);
+      if (li.quantityChanged > 0) kgIn.set(label, (kgIn.get(label) ?? 0) + li.quantityChanged);
+      else kgOut.set(label, (kgOut.get(label) ?? 0) + -li.quantityChanged);
+    }
+  }
+  const inventory = { topOut: topN(kgOut, 8, round3), topIn: topN(kgIn, 8, round3) };
+
+  // ---- Current stock snapshot ("hoy", not the period). ----
+  let stockBatches = 0, stockKg = 0, stockUnits = 0, stockValueUsd = 0;
+  for (const b of batches) {
+    if (b.currentUnits <= 0) continue;
+    stockBatches++;
+    const batchProducts = productsByBatchId.get(b._id) ?? [];
+    if (b.productType === 'ROLL') {
+      for (const p of batchProducts) {
+        if (!hasRollStock(p.currentWeightKg)) continue;
+        stockKg += p.currentWeightKg;
+        stockValueUsd += p.currentWeightKg * p.purchaseValueUsd;
+      }
+    } else {
+      stockUnits += b.currentUnits;
+      stockValueUsd += b.currentUnits * (batchProducts[0]?.purchaseValueUsd ?? 0);
+    }
+  }
+  const stockNow = {
+    batches: stockBatches,
+    kg: round3(stockKg),
+    units: round2(stockUnits),
+    valueUsd: round2(stockValueUsd),
+  };
+
   return {
     period,
-    sales: summarizeSales(sales),
+    sales: salesSummary,
     collections: summarizeCollections(payments, refunds),
     expenses: summarizeExpenses(expenses),
     movements: summarizeMovements(movements),
+    daily,
+    avgTicketUsd,
+    bestDay,
+    topClients,
+    topArticles,
+    cogs,
+    previous,
+    inventory,
+    stockNow,
   };
 }
 
@@ -238,9 +424,7 @@ export interface PayrollSummary {
 
 /** Separate fn — the island calls it only when isAdmin() (nómina DB is admin-only). */
 export async function buildPayrollSummary(nominaDb: DB, period: ReportPeriod): Promise<PayrollSummary> {
-  const pays = await scanLedger<PayrollPayDoc>(nominaDb, 'payrollpay:', {
-    startDate: period.start, endDate: period.end,
-  });
+  const pays = await scanLedger<PayrollPayDoc>(nominaDb, 'payrollpay:', periodScanOpts(period));
   let totalUsd = 0;
   for (const p of pays) totalUsd += p.totalUsd;
   return { count: pays.length, totalUsd: round2(totalUsd) };

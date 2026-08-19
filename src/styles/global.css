@@ -138,6 +138,8 @@
   .tag-lavender { background-color: var(--color-lavender); }
   .tag-rose { background-color: var(--color-rose); }
   .tag-outline { border-color: var(--color-amber); color: var(--color-amber); }
+  /* Solid violet fill, cream text — the one dark fill in the family, for credit («A favor»). */
+  .tag-credit { background-color: var(--color-dye); color: var(--color-cloth); }
 
   /* Card base — flat white surface, hairline border, 8px. Components add
      layout inline; appearance lives here. */
@@ -426,10 +428,8 @@
   @page { margin: 10mm; }
   body { background: #fff; }
   body * { visibility: hidden; }
-  .nota-entrega, .nota-entrega *,
-  .informe-report, .informe-report * { visibility: visible; }
-  .nota-entrega,
-  .informe-report {
+  .nota-entrega, .nota-entrega * { visibility: visible; }
+  .nota-entrega {
     position: absolute;
     inset: 0 auto auto 0;
     width: 100%;
