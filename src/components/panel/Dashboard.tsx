@@ -869,6 +869,9 @@ export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [collecting, setCollecting] = useState<{ sale: SaleDoc; owedUsd: number } | null>(null);
   const [refunding, setRefunding] = useState<{ sale: SaleDoc; creditUsd: number } | null>(null);
+  // The chart opens on the week; 30 days is one click away. fetchAll already
+  // loads 30 points, so the toggle is a slice, never a refetch.
+  const [chartDaysShown, setChartDaysShown] = useState<7 | 30>(7);
 
   // The 150ms debounce (onDbChange) is shorter than a full include_docs scan,
   // so overlapping loads can resolve out of order. A monotonic generation
@@ -1007,8 +1010,27 @@ export default function Dashboard() {
       </div>
 
       {/* Charts — rows computed in fetchAll from the docs it already loads */}
-      <ChartCard title="Ventas y cobros — últimos 30 días" aside={<SalesLegend />}>
-        <SalesLineChart series={chartDays} />
+      <ChartCard
+        title={`Ventas y cobros — últimos ${chartDaysShown} días`}
+        aside={
+          <span style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <SalesLegend />
+            <span className="range-track">
+              {([7, 30] as const).map((d) => (
+                <button
+                  key={d}
+                  className={`range-chip${chartDaysShown === d ? ' active' : ''}`}
+                  aria-pressed={chartDaysShown === d}
+                  onClick={() => setChartDaysShown(d)}
+                >
+                  {d === 7 ? 'Semana' : '30 días'}
+                </button>
+              ))}
+            </span>
+          </span>
+        }
+      >
+        <SalesLineChart series={chartDaysShown === 30 ? chartDays : chartDays.slice(-7)} />
       </ChartCard>
 
       <div className="chart-grid">
