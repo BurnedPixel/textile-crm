@@ -253,7 +253,7 @@ export default function VentasIsland() {
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'right' }}>
                       {isCredit ? (
-                        <span style={{ color: 'var(--color-dye)', fontWeight: 600 }}>A favor {b.creditUsd.toFixed(2)} $</span>
+                        <span className="tag tag-credit">A favor {b.creditUsd.toFixed(2)} $</span>
                       ) : (
                         <span className={`tag ${PAYMENT_TAG[b.status]}`}>{PAYMENT_LABEL[b.status]}</span>
                       )}
@@ -268,7 +268,7 @@ export default function VentasIsland() {
                               {selectedBalance.owedUsd > SETTLED_EPSILON ? (
                                 <span className="tag tag-rose">Saldo pendiente {selectedBalance.owedUsd.toFixed(2)} $</span>
                               ) : selectedBalance.creditUsd > SETTLED_EPSILON ? (
-                                <span style={{ color: 'var(--color-dye)', fontWeight: 600 }}>A favor del cliente {selectedBalance.creditUsd.toFixed(2)} $</span>
+                                <span className="tag tag-credit">A favor del cliente {selectedBalance.creditUsd.toFixed(2)} $</span>
                               ) : (
                                 <span className="tag tag-sage">Pagada</span>
                               )}

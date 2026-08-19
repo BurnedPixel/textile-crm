@@ -759,19 +759,7 @@ function SidePanel({
                     >
                       {clientName(sale.clientId)}
                     </span>
-                    <span
-                      style={{
-                        fontFamily: 'var(--font-sans)',
-                        fontSize: '10px',
-                        fontWeight: 500,
-                        letterSpacing: '0.06em',
-                        textTransform: 'uppercase',
-                        color: 'var(--color-dye)',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      A favor
-                    </span>
+                    <span className="tag tag-credit">A favor</span>
                     <Money usd={credit} rate={rate} />
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>

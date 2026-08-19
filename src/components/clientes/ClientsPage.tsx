@@ -221,18 +221,7 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
             padding: '10px 14px',
           }}
         >
-          <span
-            style={{
-              fontFamily: 'var(--font-sans)',
-              fontSize: '12px',
-              fontWeight: 500,
-              color: 'var(--color-dye)',
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-            }}
-          >
-            A favor del cliente
-          </span>
+          <span className="tag tag-credit">A favor del cliente</span>
           <span
             style={{
               fontFamily: 'var(--font-mono)',
