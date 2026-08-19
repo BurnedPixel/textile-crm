@@ -335,8 +335,10 @@ function InventoryTable({ stocked, chart }: InventoryTableProps) {
         </span>
       </div>
 
-      {/* Table — reflows to stacked cards on phones (.table-cards) */}
-      <div>
+      {/* Table — reflows to stacked cards on phones (.table-cards); between the
+          card breakpoint and the table's natural width it scrolls inside this
+          container (the page body must never scroll horizontally). */}
+      <div style={{ overflowX: 'auto' }}>
         <table
           className="table-cards inv-table"
           style={{
