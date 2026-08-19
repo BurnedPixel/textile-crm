@@ -145,7 +145,7 @@ export default function GastosIsland() {
     <div style={{ maxWidth: '860px' }}>
       {/* Page header */}
       <div style={{ marginBottom: '1.75rem' }}>
-        <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '22px', fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
+        <h1 className="title-display" style={{ margin: 0 }}>
           Gastos
         </h1>
         <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-thread)', marginTop: '4px' }}>
@@ -157,8 +157,8 @@ export default function GastosIsland() {
       {/* Form card */}
       {/* noValidate — our Spanish messages, not the browser's localized bubbles. */}
       <form onSubmit={handleSubmit} noValidate>
-        <div className="card" style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', padding: '1.5rem', marginBottom: '2rem' }}>
-          <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-thread)', margin: '0 0 1.25rem' }}>
+        <div className="card" style={{ marginBottom: '2rem' }}>
+          <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-thread)', margin: '0 0 1.25rem' }}>
             Nuevo gasto
           </h2>
 
@@ -236,7 +236,7 @@ export default function GastosIsland() {
           </label>
 
           {formError && (
-            <div role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)', background: 'rgba(163,46,46,0.08)', border: '1px solid rgba(163,46,46,0.2)', borderRadius: '6px', padding: '10px 14px', marginBottom: '1rem' }}>
+            <div role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)', background: 'color-mix(in srgb, var(--color-danger) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--color-danger) 20%, transparent)', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem' }}>
               {formError.includes('Configure la tasa') ? (
                 <>
                   {formError.split('Configuración')[0]}
@@ -248,7 +248,7 @@ export default function GastosIsland() {
           )}
 
           {submitted && (
-            <div role="status" style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ok)', background: 'rgba(62,107,58,0.08)', border: '1px solid rgba(62,107,58,0.2)', borderRadius: '6px', padding: '10px 14px', marginBottom: '1rem' }}>
+            <div role="status" style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ok)', background: 'color-mix(in srgb, var(--color-ok) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--color-ok) 20%, transparent)', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem' }}>
               Gasto registrado correctamente.
             </div>
           )}
@@ -266,7 +266,7 @@ export default function GastosIsland() {
 
       {/* Month filter */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.25rem' }}>
-        <label style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-thread)' }}>
+        <label className="micro-label">
           Mes
         </label>
         <input
@@ -281,12 +281,12 @@ export default function GastosIsland() {
       {expenses.length === 0 ? (
         <EmptyState title="Sin gastos en este período" />
       ) : (
-        <div style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', overflow: 'hidden' }}>
+        <div style={{ background: 'var(--color-cloth)', border: '1px solid var(--color-bone)', borderRadius: '10px', overflow: 'hidden' }}>
           <table className="table-cards exp-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-thread)' }}>
                 {['Fecha', 'Categoría', 'Descripción', 'Fijo', 'Método', 'Monto'].map((h) => (
-                  <th key={h} style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-thread)', padding: '10px 14px', textAlign: h === 'Monto' ? 'right' : 'left' }}>
+                  <th key={h} style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-thread)', padding: '10px 14px', textAlign: h === 'Monto' ? 'right' : 'left' }}>
                     {h}
                   </th>
                 ))}
@@ -294,7 +294,7 @@ export default function GastosIsland() {
             </thead>
             <tbody>
               {expenses.map((e, i) => (
-                <tr key={e._id} style={{ borderBottom: i < expenses.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none' }}>
+                <tr key={e._id} style={{ borderBottom: i < expenses.length - 1 ? '1px solid color-mix(in srgb, var(--color-thread) 15%, transparent)' : 'none' }}>
                   <td style={tdStyle}>{fmtDate(e.date)}</td>
                   <td style={tdStyle}>
                     <Badge tone={categoryTone(e.category)}>{e.category}</Badge>
@@ -329,7 +329,7 @@ export default function GastosIsland() {
               Bs calculados a la tasa histórica de cada gasto
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-thread)' }}>
+              <span className="micro-label">
                 Total del mes
               </span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: '15px', fontWeight: 700, color: 'var(--color-ink)', fontFeatureSettings: '"tnum" 1' }}>
