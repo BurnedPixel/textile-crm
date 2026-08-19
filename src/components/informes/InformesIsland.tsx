@@ -5,21 +5,39 @@
 // than breaking the page. UI: SPANISH. Code/fields: ENGLISH.
 // Export is .xlsx (buildInformeSheets + buildXlsx) — no PDF, no print.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { db } from '../../lib/db';
 import { nominaDb } from '../../lib/nominadb';
 import { isAdmin } from '../../lib/auth';
 import {
-  weekPeriod, monthPeriod, shiftPeriod, buildReport, buildPayrollSummary,
-  type ReportPeriod, type ReportData, type PayrollSummary,
+  weekPeriod, fortnightPeriod, monthPeriod, quarterPeriod, halfPeriod, yearPeriod,
+  customPeriod, periodOf, shiftPeriod, buildReport, buildPayrollSummary, PERIOD_KIND_LABEL, fromIsoDate,
+  type PeriodKind, type ReportPeriod, type ReportData, type PayrollSummary,
 } from '../../lib/report';
 import { buildInformeSheets } from '../../lib/informe-xlsx';
 import { buildXlsx } from '../../lib/xlsx';
 import { fmtUsd, fmtKg, fmtUnits } from '../../lib/format';
-import { Button, Kbd, Money } from '../ui';
+import { Button, Input, Kbd, Money } from '../ui';
 import { ChartCard, SalesLegend, SalesLineChart, BarList, CHART_VIOLET, CHART_BRASS } from '../panel/charts';
 
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const MONTH_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const QUARTER_LABEL = ['1.er trimestre', '2.º trimestre', '3.er trimestre', '4.º trimestre'];
+const HALF_LABEL = ['1.er semestre', '2.º semestre'];
+const PERIOD_KINDS = Object.keys(PERIOD_KIND_LABEL) as PeriodKind[];
+
+/**
+ * The date a kind switch should land on: TODAY when the period being viewed
+ * contains it, otherwise the period's first day. Narrowing «Año 2026» to
+ * Semana should give this week, not the week of January 1st; narrowing a past
+ * month should stay in that month.
+ */
+function anchorDate(p: ReportPeriod): Date {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const start = fromIsoDate(p.start);
+  return today >= start && today <= fromIsoDate(p.end) ? today : start;
+}
 
 // null = no comparable base (an empty previous period is not "+100%" growth).
 function variance(current: number, previous: number): { text: string; positive: boolean } | null {
@@ -30,8 +48,9 @@ function variance(current: number, previous: number): { text: string; positive: 
 }
 
 export default function InformesIsland() {
-  const [kind, setKind] = useState<'WEEK' | 'MONTH'>('WEEK');
+  const [kind, setKind] = useState<PeriodKind>('WEEK');
   const [period, setPeriod] = useState<ReportPeriod>(() => weekPeriod(new Date()));
+  const [jumpOpen, setJumpOpen] = useState(false);
   const [report, setReport] = useState<ReportData | null>(null);
   const [payroll, setPayroll] = useState<PayrollSummary | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -50,9 +69,18 @@ export default function InformesIsland() {
     return () => { cancelled = true; };
   }, [period, admin]);
 
-  function switchKind(next: 'WEEK' | 'MONTH') {
+  // Switching kind keeps the date being looked at — periodOf(next, start of
+  // the current period) — never resets to today. CUSTOM has no natural
+  // container (periodOf falls back to the month), so it's special-cased to
+  // keep the exact same range and open the jump panel directly to edit it.
+  function switchKind(next: PeriodKind) {
     setKind(next);
-    setPeriod(next === 'WEEK' ? weekPeriod(new Date()) : monthPeriod(new Date()));
+    if (next === 'CUSTOM') {
+      setPeriod(customPeriod(period.start, period.end));
+      setJumpOpen(true);
+      return;
+    }
+    setPeriod(periodOf(next, anchorDate(period)));
   }
 
   async function handleExportExcel() {
@@ -109,32 +137,56 @@ export default function InformesIsland() {
         </div>
       </div>
 
+      {/* Independent pills, one per PeriodKind — wraps 2-3 rows at 360px, never scrolls. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+        {PERIOD_KINDS.map((k) => (
+          <button
+            key={k}
+            onClick={() => switchKind(k)}
+            style={{
+              padding: '6px 14px', borderRadius: '999px', cursor: 'pointer',
+              border: kind === k ? '1px solid var(--color-dye)' : '1px solid var(--color-thread)',
+              fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 700,
+              textTransform: 'uppercase', letterSpacing: '0.04em',
+              background: kind === k ? 'var(--color-dye)' : 'transparent',
+              color: kind === k ? 'var(--color-cloth)' : 'var(--color-ink)',
+            }}
+          >
+            {PERIOD_KIND_LABEL[k]}
+          </button>
+        ))}
+      </div>
+
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', border: '1px solid var(--color-thread)', borderRadius: '8px', overflow: 'hidden' }}>
-          {(['WEEK', 'MONTH'] as const).map((k) => (
-            <button
-              key={k}
-              onClick={() => switchKind(k)}
-              style={{
-                padding: '6px 14px', border: 'none', cursor: 'pointer',
-                fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 700,
-                textTransform: 'uppercase', letterSpacing: '0.04em',
-                background: kind === k ? 'var(--color-dye)' : 'transparent',
-                color: kind === k ? 'var(--color-cloth)' : 'var(--color-ink)',
-              }}
-            >
-              {k === 'WEEK' ? 'Semana' : 'Mes'}
-            </button>
-          ))}
-        </div>
         {/* ‹ label › wrap as one unit on narrow screens; min() keeps the desktop width stable */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
           <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, -1))} aria-label="Periodo anterior">‹</Button>
-          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 700, color: 'var(--color-ink)', minWidth: 'min(260px, 60vw)', textAlign: 'center' }}>
+          <button
+            onClick={() => setJumpOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={jumpOpen}
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 8px',
+              fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 700, color: 'var(--color-ink)',
+              minWidth: 'min(260px, 60vw)', textAlign: 'center', textDecoration: 'underline',
+              textDecorationColor: 'var(--color-thread)', textUnderlineOffset: '3px',
+              // A long CUSTOM label ("Del 30 de julio al 9 de septiembre de 2026")
+              // is wider than the box at 360px and spilled over the › arrow.
+              whiteSpace: 'normal', lineHeight: 1.3,
+            }}
+          >
             {report.period.label}
-          </span>
+          </button>
           <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, 1))} aria-label="Periodo siguiente">›</Button>
         </div>
+        {jumpOpen && (
+          <PeriodJumpPanel
+            kind={kind}
+            period={period}
+            onPick={(p) => { setPeriod(p); setJumpOpen(false); }}
+            onClose={() => setJumpOpen(false)}
+          />
+        )}
       </div>
 
       {/* ---- KPIs ---- */}
@@ -147,7 +199,10 @@ export default function InformesIsland() {
         <Kpi label="Utilidad bruta estimada" value={fmtUsd(report.cogs.grossMarginUsd)} />
       </div>
 
-      <ChartCard title="Ventas y cobros del periodo" aside={<SalesLegend />}>
+      <ChartCard
+        title={report.seriesGranularity === 'MONTH' ? 'Ventas y cobros por mes' : 'Ventas y cobros por día del periodo'}
+        aside={<SalesLegend />}
+      >
         <SalesLineChart series={report.daily} />
       </ChartCard>
 
@@ -313,5 +368,170 @@ function MiniTable({ headers, rows }: { headers: string[]; rows: React.ReactNode
         ))}
       </tbody>
     </table>
+  );
+}
+
+// ---- Period jump panel: two clicks to any month/quarter/half/year, a native
+// date picker for week/fortnight, and a custom range. Native <dialog> —
+// same pattern as CollectDialog/RefundDialog (PaymentDialogs.tsx): showModal()
+// on mount gives backdrop, Escape-to-close and the focus trap for free, and
+// its width already caps at calc(100vw - 32px) so it never overflows 360px. ----
+
+function gridBtnStyle(active: boolean): React.CSSProperties {
+  return {
+    padding: '8px 4px', borderRadius: '6px', cursor: 'pointer',
+    border: active ? '1px solid var(--color-dye)' : '1px solid var(--color-thread)',
+    background: active ? 'var(--color-dye)' : 'transparent',
+    color: active ? 'var(--color-cloth)' : 'var(--color-ink)',
+    fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500,
+  };
+}
+
+function PeriodJumpPanel({
+  kind, period, onPick, onClose,
+}: {
+  kind: PeriodKind;
+  period: ReportPeriod;
+  onPick: (p: ReportPeriod) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const periodStart = fromIsoDate(period.start);
+  const [year, setYear] = useState(periodStart.getFullYear());
+  const [yearAnchor, setYearAnchor] = useState(periodStart.getFullYear());
+  const [desde, setDesde] = useState(period.start);
+  const [hasta, setHasta] = useState(period.end);
+
+  useEffect(() => { ref.current?.showModal(); }, []);
+
+  const yearGrid = Array.from({ length: 8 }, (_, i) => yearAnchor - 7 + i);
+  const invalidCustom = fromIsoDate(desde).getTime() > fromIsoDate(hasta).getTime();
+
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      aria-label="Saltar de periodo"
+      style={{
+        border: '1px solid var(--color-thread)', borderRadius: '8px',
+        background: 'var(--color-cloth)', padding: '20px 24px',
+        width: 'min(420px, calc(100vw - 32px))', color: 'var(--color-ink)',
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-thread)', margin: 0 }}>
+          Ir a {PERIOD_KIND_LABEL[kind].toLowerCase()}
+        </h2>
+
+        {(kind === 'MONTH' || kind === 'QUARTER' || kind === 'HALF') && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+              <Button variant="ghost" size="md" onClick={() => setYear((y) => y - 1)} aria-label="Año anterior">‹</Button>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '15px', fontWeight: 700 }}>{year}</span>
+              <Button variant="ghost" size="md" onClick={() => setYear((y) => y + 1)} aria-label="Año siguiente">›</Button>
+            </div>
+            {kind === 'MONTH' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+                {MONTH_SHORT.map((label, m) => {
+                  const active = period.kind === 'MONTH' && periodStart.getFullYear() === year && periodStart.getMonth() === m;
+                  return (
+                    <button key={label} style={gridBtnStyle(active)} aria-current={active} onClick={() => onPick(monthPeriod(new Date(year, m, 1)))}>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {kind === 'QUARTER' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
+                {QUARTER_LABEL.map((label, q) => {
+                  const active = period.kind === 'QUARTER' && periodStart.getFullYear() === year && Math.floor(periodStart.getMonth() / 3) === q;
+                  return (
+                    <button key={label} style={gridBtnStyle(active)} aria-current={active} onClick={() => onPick(quarterPeriod(new Date(year, q * 3, 1)))}>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {kind === 'HALF' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
+                {HALF_LABEL.map((label, h) => {
+                  const active = period.kind === 'HALF' && periodStart.getFullYear() === year && (periodStart.getMonth() < 6 ? 0 : 1) === h;
+                  return (
+                    <button key={label} style={gridBtnStyle(active)} aria-current={active} onClick={() => onPick(halfPeriod(new Date(year, h * 6, 1)))}>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {kind === 'YEAR' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+              <Button variant="ghost" size="md" onClick={() => setYearAnchor((y) => y - 8)} aria-label="Años anteriores">‹</Button>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--color-thread)' }}>{yearGrid[0]}–{yearGrid[7]}</span>
+              <Button variant="ghost" size="md" onClick={() => setYearAnchor((y) => y + 8)} aria-label="Años siguientes">›</Button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+              {yearGrid.map((y) => {
+                const active = period.kind === 'YEAR' && periodStart.getFullYear() === y;
+                return (
+                  <button key={y} style={gridBtnStyle(active)} aria-current={active} onClick={() => onPick(yearPeriod(new Date(y, 0, 1)))}>
+                    {y}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {(kind === 'WEEK' || kind === 'FORTNIGHT') && (
+          <div>
+            <label className="micro-label" style={{ display: 'block', marginBottom: '6px' }}>Ir a la fecha</label>
+            <Input
+              type="date"
+              defaultValue={period.start}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                onPick(kind === 'WEEK' ? weekPeriod(fromIsoDate(e.target.value)) : fortnightPeriod(fromIsoDate(e.target.value)));
+              }}
+            />
+          </div>
+        )}
+
+        {kind === 'CUSTOM' && (
+          <>
+            <div className="form-grid-2">
+              <div>
+                <label className="micro-label" style={{ display: 'block', marginBottom: '6px' }}>Desde</label>
+                <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+              </div>
+              <div>
+                <label className="micro-label" style={{ display: 'block', marginBottom: '6px' }}>Hasta</label>
+                <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+              </div>
+            </div>
+            {invalidCustom && (
+              <p role="alert" style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-danger)', margin: 0 }}>
+                La fecha «Desde» debe ser anterior o igual a «Hasta».
+              </p>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button variant="primary" size="md" disabled={invalidCustom} onClick={() => onPick(customPeriod(desde, hasta))}>
+                Aplicar
+              </Button>
+            </div>
+          </>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button variant="ghost" size="md" onClick={() => ref.current?.close()}>Cerrar</Button>
+        </div>
+      </div>
+    </dialog>
   );
 }
