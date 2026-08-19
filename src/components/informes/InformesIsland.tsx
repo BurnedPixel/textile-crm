@@ -10,7 +10,7 @@ import { db } from '../../lib/db';
 import { nominaDb } from '../../lib/nominadb';
 import { isAdmin } from '../../lib/auth';
 import {
-  weekPeriod, monthPeriod, customPeriod, periodOf, shiftPeriod, buildReport, buildPayrollSummary, PERIOD_KIND_LABEL, fromIsoDate,
+  weekPeriod, monthPeriod, customPeriod, periodOf, shiftPeriod, buildReport, buildPayrollSummary, PERIOD_KIND_LABEL, fromIsoDate, toIsoDate,
   type PeriodKind, type ReportPeriod, type ReportData, type PayrollSummary,
 } from '../../lib/report';
 import { buildInformeSheets } from '../../lib/informe-xlsx';
@@ -29,7 +29,9 @@ const ROW_CAP = 200;
 
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const PERIOD_KINDS = Object.keys(PERIOD_KIND_LABEL) as PeriodKind[];
-const jumpInput: React.CSSProperties = { padding: '3px 8px', fontSize: '12px', width: 'auto' };
+const SHORT_KIND: Record<PeriodKind, string> = {
+  DAY: '1D', WEEK: '1S', MONTH: '1M', QUARTER: '3M', HALF: '6M', YEAR: '1A', CUSTOM: 'Rango',
+};
 
 // null = no comparable base (an empty previous period is not "+100%" growth).
 function variance(current: number, previous: number): { text: string; positive: boolean } | null {
@@ -46,6 +48,9 @@ export default function InformesIsland() {
   const [payroll, setPayroll] = useState<PayrollSummary | null>(null);
   const [exporting, setExporting] = useState(false);
   const admin = isAdmin();
+  // «Hoy» doubles as the indicator: filled when the period on screen contains today.
+  const todayIso = toIsoDate(new Date());
+  const showsToday = period.start <= todayIso && todayIso <= period.end;
 
   // Sheets power BOTH the on-screen "Datos" table and the Excel export — one
   // scan, cached per period key, so switching sheets/filtering never re-hits
@@ -143,26 +148,26 @@ export default function InformesIsland() {
       {/* The bound you type STAYS where you typed it: pushing the other one
           instead of letting customPeriod swap them, which made your date
           jump to the opposite box. */}
-      <Input
-        type="date" aria-label="Desde" value={period.start} max={period.end} style={jumpInput}
+      <input
+        type="date" aria-label="Desde" value={period.start} max={period.end}
         onChange={(e) => { const v = e.target.value;
           if (v) setPeriod(customPeriod(v, v > period.end ? v : period.end)); }}
       />
       <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>a</span>
-      <Input
-        type="date" aria-label="Hasta" value={period.end} min={period.start} style={jumpInput}
+      <input
+        type="date" aria-label="Hasta" value={period.end} min={period.start}
         onChange={(e) => { const v = e.target.value;
           if (v) setPeriod(customPeriod(v < period.start ? v : period.start, v)); }}
       />
     </>
   ) : kind === 'MONTH' ? (
-    <Input
-      type="month" aria-label="Ir al mes" value={period.start.slice(0, 7)} style={jumpInput}
+    <input
+      type="month" aria-label="Ir al mes" value={period.start.slice(0, 7)}
       onChange={(e) => e.target.value && setPeriod(monthPeriod(fromIsoDate(`${e.target.value}-01`)))}
     />
   ) : (
-    <Input
-      type="date" aria-label="Ir a la fecha" value={period.start} style={jumpInput}
+    <input
+      type="date" aria-label="Ir a la fecha" value={period.start}
       onChange={(e) => e.target.value && setPeriod(periodOf(kind, fromIsoDate(e.target.value)))}
     />
   );
@@ -227,27 +232,41 @@ export default function InformesIsland() {
             : 'Ventas y cobros por día del periodo'
         }
         aside={
-          <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
-            <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, -1))} aria-label="Periodo anterior">‹</Button>
-            <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, 1))} aria-label="Periodo siguiente">›</Button>
-            {jumpControl}
+          <span className="period-nav">
+            <button onClick={() => setPeriod(shiftPeriod(period, -1))} aria-label="Periodo anterior">‹</button>
+            <span className="period-nav-mid">
+              {jumpControl}
+              <button
+                className={`today-chip${showsToday ? ' active' : ''}`}
+                aria-pressed={showsToday}
+                title={showsToday ? 'El periodo en pantalla incluye hoy' : 'Ir al periodo de hoy'}
+                onClick={() => setPeriod(kind === 'CUSTOM' ? customPeriod(todayIso, todayIso) : periodOf(kind, new Date()))}
+              >
+                Hoy
+              </button>
+            </span>
+            <button onClick={() => setPeriod(shiftPeriod(period, 1))} aria-label="Periodo siguiente">›</button>
           </span>
         }
       >
         <div style={{ marginBottom: '4px' }}><SalesLegend /></div>
         <SalesLineChart series={report.daily} />
         {/* Range chips, ticker-style, pinned to the chart's foot. */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', borderTop: '1px dashed var(--color-bone)', paddingTop: '10px' }}>
-          {PERIOD_KINDS.map((k) => (
-            <button
-              key={k}
-              className={`range-chip${kind === k ? ' active' : ''}`}
-              aria-pressed={kind === k}
-              onClick={() => switchKind(k)}
-            >
-              {PERIOD_KIND_LABEL[k]}
-            </button>
-          ))}
+        <div style={{ borderTop: '1px dashed var(--color-bone)', paddingTop: '10px' }}>
+          <span className="range-track">
+            {PERIOD_KINDS.map((k) => (
+              <button
+                key={k}
+                className={`range-chip${kind === k ? ' active' : ''}`}
+                aria-pressed={kind === k}
+                aria-label={PERIOD_KIND_LABEL[k]}
+                title={PERIOD_KIND_LABEL[k]}
+                onClick={() => switchKind(k)}
+              >
+                {SHORT_KIND[k]}
+              </button>
+            ))}
+          </span>
         </div>
       </ChartCard>
 
