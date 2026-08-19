@@ -35,7 +35,8 @@ const DAY_NAMES = [
 // ---- Local-date <-> ISO-date helpers (no UTC shift — period boundaries are
 // local calendar days, per the design doc). ----
 
-function toIsoDate(d: Date): string {
+/** Local calendar day as YYYY-MM-DD. The ONE definition — components import it. */
+export function toIsoDate(d: Date): string {
   const y = String(d.getFullYear()).padStart(4, '0');
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');

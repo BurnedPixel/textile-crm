@@ -152,22 +152,79 @@
 
   /* Informes quote-chart range chips ("1D 5D 1M…" style foot row). Hover
      needs a real class — inline style can't express :hover. */
+  /* Segmented range selector — one track, chips inside it. Short labels
+     (1D/1S/1M…) keep all seven on ONE row at 360px; the full name rides in
+     the title/aria-label and the period is always spelled out under the
+     headline figure. */
+  .range-track {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--color-greige);
+    max-width: 100%;
+  }
   .range-chip {
-    padding: 5px 10px;
-    border-radius: 8px;
+    padding: 5px 11px;
+    border-radius: 999px;
     border: none;
     cursor: pointer;
     background: transparent;
-    color: var(--color-ink);
+    color: var(--color-thread);
     font-family: var(--font-sans);
     font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
   }
-  .range-chip:hover { background: var(--color-greige); }
-  .range-chip.active { background: var(--color-dye); color: var(--color-cloth); }
-  .range-chip.active:hover { background: var(--color-dye); }
+  .range-chip:hover { color: var(--color-ink); }
+  .range-chip.active { background: var(--color-cloth); color: var(--color-ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+
+  /* [‹] [calendar · Hoy] [›] as ONE control, not three bordered boxes. */
+  .period-nav {
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid var(--color-bone);
+    border-radius: 999px;
+    background: var(--color-cloth);
+    overflow: hidden;
+    max-width: 100%;
+  }
+  .period-nav button,
+  .period-nav input {
+    border: none;
+    background: transparent;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: var(--color-ink);
+    cursor: pointer;
+  }
+  .period-nav > button { padding: 4px 11px; font-size: 15px; line-height: 1; color: var(--color-thread); }
+  .period-nav > button:hover { background: var(--color-greige); color: var(--color-ink); }
+  .period-nav-mid {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 4px;
+    border-left: 1px solid var(--color-bone);
+    border-right: 1px solid var(--color-bone);
+    min-width: 0;
+  }
+  .period-nav-mid input { padding: 4px 2px; min-width: 0; max-width: 130px; }
+  /* «Hoy» is both the jump button and the indicator: filled when the period
+     on screen contains today. */
+  .today-chip {
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--color-thread);
+  }
+  .today-chip:hover { background: var(--color-greige); color: var(--color-ink); }
+  .today-chip.active { background: var(--color-dye); color: var(--color-cloth); }
+  .today-chip.active:hover { background: var(--color-dye); color: var(--color-cloth); }
 
   /* Tabular mono for all numeric/money contexts */
   .tabular-mono {
