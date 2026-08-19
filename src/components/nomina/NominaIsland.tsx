@@ -238,49 +238,126 @@ function PayDialog({
 
 // ─── PAGOS PENDIENTES ─────────────────────────────────────────────────────
 
+const dueThStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em',
+  textTransform: 'uppercase', color: 'var(--color-thread)', padding: '10px 12px', textAlign: 'left',
+};
+const dueTdStyle: React.CSSProperties = { padding: '10px 12px', verticalAlign: 'top' };
+
 function DueSection({ dues, rate, onPay }: { dues: WorkerDue[]; rate: number; onPay: (wd: WorkerDue) => void }) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
+
   if (dues.length === 0) {
     return <EmptyState title="Sin pagos pendientes" />;
   }
+
+  function toggle(workerId: string) {
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(workerId)) next.delete(workerId);
+      else next.add(workerId);
+      return next;
+    });
+  }
+
+  const totalGeneralUsd = round2(dues.reduce((sum, wd) => sum + wd.totalUsd, 0));
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      {dues.map((wd) => (
-        <div
-          key={wd.worker._id}
-          style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', padding: '16px' }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
-            <div>
-              <div style={{ fontFamily: 'var(--font-sans)', fontSize: '15px', fontWeight: 700, color: 'var(--color-ink)' }}>
-                {wd.worker.name}
-              </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--color-thread)' }}>
-                {wd.worker.documentId}
-              </div>
-            </div>
-            <Button variant="primary" size="md" onClick={() => onPay(wd)}>
-              Registrar pago
-            </Button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {wd.due.map((d) => (
-              <div key={`${d.label}-${d.periodKey}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '4px 0', borderBottom: '1px solid rgba(138,131,113,0.12)' }}>
-                <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ink)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {d.label} · {periodLabel(d.periodKey)}
-                  {d.overdue && <Badge tone="danger">Atrasado</Badge>}
-                </span>
-                <Money usd={d.amountUsd} rate={rate || undefined} />
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 600, color: 'var(--color-thread)', marginRight: '8px' }}>
-              Total
-            </span>
-            <Money usd={wd.totalUsd} rate={rate || undefined} />
-          </div>
-        </div>
-      ))}
+    <div style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '480px' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--color-thread)' }}>
+            <th style={dueThStyle}>Trabajador</th>
+            <th style={dueThStyle}>Pendiente</th>
+            <th style={{ ...dueThStyle, textAlign: 'right' }}>Total</th>
+            <th style={{ ...dueThStyle, textAlign: 'right' }}>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {dues.map((wd, i) => {
+            const isOpen = open.has(wd.worker._id);
+            const overdueCount = wd.due.filter((d) => d.overdue).length;
+            return (
+              <>
+                <tr
+                  key={wd.worker._id}
+                  onClick={() => toggle(wd.worker._id)}
+                  style={{
+                    borderBottom: isOpen ? 'none' : (i < dues.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none'),
+                    cursor: 'pointer',
+                  }}
+                >
+                  <td style={dueTdStyle}>
+                    <div style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 600, color: 'var(--color-ink)' }}>
+                      {wd.worker.name}
+                    </div>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--color-thread)' }}>
+                      {wd.worker.documentId}
+                    </div>
+                  </td>
+                  <td style={dueTdStyle}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ink)' }}>
+                        {wd.due.length} {wd.due.length === 1 ? 'concepto' : 'conceptos'}
+                      </span>
+                      {overdueCount > 0 && (
+                        <Badge tone="danger">{overdueCount} {overdueCount === 1 ? 'atrasado' : 'atrasados'}</Badge>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ ...dueTdStyle, textAlign: 'right' }}>
+                    <Money usd={wd.totalUsd} rate={rate || undefined} />
+                  </td>
+                  <td style={{ ...dueTdStyle, textAlign: 'right' }}>
+                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+                      <Button variant="primary" size="md" onClick={() => onPay(wd)}>
+                        Pagar
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="md"
+                        aria-expanded={isOpen}
+                        aria-label={isOpen ? 'Ocultar detalle' : 'Ver detalle'}
+                        onClick={() => toggle(wd.worker._id)}
+                      >
+                        {isOpen ? '▲' : '▼'}
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+                {isOpen && (
+                  <tr style={{ borderBottom: i < dues.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none' }}>
+                    <td colSpan={4} style={{ padding: '0 12px 12px', background: 'rgba(138,131,113,0.05)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {wd.due.map((d) => (
+                          <div key={`${d.label}-${d.periodKey}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '4px 0', borderBottom: '1px solid rgba(138,131,113,0.12)' }}>
+                            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ink)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {d.label} · {periodLabel(d.periodKey)}
+                              {d.overdue && <Badge tone="danger">Atrasado</Badge>}
+                            </span>
+                            <Money usd={d.amountUsd} rate={rate || undefined} />
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr style={{ borderTop: '1px solid var(--color-thread)' }}>
+            <td colSpan={2} style={{ ...dueTdStyle, fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-thread)' }}>
+              Total general
+            </td>
+            <td style={{ ...dueTdStyle, textAlign: 'right' }}>
+              <Money usd={totalGeneralUsd} rate={rate || undefined} />
+            </td>
+            <td style={dueTdStyle} />
+          </tr>
+        </tfoot>
+      </table>
     </div>
   );
 }
@@ -502,7 +579,7 @@ function WorkersSection({ workers, reload }: { workers: WorkerDoc[]; reload: () 
   }
 
   return (
-    <div style={{ display: 'flex', gap: '20px' }}>
+    <div className="nomina-split" style={{ gap: '20px' }}>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {workers.length === 0 ? (
           <EmptyState title="Sin trabajadores registrados" />

@@ -82,7 +82,7 @@ export default function InformesIsland() {
             Resumen de ventas, cobros, gastos y movimientos. <span className="kbd-hints"><Kbd>g r</Kbd></span>
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           <Button variant="ghost" size="lg" onClick={() => window.print()}>Imprimir</Button>
           <Button variant="ghost" size="lg" onClick={handleSharePdf} disabled={sharingPdf}>
             {sharingPdf ? 'Generando…' : 'Compartir PDF'}
@@ -90,7 +90,7 @@ export default function InformesIsland() {
         </div>
       </div>
 
-      <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+      <div className="no-print" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', border: '1px solid var(--color-thread)', borderRadius: '8px', overflow: 'hidden' }}>
           {(['WEEK', 'MONTH'] as const).map((k) => (
             <button
@@ -108,11 +108,14 @@ export default function InformesIsland() {
             </button>
           ))}
         </div>
-        <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, -1))} aria-label="Periodo anterior">‹</Button>
-        <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 700, color: 'var(--color-ink)', minWidth: '260px', textAlign: 'center' }}>
-          {report.period.label}
-        </span>
-        <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, 1))} aria-label="Periodo siguiente">›</Button>
+        {/* ‹ label › wrap as one unit on narrow screens; min() keeps the desktop width stable */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+          <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, -1))} aria-label="Periodo anterior">‹</Button>
+          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 700, color: 'var(--color-ink)', minWidth: 'min(260px, 60vw)', textAlign: 'center' }}>
+            {report.period.label}
+          </span>
+          <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, 1))} aria-label="Periodo siguiente">›</Button>
+        </div>
       </div>
 
       {/* Print-only period label */}
