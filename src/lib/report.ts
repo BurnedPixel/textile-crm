@@ -28,6 +28,10 @@ const MONTH_NAMES = [
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
 ];
 
+const DAY_NAMES = [
+  'domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado',
+];
+
 // ---- Local-date <-> ISO-date helpers (no UTC shift — period boundaries are
 // local calendar days, per the design doc). ----
 
@@ -52,7 +56,7 @@ const pct4 = (v: number): number => Math.round(v * 10000) / 10000;
 /** A doc's UTC instant as the LOCAL calendar day it happened on. */
 const localDay = (iso: string): string => toIsoDate(new Date(iso));
 
-export type PeriodKind = 'WEEK' | 'FORTNIGHT' | 'MONTH' | 'QUARTER' | 'HALF' | 'YEAR' | 'CUSTOM';
+export type PeriodKind = 'DAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'HALF' | 'YEAR' | 'CUSTOM';
 
 export interface ReportPeriod {
   kind: PeriodKind;
@@ -64,7 +68,7 @@ export interface ReportPeriod {
 }
 
 export const PERIOD_KIND_LABEL: Record<PeriodKind, string> = {
-  WEEK: 'Semana', FORTNIGHT: 'Quincena', MONTH: 'Mes', QUARTER: 'Trimestre',
+  DAY: 'Día', WEEK: 'Semana', MONTH: 'Mes', QUARTER: 'Trimestre',
   HALF: 'Semestre', YEAR: 'Año', CUSTOM: 'Personalizado',
 };
 
@@ -78,6 +82,14 @@ function rangeLabel(start: Date, end: Date): string {
   return `${start.getDate()} de ${MONTH_NAMES[start.getMonth()]}${startYear} al ${end.getDate()} de ${MONTH_NAMES[end.getMonth()]} de ${end.getFullYear()}`;
 }
 
+/** A single local calendar day. */
+export function dayPeriod(d: Date): ReportPeriod {
+  const iso = toIsoDate(d);
+  const dayName = DAY_NAMES[d.getDay()];
+  const label = `${dayName[0].toUpperCase()}${dayName.slice(1)}, ${d.getDate()} de ${MONTH_NAMES[d.getMonth()]} de ${d.getFullYear()}`;
+  return { kind: 'DAY', start: iso, end: iso, label };
+}
+
 /** Monday..Sunday, local time. */
 export function weekPeriod(d: Date): ReportPeriod {
   const day = d.getDay(); // 0=Sun..6=Sat
@@ -85,19 +97,6 @@ export function weekPeriod(d: Date): ReportPeriod {
   const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() + mondayOffset);
   const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
   return { kind: 'WEEK', start: toIsoDate(start), end: toIsoDate(end), label: `Semana del ${rangeLabel(start, end)}` };
-}
-
-/** 1st..15th, or 16th..last day of month (13-16 days depending on the month). */
-export function fortnightPeriod(d: Date): ReportPeriod {
-  const y = d.getFullYear(), m = d.getMonth();
-  if (d.getDate() <= 15) {
-    const start = new Date(y, m, 1);
-    const end = new Date(y, m, 15);
-    return { kind: 'FORTNIGHT', start: toIsoDate(start), end: toIsoDate(end), label: `1.ª quincena de ${MONTH_NAMES[m]} ${y}` };
-  }
-  const start = new Date(y, m, 16);
-  const end = new Date(y, m + 1, 0); // last day of month
-  return { kind: 'FORTNIGHT', start: toIsoDate(start), end: toIsoDate(end), label: `2.ª quincena de ${MONTH_NAMES[m]} ${y}` };
 }
 
 export function monthPeriod(d: Date): ReportPeriod {
@@ -150,8 +149,8 @@ export function customPeriod(startIso: string, endIso: string): ReportPeriod {
 /** The period of `kind` that contains `d`. CUSTOM has no natural container, so it falls back to the month. */
 export function periodOf(kind: PeriodKind, d: Date): ReportPeriod {
   switch (kind) {
+    case 'DAY': return dayPeriod(d);
     case 'WEEK': return weekPeriod(d);
-    case 'FORTNIGHT': return fortnightPeriod(d);
     case 'MONTH': return monthPeriod(d);
     case 'QUARTER': return quarterPeriod(d);
     case 'HALF': return halfPeriod(d);
@@ -161,26 +160,17 @@ export function periodOf(kind: PeriodKind, d: Date): ReportPeriod {
 }
 
 /**
- * ±N periods, same kind. WEEK/FORTNIGHT/MONTH/QUARTER/HALF/YEAR step by their
+ * ±N periods, same kind. DAY/WEEK/MONTH/QUARTER/HALF/YEAR step by their
  * own calendar unit (never by adding milliseconds — DST breaks that); CUSTOM
  * steps by its own length in days, so ranges tile with no overlap or gap.
  */
 export function shiftPeriod(p: ReportPeriod, delta: number): ReportPeriod {
   const start = fromIsoDate(p.start);
   switch (p.kind) {
+    case 'DAY':
+      return dayPeriod(new Date(start.getFullYear(), start.getMonth(), start.getDate() + delta));
     case 'WEEK':
       return weekPeriod(new Date(start.getFullYear(), start.getMonth(), start.getDate() + delta * 7));
-    case 'FORTNIGHT': {
-      // Count half-months since year 0 so the 1st/16th split survives months
-      // of any length (28/29/30/31 days), then decode back.
-      const isFirstHalf = start.getDate() === 1;
-      const totalHalves = start.getFullYear() * 24 + start.getMonth() * 2 + (isFirstHalf ? 0 : 1) + delta;
-      const y = Math.floor(totalHalves / 24);
-      const rem = totalHalves - y * 24;
-      const m = Math.floor(rem / 2);
-      const refDate = rem % 2 === 0 ? new Date(y, m, 1) : new Date(y, m, 16);
-      return fortnightPeriod(refDate);
-    }
     case 'MONTH':
       return monthPeriod(new Date(start.getFullYear(), start.getMonth() + delta, 1));
     case 'QUARTER':
@@ -254,8 +244,8 @@ export interface ReportData {
   expenses: ExpensesSummary;
   movements: MovementsSummary;
   daily: DayPoint[];
-  /** DAY for periods up to 62 days; MONTH beyond that (a year of daily points is unreadable/unbounded in the "Ver datos" table). */
-  seriesGranularity: 'DAY' | 'MONTH';
+  /** HOUR for a single-day period (24 points); DAY up to 62 days; MONTH beyond that (a year of daily points is unreadable/unbounded in the "Ver datos" table). */
+  seriesGranularity: 'HOUR' | 'DAY' | 'MONTH';
   avgTicketUsd: number;
   bestDay: { date: string; totalUsd: number } | null;
   topClients: RankedRow[];
@@ -389,6 +379,32 @@ function monthlySeries(daily: DayPoint[]): DayPoint[] {
   }));
 }
 
+/**
+ * 24 hourly points (00..23, local time) for a single-day period — the same
+ * figures dailySalesSeries computes for a whole day, split by local hour.
+ */
+function hourlySeries(sales: SaleDoc[], payments: PaymentDoc[], refunds: RefundDoc[], dayIso: string): DayPoint[] {
+  const base = fromIsoDate(dayIso);
+  const points: DayPoint[] = Array.from({ length: 24 }, (_, h) => ({
+    date: new Date(base.getFullYear(), base.getMonth(), base.getDate(), h).toISOString(),
+    label: `${String(h).padStart(2, '0')}:00`,
+    facturadoUsd: 0,
+    cobradoUsd: 0,
+  }));
+  for (const s of sales) {
+    const p = points[new Date(s.date).getHours()];
+    p.facturadoUsd += saleTaxes(s).grandTotalUsd;
+    p.cobradoUsd += usdPaid(s.paidUsdCash, s.paidUsdTransfer, s.paidBs, s.exchangeRateBCV);
+  }
+  for (const pay of payments) {
+    points[new Date(pay.date).getHours()].cobradoUsd += usdPaid(pay.paidUsdCash, pay.paidUsdTransfer, pay.paidBs, pay.exchangeRateBCV);
+  }
+  for (const r of refunds) {
+    points[new Date(r.date).getHours()].cobradoUsd -= usdPaid(r.givenUsdCash, r.givenUsdTransfer, r.givenBs, r.exchangeRateBCV);
+  }
+  return points.map((p) => ({ ...p, facturadoUsd: round2(p.facturadoUsd), cobradoUsd: round2(p.cobradoUsd) }));
+}
+
 /** Every summary in the period, zeroed (never throws) when it is empty. */
 export async function buildReport(db: DB, period: ReportPeriod): Promise<ReportData> {
   const opts = periodScanOpts(period);
@@ -424,19 +440,26 @@ export async function buildReport(db: DB, period: ReportPeriod): Promise<ReportD
   const days = Math.round(
     (fromIsoDate(period.end).getTime() - fromIsoDate(period.start).getTime()) / 86_400_000,
   ) + 1;
-  // Local day keys — the same calendar the period bounds use, so every scanned
-  // doc lands in one of the buckets.
-  const dailyRaw = dailySalesSeries(sales, payments, refunds, days, period.end, localDay);
-  // Beyond ~2 months a daily line/table is unreadable (and unbounded — a year
-  // is 365 rows in the "Ver datos" table), so the series collapses to one
-  // point per month, summed from these same daily figures (never re-derived).
-  const seriesGranularity: 'DAY' | 'MONTH' = days > 62 ? 'MONTH' : 'DAY';
-  const daily = seriesGranularity === 'DAY' ? dailyRaw : monthlySeries(dailyRaw);
-  // bestDay is always a real DAY, even when the series above is monthly.
+  // A single-day period gets an hourly breakdown — one daily point is not a
+  // chart. Beyond ~2 months a daily line/table is unreadable (and unbounded —
+  // a year is 365 rows in the "Ver datos" table), so the series collapses to
+  // one point per month, summed from the same daily figures (never re-derived).
+  const seriesGranularity: 'HOUR' | 'DAY' | 'MONTH' = days === 1 ? 'HOUR' : days > 62 ? 'MONTH' : 'DAY';
+  let daily: DayPoint[];
   let bestDay: { date: string; totalUsd: number } | null = null;
-  for (const d of dailyRaw) {
-    if (d.facturadoUsd > 0 && (!bestDay || d.facturadoUsd > bestDay.totalUsd)) {
-      bestDay = { date: d.date, totalUsd: d.facturadoUsd };
+  if (seriesGranularity === 'HOUR') {
+    daily = hourlySeries(sales, payments, refunds, period.start);
+    bestDay = salesSummary.count > 0 ? { date: period.start, totalUsd: salesSummary.grandTotalUsd } : null;
+  } else {
+    // Local day keys — the same calendar the period bounds use, so every
+    // scanned doc lands in one of the buckets.
+    const dailyRaw = dailySalesSeries(sales, payments, refunds, days, period.end, localDay);
+    daily = seriesGranularity === 'DAY' ? dailyRaw : monthlySeries(dailyRaw);
+    // bestDay is always a real DAY, even when the series above is monthly.
+    for (const d of dailyRaw) {
+      if (d.facturadoUsd > 0 && (!bestDay || d.facturadoUsd > bestDay.totalUsd)) {
+        bestDay = { date: d.date, totalUsd: d.facturadoUsd };
+      }
     }
   }
   const avgTicketUsd = salesSummary.count > 0 ? round2(salesSummary.grandTotalUsd / salesSummary.count) : 0;

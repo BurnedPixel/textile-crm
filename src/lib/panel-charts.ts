@@ -11,12 +11,14 @@ import { grandTotalUsd, usdPaid } from './queries';
 import { round2 } from './format';
 
 export interface DayPoint {
-  /** YYYY-MM-DD (UTC day, same convention as the Panel's todaySales). */
+  /** YYYY-MM-DD (UTC day, same convention as the Panel's todaySales) — or an ISO instant when `label` overrides the axis text (report.ts hourly series). */
   date: string;
   /** Grand totals of sales dated that day. */
   facturadoUsd: number;
   /** Cash in that day: checkout money + later cobros − vueltos, each at its own rate. */
   cobradoUsd: number;
+  /** Overrides the axis/tooltip/table text derived from `date` (e.g. "14:00" for an hourly point). Panel points never set this. */
+  label?: string;
 }
 
 /** Last `days` calendar days ending at `todayIso` (YYYY-MM-DD), zero-filled. */
