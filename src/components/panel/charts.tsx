@@ -103,7 +103,7 @@ export function SalesLineChart({ series }: { series: DayPoint[] }) {
           width={width}
           height={H}
           role="img"
-          aria-label="Facturado y cobrado por día, últimos 30 días"
+          aria-label={n > 0 ? `Facturado y cobrado, del ${fmtDay(series[0].date)} al ${fmtDay(series[n - 1].date)}` : 'Facturado y cobrado'}
           tabIndex={0}
           style={{ display: 'block', outlineOffset: '4px' }}
           onPointerMove={(e) => setHover(nearest(e.clientX, e.currentTarget.getBoundingClientRect()))}
