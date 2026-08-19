@@ -327,10 +327,6 @@ export default function ConfiguracionIsland() {
 
   // ---- Card style helpers ----
   const card: React.CSSProperties = {
-    background: 'var(--color-cloth)',
-    border: '1px dashed var(--color-thread)',
-    borderRadius: '10px',
-    padding: '1.5rem',
     marginBottom: '1.25rem',
   };
 
@@ -348,7 +344,7 @@ export default function ConfiguracionIsland() {
     <div style={{ maxWidth: '560px' }}>
       {/* Page header */}
       <div style={{ marginBottom: '1.75rem' }}>
-        <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '22px', fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
+        <h1 className="title-display" style={{ margin: 0 }}>
           Configuración
         </h1>
       </div>

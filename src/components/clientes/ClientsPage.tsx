@@ -16,7 +16,7 @@ import {
   FIELD_MAX, validateDocumentId, validateEmail, validateName, validatePhone, normalizePhone,
   type ClientDoc, type SaleDoc, type PaymentDoc, type RefundDoc, type EntityType,
 } from '../../lib/types';
-import { fmtDate, fmtUsd, PAYMENT_LABEL, PAYMENT_TONE } from '../../lib/format';
+import { fmtDate, fmtUsd, PAYMENT_LABEL } from '../../lib/format';
 import {
   Button,
   Input,
@@ -33,6 +33,12 @@ import {
 const ENTITY_LABELS: Record<EntityType, string> = {
   PERSON: 'Persona natural',
   COMPANY: 'Empresa',
+};
+
+const PAYMENT_TAG: Record<'PAID' | 'PARTIAL' | 'PENDING', string> = {
+  PAID: 'tag-sage',
+  PARTIAL: 'tag-lavender',
+  PENDING: 'tag-rose',
 };
 
 // ─── VALIDATION ──────────────────────────────────────────────────────────────
@@ -175,17 +181,17 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
             justifyContent: 'space-between',
             padding: '10px 14px',
             borderRadius: '6px',
-            background: 'rgba(163,46,46,0.08)',
-            border: '1px solid rgba(163,46,46,0.20)',
+            background: 'color-mix(in srgb, var(--color-danger) 8%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--color-danger) 20%, transparent)',
           }}
         >
           <span
             style={{
               fontFamily: 'var(--font-sans)',
               fontSize: '12px',
-              fontWeight: 600,
+              fontWeight: 500,
               color: 'var(--color-danger)',
-              letterSpacing: '0.04em',
+              letterSpacing: '0.06em',
               textTransform: 'uppercase',
             }}
           >
@@ -213,18 +219,15 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '10px 14px',
-            borderRadius: '6px',
-            background: 'rgba(62,107,58,0.08)',
-            border: '1px solid rgba(62,107,58,0.20)',
           }}
         >
           <span
             style={{
               fontFamily: 'var(--font-sans)',
               fontSize: '12px',
-              fontWeight: 600,
-              color: 'var(--color-ok)',
-              letterSpacing: '0.04em',
+              fontWeight: 500,
+              color: 'var(--color-dye)',
+              letterSpacing: '0.06em',
               textTransform: 'uppercase',
             }}
           >
@@ -235,7 +238,7 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
               fontFamily: 'var(--font-mono)',
               fontSize: '14px',
               fontWeight: 700,
-              color: 'var(--color-ok)',
+              color: 'var(--color-dye)',
               fontFeatureSettings: '"tnum" 1',
             }}
           >
@@ -281,8 +284,8 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
                 style={{
                   fontFamily: 'var(--font-sans)',
                   fontSize: '11px',
-                  fontWeight: 600,
-                  letterSpacing: '0.05em',
+                  fontWeight: 500,
+                  letterSpacing: '0.06em',
                   textTransform: 'uppercase',
                   color: 'var(--color-thread)',
                   padding: '6px 0',
@@ -307,7 +310,7 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
                 tabIndex={0}
                 onClick={() => { window.location.href = `/ventas?${new URLSearchParams({ sale: sale._id })}`; }}
                 onKeyDown={(e) => { if (e.key === 'Enter') window.location.href = `/ventas?${new URLSearchParams({ sale: sale._id })}`; }}
-                style={{ borderBottom: '1px solid rgba(138,131,113,0.12)', cursor: 'pointer' }}
+                style={{ borderBottom: '1px solid color-mix(in srgb, var(--color-thread) 12%, transparent)', cursor: 'pointer' }}
               >
                 <td
                   style={{
@@ -323,7 +326,7 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
                   <Money usd={grandTotalUsd(sale)} />
                 </td>
                 <td style={{ textAlign: 'right', padding: '8px 0' }}>
-                  <Badge tone={PAYMENT_TONE[status]}>{PAYMENT_LABEL[status]}</Badge>
+                  <span className={`tag ${PAYMENT_TAG[status]}`}>{PAYMENT_LABEL[status]}</span>
                 </td>
                 <td
                   style={{ textAlign: 'right', padding: '8px 0' }}
@@ -381,17 +384,7 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
           are ISO, so string sort matches time order). */}
       {(clientPayments.length > 0 || clientRefunds.length > 0) && (
         <div style={{ marginTop: '4px' }}>
-          <h3
-            style={{
-              fontFamily: 'var(--font-sans)',
-              fontSize: '11px',
-              fontWeight: 600,
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-              color: 'var(--color-thread)',
-              margin: '8px 0 6px',
-            }}
-          >
+          <h3 className="micro-label" style={{ margin: '8px 0 6px' }}>
             Cobros y vueltos
           </h3>
           {[
@@ -421,7 +414,7 @@ function ClientSales({ client, ledger, businessName }: { client: ClientDoc; ledg
                   justifyContent: 'space-between',
                   gap: '10px',
                   padding: '5px 0',
-                  borderBottom: '1px solid rgba(138,131,113,0.12)',
+                  borderBottom: '1px solid color-mix(in srgb, var(--color-thread) 12%, transparent)',
                 }}
               >
                 <span
@@ -491,11 +484,8 @@ function DetailPanel({ client, ledger, onEdit, businessName }: DetailPanelProps)
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', padding: '4px 0' }}>
       {/* Client card */}
       <div
+        className="card"
         style={{
-          background: 'var(--color-cloth)',
-          border: '1px dashed var(--color-thread)',
-          borderRadius: '8px',
-          padding: '20px',
           display: 'flex',
           flexDirection: 'column',
           gap: '16px',
@@ -572,16 +562,7 @@ function DetailPanel({ client, ledger, onEdit, businessName }: DetailPanelProps)
           )}
           {client.specialty.length > 0 && (
             <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span
-                style={{
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                  color: 'var(--color-thread)',
-                }}
-              >
+              <span className="micro-label">
                 Especialidad
               </span>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -626,16 +607,7 @@ function InfoRow({
 }) {
   return (
     <div style={{ gridColumn: span ? '1 / -1' : undefined, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-      <span
-        style={{
-          fontFamily: 'var(--font-sans)',
-          fontSize: '11px',
-          fontWeight: 600,
-          letterSpacing: '0.05em',
-          textTransform: 'uppercase',
-          color: 'var(--color-thread)',
-        }}
-      >
+      <span className="micro-label">
         {label}
       </span>
       <span
@@ -715,9 +687,9 @@ function ClientForm({ initial, isNew, onSave, onCancel, saving, serverError }: C
               fontSize: '14px',
               color: 'var(--color-ink)',
               padding: '10px 12px',
-              background: 'rgba(138,131,113,0.08)',
-              borderRadius: '6px',
-              border: '1.5px solid var(--color-thread)',
+              background: 'color-mix(in srgb, var(--color-thread) 8%, transparent)',
+              borderRadius: '8px',
+              border: '1px solid var(--color-bone)',
             }}
           >
             {form.documentId}
@@ -1047,10 +1019,10 @@ export default function ClientsPage() {
               style={{ display: 'flex', gap: '4px' }}
             >
               {([
-                ['all', 'Todos'],
-                ['debt', 'Con deuda'],
-                ['credit', 'A favor'],
-              ] as const).map(([value, label]) => (
+                ['all', 'Todos', 'var(--color-ink)'],
+                ['debt', 'Con deuda', 'var(--color-danger)'],
+                ['credit', 'A favor', 'var(--color-dye)'],
+              ] as const).map(([value, label, tone]) => (
                 <button
                   key={value}
                   type="button"
@@ -1060,14 +1032,14 @@ export default function ClientsPage() {
                   style={{
                     fontFamily: 'var(--font-sans)',
                     fontSize: '11px',
-                    fontWeight: 600,
-                    letterSpacing: '0.04em',
+                    fontWeight: 500,
+                    letterSpacing: '0.06em',
                     textTransform: 'uppercase',
                     padding: '5px 10px',
                     borderRadius: '5px',
-                    border: `1px solid ${balanceFilter === value ? 'var(--color-dye)' : 'var(--color-thread)'}`,
-                    background: balanceFilter === value ? 'rgba(181,23,92,0.08)' : 'transparent',
-                    color: balanceFilter === value ? 'var(--color-dye)' : 'var(--color-thread)',
+                    border: `1px solid ${balanceFilter === value ? tone : 'var(--color-bone)'}`,
+                    background: balanceFilter === value ? `color-mix(in srgb, ${tone} 10%, transparent)` : 'transparent',
+                    color: balanceFilter === value ? tone : 'var(--color-thread)',
                     cursor: 'pointer',
                   }}
                 >
@@ -1144,7 +1116,7 @@ export default function ClientsPage() {
                       borderRadius: '6px',
                       cursor: 'pointer',
                       background: isSelected
-                        ? 'rgba(181,23,92,0.08)'
+                        ? 'color-mix(in srgb, var(--color-dye) 8%, transparent)'
                         : 'transparent',
                       border: `1.5px solid ${isSelected ? 'var(--color-dye)' : 'transparent'}`,
                       outline: 'none',
@@ -1216,7 +1188,7 @@ export default function ClientsPage() {
                             fontFamily: 'var(--font-mono)',
                             fontSize: '11px',
                             fontWeight: 700,
-                            color: 'var(--color-ok)',
+                            color: 'var(--color-dye)',
                             fontFeatureSettings: '"tnum" 1',
                           }}
                         >
@@ -1287,18 +1259,7 @@ function PageHeader({ onNew }: { onNew: () => void }) {
       }}
     >
       <div>
-        <h1
-          style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: '22px',
-            fontWeight: 800,
-            fontStretch: '125%',
-            textTransform: 'uppercase',
-            letterSpacing: '-0.02em',
-            color: 'var(--color-ink)',
-            margin: 0,
-          }}
-        >
+        <h1 className="title-display" style={{ margin: 0 }}>
           Clientes
         </h1>
         <p

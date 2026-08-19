@@ -102,13 +102,7 @@ export default function InventarioPage() {
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
-      <h1
-        style={{
-          fontFamily: 'var(--font-sans)', fontSize: 22, fontWeight: 800, fontStretch: '125%',
-          textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)',
-          margin: '0 0 16px',
-        }}
-      >
+      <h1 className="title-display" style={{ margin: '0 0 16px' }}>
         Inventario
       </h1>
 
@@ -135,11 +129,11 @@ export default function InventarioPage() {
               style={{
                 fontFamily: 'var(--font-sans)',
                 fontSize: 12,
-                fontWeight: active ? 700 : 600,
-                letterSpacing: '0.07em',
+                fontWeight: 500,
+                letterSpacing: '0.06em',
                 textTransform: 'uppercase',
                 color: active ? 'var(--color-dye)' : 'var(--color-thread)',
-                background: active ? 'rgba(181,23,92,0.08)' : 'transparent',
+                background: active ? 'color-mix(in srgb, var(--color-dye) 8%, transparent)' : 'transparent',
                 border: 'none',
                 borderBottom: active ? '3px solid var(--color-dye)' : '3px solid transparent',
                 padding: '12px 18px',
@@ -164,7 +158,7 @@ export default function InventarioPage() {
       <div aria-hidden="true" style={stitchDivider} />
 
       <section style={{ marginTop: 32 }}>
-        <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-thread)', marginBottom: 16 }}>
+        <h2 className="micro-label" style={{ marginBottom: 16 }}>
           Movimientos recientes
         </h2>
 

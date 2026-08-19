@@ -87,8 +87,8 @@ const icons: Record<string, string> = {
             title={item.label}
             class="rail-link"
             style={`
-              color:${isActive ? 'var(--color-dye)' : 'var(--color-thread)'};
-              background:${isActive ? 'rgba(181,23,92,0.10)' : 'transparent'};
+              color:${isActive ? 'var(--color-lavender)' : 'var(--color-thread)'};
+              background:${isActive ? 'color-mix(in srgb, var(--color-lavender) 12%, transparent)' : 'transparent'};
             `}
             aria-current={isActive ? 'page' : undefined}
             data-admin-only={item.adminOnly ? '' : undefined}
@@ -139,8 +139,8 @@ const icons: Record<string, string> = {
                 href={item.href}
                 class="menu-link"
                 style={`
-                  color:${isActive ? 'var(--color-dye)' : 'var(--color-greige)'};
-                  background:${isActive ? 'rgba(181,23,92,0.12)' : 'transparent'};
+                  color:${isActive ? 'var(--color-lavender)' : 'var(--color-greige)'};
+                  background:${isActive ? 'color-mix(in srgb, var(--color-lavender) 12%, transparent)' : 'transparent'};
                 `}
                 aria-current={isActive ? 'page' : undefined}
                 data-admin-only={item.adminOnly ? '' : undefined}
@@ -184,7 +184,7 @@ const icons: Record<string, string> = {
       }
       .rail-active-bar {
         position: absolute; left: 0; top: 25%; bottom: 25%; width: 3px;
-        background: var(--color-dye); border-radius: 0 2px 2px 0;
+        background: var(--color-lavender); border-radius: 0 2px 2px 0;
       }
       .rail-label {
         font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
@@ -193,14 +193,15 @@ const icons: Record<string, string> = {
       .rail-label-long { font-size: 8.5px; letter-spacing: 0.02em; }
       .rail-hint {
         font-family: var(--font-mono); font-size: 9px;
-        color: rgba(138,131,113,0.7); margin-top: 1px; letter-spacing: 0.03em;
+        color: color-mix(in srgb, var(--color-thread) 70%, transparent); margin-top: 1px; letter-spacing: 0.03em;
       }
       .rail-dots {
         position: absolute; top: 0; right: 0; bottom: 0; width: 4px;
         background-image: repeating-linear-gradient(
           to bottom,
           transparent 0px, transparent 6px,
-          rgba(181,23,92,0.45) 6px, rgba(181,23,92,0.45) 8px
+          color-mix(in srgb, var(--color-lavender) 40%, transparent) 6px,
+          color-mix(in srgb, var(--color-lavender) 40%, transparent) 8px
         );
         pointer-events: none;
       }
@@ -232,12 +233,11 @@ const icons: Record<string, string> = {
           color: var(--color-greige);
         }
         .rail-menu summary::-webkit-details-marker { display: none; }
-        .rail-menu[open] summary { background: rgba(181,23,92,0.15); color: var(--color-dye); }
+        .rail-menu[open] summary { background: color-mix(in srgb, var(--color-lavender) 15%, transparent); color: var(--color-lavender); }
         .menu-panel {
           position: fixed; top: calc(56px + env(safe-area-inset-top)); left: 0; right: 0;
           background: var(--color-ink);
           border-bottom: 1px solid rgba(255,255,255,0.1);
-          box-shadow: 0 16px 32px rgba(0,0,0,0.35);
           padding: 6px 8px 10px;
           display: flex; flex-direction: column; gap: 2px;
         }

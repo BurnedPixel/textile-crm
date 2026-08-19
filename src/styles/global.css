@@ -6,16 +6,29 @@
 @import "@fontsource/ibm-plex-mono/600.css";
 
 @theme {
-  /* Palette */
-  --color-greige: #E8E4DC;
-  --color-cloth: #F6F4EF;
-  --color-ink: #221F1A;
-  --color-dye: #B5175C;
-  --color-vat: #3A4A6B;
-  --color-thread: #8A8371;
-  --color-ok: #3E6B3A;
-  --color-warn: #B97718;
-  --color-danger: #A32E2E;
+  /* Palette — "editorial catalog on cream paper" (rework 2026-08-18).
+     Token NAMES are stable API (~450 var() refs); only values change. */
+  --color-greige: #F5F4F0;   /* warm paper canvas */
+  --color-cloth: #FFFFFF;    /* card/surface white */
+  --color-ink: #151515;      /* text, dark rail, primary button fill */
+  --color-dye: #453B60;      /* THE accent: focus, links, active, brand line 2 */
+  --color-vat: #3A4444;      /* slate — info/secondary */
+  --color-thread: #83807A;   /* secondary text, stitch dividers */
+  --color-ok: #44634A;       /* success — desaturated forest */
+  --color-warn: #816729;     /* warning — brass */
+  --color-danger: #5C2529;   /* error — burgundy */
+
+  /* Editorial additions */
+  --color-bone: #E9E7E0;     /* hairline card borders, soft fills */
+  --color-sage: #D3E5E9;     /* status pastel: PAID */
+  --color-lavender: #BBB2CE; /* status pastel: PARTIAL; accent tint on the dark rail */
+  --color-rose: #CB9DA2;     /* status pastel: PENDING */
+  --color-amber: #65451D;    /* warm tag-border accent */
+
+  /* Chart series marks (validated: lightness band, chroma, CVD ΔE, contrast).
+     The UI tokens are too dark/gray as data marks — these exist for charts only. */
+  --color-chart-violet: #6C5CA8;
+  --color-chart-brass: #B08A2E;
 
   /* Typography */
   --font-sans: "Archivo Variable", "Archivo", ui-sans-serif, system-ui, sans-serif;
@@ -83,14 +96,56 @@
     border: 1px dashed var(--color-thread);
   }
 
-  /* Page title: expanded industrial signage style */
+  /* Page title: light editorial display — weight 400, tight tracking.
+     Never bold this; the whisper weight at large size IS the signature. */
   .title-display {
     font-family: var(--font-sans);
-    font-weight: 800;
-    font-stretch: 125%;
-    text-transform: uppercase;
+    font-weight: 400;
+    font-stretch: 100%;
     letter-spacing: -0.02em;
-    font-size: clamp(1.5rem, 4vw, 2.5rem);
+    line-height: 1.15;
+    font-size: clamp(1.375rem, 2.2vw, 1.625rem);
+    color: var(--color-ink);
+  }
+
+  /* Catalog micro-label: the wayfinding device for section headers */
+  .micro-label {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-thread);
+  }
+
+  /* Tag/status pill — 100px radius; tone classes set the pastel fill.
+     Ink text on pastel always (never white). */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 100px;
+    padding: 3px 12px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    color: var(--color-ink);
+  }
+  .tag-sage { background-color: var(--color-sage); }
+  .tag-lavender { background-color: var(--color-lavender); }
+  .tag-rose { background-color: var(--color-rose); }
+  .tag-outline { border-color: var(--color-amber); color: var(--color-amber); }
+
+  /* Card base — flat white surface, hairline border, 8px. Components add
+     layout inline; appearance lives here. */
+  .card {
+    background-color: var(--color-cloth);
+    border: 1px solid var(--color-bone);
+    border-radius: 8px;
+    padding: 24px;
   }
 
   /* Tabular mono for all numeric/money contexts */
@@ -121,6 +176,9 @@
   /* /clientes: master-detail split → stacked */
   .clients-split { display: grid; grid-template-columns: 340px 1px 1fr; flex: 1; min-height: 0; }
 
+  /* Panel chart cards: 2-up on desktop → stacked on phones */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+
   /* /nomina: worker list + form side by side → stacked */
   .nomina-split { display: flex; }
   .concepts-editor { container-type: inline-size; }
@@ -143,7 +201,7 @@
   /* Native <dialog> (showModal): the reset zeroes the UA `margin: auto` that
      centres it, and Chromium's default backdrop is too faint over a light page. */
   dialog { margin: auto; }
-  dialog::backdrop { background: rgba(34, 31, 26, 0.45); }
+  dialog::backdrop { background: rgba(21, 21, 21, 0.45); }
 
   /* Ingreso roll rows: piece | weight | cost | price | condition | delete */
   .roll-head, .roll-row { display: grid; grid-template-columns: 52px 2fr 1fr 1fr 110px 40px; gap: 8px; margin-bottom: 6px; }
@@ -172,6 +230,7 @@
     .venta-divider { display: none; }
     .clients-split { grid-template-columns: 1fr; }
     .nomina-split { flex-direction: column; }
+    .chart-grid { grid-template-columns: 1fr; }
 
     .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; }
     /* Short numeric fields pair two-up; saves ~90-100px vs single-column */
@@ -186,7 +245,7 @@
       grid-template-columns: 52px 1fr 40px;
       grid-template-areas: "id w del";
       row-gap: 4px; padding: 8px 0;
-      border-bottom: 1px dashed rgba(138,131,113,0.35);
+      border-bottom: 1px dashed color-mix(in srgb, var(--color-thread) 35%, transparent);
     }
     .roll-row > :nth-child(1) { grid-area: id; }
     .roll-row > :nth-child(2) { grid-area: w; }
@@ -229,7 +288,7 @@
     .inv-table td:nth-child(6) { grid-area: lote; text-align: center; }
     .inv-table td:nth-child(7) { grid-area: loc; text-align: right; }
     /* Stitch separators instead of zebra fills — same treatment as .roll-row */
-    .inv-table tbody tr { background: transparent !important; border-bottom: 1px dashed rgba(138,131,113,0.35); }
+    .inv-table tbody tr { background: transparent !important; border-bottom: 1px dashed color-mix(in srgb, var(--color-thread) 35%, transparent); }
 
     .exp-table tr {
       grid-template-columns: auto 1fr auto;

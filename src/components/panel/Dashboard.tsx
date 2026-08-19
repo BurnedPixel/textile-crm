@@ -4,8 +4,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { db, dbReady, onDbChange } from '../../lib/db';
-import { getConfig, getStockedBatches, getSales, getClients } from '../../lib/queries';
+import { getConfig, getStockedBatches, getSales, getClients, getExpenses } from '../../lib/queries';
 import { grandTotalUsd, SETTLED_EPSILON } from '../../lib/queries';
+import { dailySalesSeries, stockByFabric, expensesByCategory, type DayPoint, type RankedRow } from '../../lib/panel-charts';
+import { ChartCard, SalesLineChart, SalesLegend, BarList, CHART_VIOLET, CHART_BRASS } from './charts';
 import {
   getPayments, paymentsBySale, saleBalance,
   getRefunds, refundsBySale,
@@ -16,8 +18,8 @@ import { nominaDb } from '../../lib/nominadb';
 import { listWorkers, listPayrollPays, dueSummary, inMonthEndWindow } from '../../lib/payroll';
 import { CollectDialog, RefundDialog } from '../shared/PaymentDialogs';
 import {
-  fmtUsd, fmtBs, fmtDateTime, toBs, round2, fmtLots,
-  PAYMENT_LABEL, PAYMENT_TONE, PRODUCT_TYPE_LABEL, NM_LABEL,
+  fmtUsd, fmtBs, fmtKg, fmtUnits, fmtDateTime, toBs, round2, fmtLots,
+  PAYMENT_LABEL, PRODUCT_TYPE_LABEL, NM_LABEL,
 } from '../../lib/format';
 import {
   Badge,
@@ -29,7 +31,22 @@ import {
   normStr,
 } from '../ui';
 import { hasRollStock } from '../../lib/types';
-import type { SaleDoc, PaymentDoc, RefundDoc, ClientDoc, BatchDoc, ProductDoc, SystemConfigDoc } from '../../lib/types';
+import type { SaleDoc, PaymentDoc, RefundDoc, ClientDoc, BatchDoc, ProductDoc, SystemConfigDoc, PaymentStatus } from '../../lib/types';
+
+// Payment status → pastel pill (fixed taxonomy: sage=pagada, lavender=parcial, rose=pendiente)
+const PAYMENT_TAG: Record<PaymentStatus, string> = {
+  PAID: 'tag tag-sage',
+  PARTIAL: 'tag tag-lavender',
+  PENDING: 'tag tag-rose',
+};
+
+const emptyNote: React.CSSProperties = {
+  fontFamily: 'var(--font-sans)',
+  fontSize: '12px',
+  color: 'var(--color-thread)',
+  fontStyle: 'italic',
+  margin: 0,
+};
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
@@ -68,6 +85,10 @@ interface DashboardData {
   chart: ColorChartDoc | null;
   /** Admin-only nómina dues (weekly always, monthly only in the month-end window). null = not admin or read failed. */
   nominaDue: { count: number; totalUsd: number } | null;
+  /** Chart rows — derived here from the docs this load already fetched (pure fns). */
+  chartDays: DayPoint[];
+  stockChart: { kg: RankedRow[]; units: RankedRow[] };
+  gastosChart: RankedRow[];
 }
 
 async function fetchAll(): Promise<DashboardData> {
@@ -83,7 +104,7 @@ async function fetchAll(): Promise<DashboardData> {
   // UNWINDOWED on purpose (2026-08-16): the INFORME import carries real
   // January dates, and a 90-day window hid those debts from «Cobros
   // pendientes» while /clientes (full ledger) showed them.
-  const [config, stocked, allSales, allClients, payments, refunds, chart] = await Promise.all([
+  const [config, stocked, allSales, allClients, payments, refunds, chart, expenses] = await Promise.all([
     getConfig(db),
     getStockedBatches(db),
     getSales(db, { descending: true }),
@@ -93,6 +114,7 @@ async function fetchAll(): Promise<DashboardData> {
     getPayments(db),
     getRefunds(db),
     getColorChart(db),
+    getExpenses(db),
   ]);
   const paymentsFor = paymentsBySale(payments);
   const refundsFor = refundsBySale(refunds);
@@ -132,6 +154,9 @@ async function fetchAll(): Promise<DashboardData> {
   return {
     config, stocked, todaySales, recentSales, pendingSales, creditSales, paymentsFor, refundsFor,
     clients: allClients, chart, nominaDue,
+    chartDays: dailySalesSeries(allSales, payments, refunds, 30, todayStart),
+    stockChart: stockByFabric(stocked),
+    gastosChart: expensesByCategory(expenses, todayStart.slice(0, 7)),
   };
 }
 
@@ -146,7 +171,7 @@ function StatCard({ label, primary, secondary }: { label: string; primary: strin
         minWidth: 0,
         padding: '16px 20px',
         background: 'var(--color-cloth)',
-        border: '1px dashed var(--color-thread)',
+        border: '1px solid var(--color-bone)',
         borderLeft: '3px solid var(--color-dye)',
         borderRadius: '8px',
         display: 'flex',
@@ -158,8 +183,8 @@ function StatCard({ label, primary, secondary }: { label: string; primary: strin
         style={{
           fontFamily: 'var(--font-sans)',
           fontSize: '10px',
-          fontWeight: 700,
-          letterSpacing: '0.08em',
+          fontWeight: 500,
+          letterSpacing: '0.06em',
           textTransform: 'uppercase',
           color: 'var(--color-thread)',
         }}
@@ -170,7 +195,7 @@ function StatCard({ label, primary, secondary }: { label: string; primary: strin
         style={{
           fontFamily: 'var(--font-mono)',
           fontSize: '22px',
-          fontWeight: 700,
+          fontWeight: 600,
           fontFeatureSettings: '"tnum" 1',
           color: 'var(--color-ink)',
           lineHeight: 1.1,
@@ -312,8 +337,8 @@ function InventoryTable({ stocked, chart }: InventoryTableProps) {
             fontSize: '14px',
             color: 'var(--color-ink)',
             backgroundColor: 'var(--color-cloth)',
-            border: '1.5px solid var(--color-thread)',
-            borderRadius: '6px',
+            border: '1px solid var(--color-thread)',
+            borderRadius: '8px',
             padding: '0 40px 0 12px',
             minHeight: '44px',
             outline: 'none',
@@ -357,8 +382,8 @@ function InventoryTable({ stocked, chart }: InventoryTableProps) {
                     textAlign: 'left',
                     padding: '8px 12px',
                     fontSize: '10px',
-                    fontWeight: 700,
-                    letterSpacing: '0.08em',
+                    fontWeight: 500,
+                    letterSpacing: '0.06em',
                     textTransform: 'uppercase',
                     color: 'var(--color-thread)',
                     borderBottom: '1px solid var(--color-thread)',
@@ -380,7 +405,7 @@ function InventoryTable({ stocked, chart }: InventoryTableProps) {
                   cursor: 'pointer',
                   background:
                     cursor === idx
-                      ? 'rgba(181,23,92,0.07)'
+                      ? 'color-mix(in srgb, var(--color-dye) 7%, transparent)'
                       : idx % 2 === 0
                         ? 'transparent'
                         : 'var(--color-cloth)',
@@ -526,18 +551,8 @@ function SidePanel({
     >
       {/* Ventas recientes */}
       <section>
-        <h2
-          style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: '11px',
-            fontWeight: 700,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            color: 'var(--color-thread)',
-            margin: '0 0 12px',
-          }}
-        >
-          Ventas recientes
+        <h2 className="micro-label" style={{ margin: '0 0 12px' }}>
+          • Ventas recientes
         </h2>
 
         {recentSales.length === 0 ? (
@@ -561,8 +576,8 @@ function SidePanel({
                   gap: '4px',
                   padding: '10px 12px',
                   background: 'var(--color-cloth)',
-                  border: '1px dashed var(--color-thread)',
-                  borderRadius: '6px',
+                  border: '1px solid var(--color-bone)',
+                  borderRadius: '8px',
                   cursor: 'pointer',
                 }}
               >
@@ -591,7 +606,7 @@ function SidePanel({
                   </span>
                   {/* Derived — a sale collected later is "Pagada" here even though
                       its own frozen paymentStatus still says PENDING. */}
-                  <Badge tone={PAYMENT_TONE[saleStatus(sale)]}>{PAYMENT_LABEL[saleStatus(sale)]}</Badge>
+                  <span className={PAYMENT_TAG[saleStatus(sale)]}>{PAYMENT_LABEL[saleStatus(sale)]}</span>
                 </div>
                 <div
                   style={{
@@ -626,18 +641,8 @@ function SidePanel({
 
       {/* Cobros pendientes */}
       <section>
-        <h2
-          style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: '11px',
-            fontWeight: 700,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            color: 'var(--color-thread)',
-            margin: '0 0 12px',
-          }}
-        >
-          Cobros pendientes
+        <h2 className="micro-label" style={{ margin: '0 0 12px' }}>
+          • Cobros pendientes
         </h2>
 
         {pendingSales.length === 0 && creditSales.length === 0 ? (
@@ -667,8 +672,8 @@ function SidePanel({
                     gap: '4px',
                     padding: '10px 12px',
                     background: 'var(--color-cloth)',
-                    border: `1px dashed ${days > 30 ? 'var(--color-danger)' : 'var(--color-thread)'}`,
-                    borderRadius: '6px',
+                    border: `1px solid ${days > 30 ? 'var(--color-danger)' : 'var(--color-bone)'}`,
+                    borderRadius: '8px',
                   }}
                 >
                   <div
@@ -725,10 +730,10 @@ function SidePanel({
                     flexDirection: 'column',
                     gap: '4px',
                     padding: '10px 12px',
-                    background: 'rgba(62,107,58,0.08)',
-                    border: '1px solid rgba(62,107,58,0.25)',
-                    borderLeft: '3px solid var(--color-ok)',
-                    borderRadius: '6px',
+                    background: 'color-mix(in srgb, var(--color-dye) 6%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--color-dye) 25%, transparent)',
+                    borderLeft: '3px solid var(--color-dye)',
+                    borderRadius: '8px',
                   }}
                 >
                   <div
@@ -758,10 +763,10 @@ function SidePanel({
                       style={{
                         fontFamily: 'var(--font-sans)',
                         fontSize: '10px',
-                        fontWeight: 700,
+                        fontWeight: 500,
                         letterSpacing: '0.06em',
                         textTransform: 'uppercase',
-                        color: 'var(--color-ok)',
+                        color: 'var(--color-dye)',
                         whiteSpace: 'nowrap',
                       }}
                     >
@@ -816,18 +821,7 @@ function Header({ config }: { config: SystemConfigDoc | null }) {
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-        <h1
-          style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: '22px',
-            fontWeight: 800,
-            fontStretch: '125%',
-            textTransform: 'uppercase',
-            letterSpacing: '-0.02em',
-            color: 'var(--color-ink)',
-            margin: 0,
-          }}
-        >
+        <h1 className="title-display" style={{ margin: 0 }}>
           Panel
         </h1>
         <span
@@ -852,8 +846,8 @@ function Header({ config }: { config: SystemConfigDoc | null }) {
               fontFeatureSettings: '"tnum" 1',
               padding: '6px 12px',
               background: 'var(--color-cloth)',
-              border: '1px solid var(--color-thread)',
-              borderRadius: '6px',
+              border: '1px solid var(--color-bone)',
+              borderRadius: '100px',
               color: 'var(--color-ink)',
               whiteSpace: 'nowrap',
             }}
@@ -926,7 +920,7 @@ export default function Dashboard() {
     );
   }
 
-  const { config, stocked, todaySales, recentSales, pendingSales, creditSales, paymentsFor, refundsFor, clients, chart, nominaDue } = data;
+  const { config, stocked, todaySales, recentSales, pendingSales, creditSales, paymentsFor, refundsFor, clients, chart, nominaDue, chartDays, stockChart, gastosChart } = data;
   const rate = config?.currentDailyRateBCV;
 
   // Client id → name map (single pass)
@@ -983,8 +977,8 @@ export default function Dashboard() {
             justifyContent: 'space-between',
             gap: '12px',
             padding: '12px 16px',
-            background: 'rgba(181,23,92,0.06)',
-            border: '1px dashed var(--color-dye)',
+            background: 'color-mix(in srgb, var(--color-dye) 6%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--color-dye) 35%, transparent)',
             borderRadius: '8px',
             textDecoration: 'none',
           }}
@@ -1024,6 +1018,41 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* Charts — rows computed in fetchAll from the docs it already loads */}
+      <ChartCard title="Ventas y cobros — últimos 30 días" aside={<SalesLegend />}>
+        <SalesLineChart series={chartDays} />
+      </ChartCard>
+
+      <div className="chart-grid">
+        <ChartCard title="Stock por tela">
+          {stockChart.kg.length === 0 && stockChart.units.length === 0 ? (
+            <p style={emptyNote}>Sin stock que graficar.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {stockChart.kg.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <span className="micro-label" style={{ fontSize: '10px' }}>Rollos — kg</span>
+                  <BarList rows={stockChart.kg} color={CHART_VIOLET} fmt={fmtKg} />
+                </div>
+              )}
+              {stockChart.units.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <span className="micro-label" style={{ fontSize: '10px' }}>Combos y piezas — unidades</span>
+                  <BarList rows={stockChart.units} color={CHART_VIOLET} fmt={fmtUnits} />
+                </div>
+              )}
+            </div>
+          )}
+        </ChartCard>
+        <ChartCard title="Gastos del mes">
+          {gastosChart.length === 0 ? (
+            <p style={emptyNote}>Sin gastos este mes.</p>
+          ) : (
+            <BarList rows={gastosChart} color={CHART_BRASS} fmt={fmtUsd} />
+          )}
+        </ChartCard>
+      </div>
+
       {/* Main area: inventory table + side panel */}
       <div
         style={{
@@ -1035,18 +1064,8 @@ export default function Dashboard() {
       >
         {/* Inventory table */}
         <div style={{ flex: '1 1 500px', minWidth: 0 }}>
-          <h2
-            style={{
-              fontFamily: 'var(--font-sans)',
-              fontSize: '11px',
-              fontWeight: 700,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              color: 'var(--color-thread)',
-              margin: '0 0 12px',
-            }}
-          >
-            Inventario
+          <h2 className="micro-label" style={{ margin: '0 0 12px' }}>
+            • Inventario
           </h2>
           <InventoryTable stocked={stocked} chart={chart} />
         </div>

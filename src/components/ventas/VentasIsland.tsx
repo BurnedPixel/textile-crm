@@ -9,8 +9,8 @@ import { db } from '../../lib/db';
 import { getSales, getClients, getFiscalConfig, grandTotalUsd, SETTLED_EPSILON } from '../../lib/queries';
 import { getPayments, getRefunds, paymentsBySale, refundsBySale, saleBalance } from '../../lib/payments';
 import { useLiveQuery } from '../../lib/hooks';
-import { fmtDate, fmtDateTime, PAYMENT_LABEL, PAYMENT_TONE } from '../../lib/format';
-import { Badge, Button, Combobox, EmptyState, Money, Select } from '../ui';
+import { fmtDate, fmtDateTime, PAYMENT_LABEL } from '../../lib/format';
+import { Button, Combobox, EmptyState, Money, Select } from '../ui';
 import NotaEntrega from '../venta/NotaEntrega.tsx';
 import type { SaleDoc, PaymentDoc, RefundDoc } from '../../lib/types';
 
@@ -24,6 +24,12 @@ const ESTADO_OPTIONS: { value: EstadoFilter; label: string }[] = [
 ];
 
 const CONTADO = 'Contado';
+
+const PAYMENT_TAG: Record<'PAID' | 'PARTIAL' | 'PENDING', string> = {
+  PAID: 'tag-sage',
+  PARTIAL: 'tag-lavender',
+  PENDING: 'tag-rose',
+};
 
 export default function VentasIsland() {
   // ---- Filters ----
@@ -159,7 +165,7 @@ export default function VentasIsland() {
     <div style={{ maxWidth: '1000px' }}>
       {/* Page header */}
       <div className="no-print" style={{ marginBottom: '1.75rem' }}>
-        <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '22px', fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
+        <h1 className="title-display" style={{ margin: 0 }}>
           Ventas
         </h1>
         <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-thread)', marginTop: '4px' }}>
@@ -170,7 +176,7 @@ export default function VentasIsland() {
       {/* Filters */}
       <div className="no-print" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '14px', marginBottom: '1.25rem' }}>
         <div>
-          <label style={filterLabel}>Mes</label>
+          <label className="micro-label" style={filterLabel}>Mes</label>
           <input
             type="month"
             data-filter-month
@@ -181,7 +187,7 @@ export default function VentasIsland() {
         </div>
 
         <div style={{ minWidth: '220px' }}>
-          <label style={filterLabel}>Cliente</label>
+          <label className="micro-label" style={filterLabel}>Cliente</label>
           <Combobox
             data-filter-client
             data-hotkey-search
@@ -193,7 +199,7 @@ export default function VentasIsland() {
         </div>
 
         <div>
-          <label style={filterLabel}>Estado</label>
+          <label className="micro-label" style={filterLabel}>Estado</label>
           <Select data-filter-estado value={estado} onChange={(e) => setEstado(e.target.value as EstadoFilter)}>
             {ESTADO_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -208,12 +214,12 @@ export default function VentasIsland() {
       ) : (
         // NOT no-print: the expanded nota lives inside this wrapper, and display:none
         // on an ancestor would blank the printout — print CSS hides via visibility.
-        <div className="print-collapse" style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', overflow: 'hidden', marginBottom: '1.5rem' }}>
+        <div className="print-collapse" style={{ background: 'var(--color-cloth)', border: '1px solid var(--color-bone)', borderRadius: '8px', overflow: 'hidden', marginBottom: '1.5rem' }}>
           <table className="table-cards" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-thread)' }}>
                 {['Fecha', 'Cliente', 'Total', 'Estado'].map((h) => (
-                  <th key={h} style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-thread)', padding: '10px 14px', textAlign: h === 'Total' || h === 'Estado' ? 'right' : 'left' }}>
+                  <th key={h} style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-thread)', padding: '10px 14px', textAlign: h === 'Total' || h === 'Estado' ? 'right' : 'left' }}>
                     {h}
                   </th>
                 ))}
@@ -235,9 +241,9 @@ export default function VentasIsland() {
                     onClick={toggle}
                     onKeyDown={(e) => { if (e.key === 'Enter') toggle(); }}
                     style={{
-                      borderBottom: !isOpen && i < filtered.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none',
+                      borderBottom: !isOpen && i < filtered.length - 1 ? '1px solid color-mix(in srgb, var(--color-thread) 15%, transparent)' : 'none',
                       cursor: 'pointer',
-                      background: isOpen ? 'rgba(181,23,92,0.06)' : undefined,
+                      background: isOpen ? 'color-mix(in srgb, var(--color-dye) 6%, transparent)' : undefined,
                     }}
                   >
                     <td style={tdStyle}>{fmtDateTime(sale.date)}</td>
@@ -247,24 +253,24 @@ export default function VentasIsland() {
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'right' }}>
                       {isCredit ? (
-                        <Badge tone="ok">A favor {b.creditUsd.toFixed(2)} $</Badge>
+                        <span style={{ color: 'var(--color-dye)', fontWeight: 600 }}>A favor {b.creditUsd.toFixed(2)} $</span>
                       ) : (
-                        <Badge tone={PAYMENT_TONE[b.status]}>{PAYMENT_LABEL[b.status]}</Badge>
+                        <span className={`tag ${PAYMENT_TAG[b.status]}`}>{PAYMENT_LABEL[b.status]}</span>
                       )}
                     </td>
                   </tr>
                   {isOpen && selectedSale && selectedBalance && (
                     <tr>
-                      <td colSpan={4} style={{ padding: '0 14px 14px', borderBottom: i < filtered.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none' }}>
+                      <td colSpan={4} style={{ padding: '0 14px 14px', borderBottom: i < filtered.length - 1 ? '1px solid color-mix(in srgb, var(--color-thread) 15%, transparent)' : 'none' }}>
                         <div data-sale-detail style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                           <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                               {selectedBalance.owedUsd > SETTLED_EPSILON ? (
-                                <Badge tone="danger">Saldo pendiente {selectedBalance.owedUsd.toFixed(2)} $</Badge>
+                                <span className="tag tag-rose">Saldo pendiente {selectedBalance.owedUsd.toFixed(2)} $</span>
                               ) : selectedBalance.creditUsd > SETTLED_EPSILON ? (
-                                <Badge tone="ok">A favor del cliente {selectedBalance.creditUsd.toFixed(2)} $</Badge>
+                                <span style={{ color: 'var(--color-dye)', fontWeight: 600 }}>A favor del cliente {selectedBalance.creditUsd.toFixed(2)} $</span>
                               ) : (
-                                <Badge tone="ok">Pagada</Badge>
+                                <span className="tag tag-sage">Pagada</span>
                               )}
                             </div>
                             <Button variant="ghost" size="md" onClick={() => setSelectedId(null)}>Cerrar</Button>
@@ -272,8 +278,8 @@ export default function VentasIsland() {
 
                           {/* Cobros y vueltos */}
                           {(selectedPayments.length > 0 || selectedRefunds.length > 0) && (
-                            <div className="no-print" style={{ background: 'var(--color-greige)', border: '1px dashed var(--color-thread)', borderRadius: '8px', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                              <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-thread)' }}>
+                            <div className="no-print" style={{ background: 'var(--color-greige)', border: '1px solid var(--color-bone)', borderRadius: '8px', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              <span className="micro-label">
                                 Cobros y vueltos
                               </span>
                               {[...selectedPayments.map((p) => ({ ...p, kind: 'Cobro' as const })), ...selectedRefunds.map((r) => ({ ...r, kind: 'Vuelto entregado' as const }))]
@@ -312,7 +318,7 @@ export default function VentasIsland() {
               {filtered.length} venta{filtered.length !== 1 ? 's' : ''}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-thread)' }}>
+              <span className="micro-label">
                 Total
               </span>
               <Money usd={totalUsd} />
@@ -325,10 +331,7 @@ export default function VentasIsland() {
   );
 }
 
-const filterLabel: React.CSSProperties = {
-  display: 'block', fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 600,
-  letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-thread)', marginBottom: '4px',
-};
+const filterLabel: React.CSSProperties = { display: 'block', marginBottom: '4px' };
 
 const tdStyle: React.CSSProperties = {
   fontFamily: 'var(--font-sans)',

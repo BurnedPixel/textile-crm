@@ -75,7 +75,7 @@ export default function InformesIsland() {
       {/* Page header + period picker */}
       <div className="no-print" style={{ marginBottom: '1.5rem', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-end' }}>
         <div>
-          <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '22px', fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
+          <h1 className="title-display" style={{ margin: 0 }}>
             Informes
           </h1>
           <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-thread)', marginTop: '4px' }}>
@@ -101,7 +101,7 @@ export default function InformesIsland() {
                 fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 700,
                 textTransform: 'uppercase', letterSpacing: '0.04em',
                 background: kind === k ? 'var(--color-dye)' : 'transparent',
-                color: kind === k ? '#fff' : 'var(--color-ink)',
+                color: kind === k ? 'var(--color-cloth)' : 'var(--color-ink)',
               }}
             >
               {k === 'WEEK' ? 'Semana' : 'Mes'}
@@ -176,7 +176,7 @@ export default function InformesIsland() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="informe-section" style={{ marginBottom: '1.75rem' }}>
-      <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-thread)', borderBottom: '1px dashed var(--color-thread)', paddingBottom: '6px', marginBottom: '10px' }}>
+      <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-thread)', borderBottom: '1px dashed var(--color-thread)', paddingBottom: '6px', marginBottom: '10px' }}>
         {title}
       </h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -209,7 +209,7 @@ function MiniTable({ headers, rows }: { headers: string[]; rows: React.ReactNode
               key={h}
               style={{
                 textAlign: i === 0 ? 'left' : 'right', padding: '4px 0',
-                fontFamily: 'var(--font-sans)', fontSize: '10px', fontWeight: 700,
+                fontFamily: 'var(--font-sans)', fontSize: '10px', fontWeight: 500,
                 textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-thread)',
               }}
             >
@@ -220,7 +220,7 @@ function MiniTable({ headers, rows }: { headers: string[]; rows: React.ReactNode
       </thead>
       <tbody>
         {rows.map((r, ri) => (
-          <tr key={ri} style={{ borderBottom: ri < rows.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none' }}>
+          <tr key={ri} style={{ borderBottom: ri < rows.length - 1 ? '1px solid color-mix(in srgb, var(--color-thread) 15%, transparent)' : 'none' }}>
             {r.map((cell, ci) => (
               <td key={ci} style={{ textAlign: ci === 0 ? 'left' : 'right', padding: '4px 0', fontFamily: 'var(--font-mono)', fontSize: '12px', fontVariantNumeric: 'tabular-nums' }}>
                 {cell}

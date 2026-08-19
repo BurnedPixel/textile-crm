@@ -40,7 +40,7 @@ import {
 } from '../../lib/companions';
 import {
   round2, fmtKg, fmtUnits, fmtUsd, fmtBs, fmtLot, fmtLotsLabel, fmtPiece,
-  PAYMENT_LABEL, PAYMENT_TONE, CONDITION_SHORT, CONDITION_TONE, NM_LABEL,
+  PAYMENT_LABEL, CONDITION_SHORT, CONDITION_TONE, NM_LABEL,
 } from '../../lib/format';
 import {
   UNIT_FOR, clientIdOf, FIELD_MAX, hasRollStock, validateDocumentId, validateName, validatePhone,
@@ -182,7 +182,7 @@ function Listbox({
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '6px' }}>
-        <span style={stepLabelStyle}>{label}</span>
+        <span className="micro-label" style={stepLabelStyle}>{label}</span>
         {value && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
             <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 700, color: 'var(--color-dye)' }}>{value}</span>
@@ -207,7 +207,7 @@ function Listbox({
         style={{
           outline: 'none',
           border: '1.5px solid var(--color-dye)',
-          borderRadius: '6px',
+          borderRadius: '8px',
           maxHeight: '200px',
           overflowY: 'auto',
           backgroundColor: 'var(--color-cloth)',
@@ -242,14 +242,14 @@ function Listbox({
                 fontWeight: selected ? 700 : i === activeIdx ? 600 : 400,
                 color: 'var(--color-ink)',
                 backgroundColor: selected
-                  ? 'rgba(181,23,92,0.12)'
+                  ? 'color-mix(in srgb, var(--color-dye) 12%, transparent)'
                   : i === activeIdx
-                  ? 'rgba(181,23,92,0.06)'
+                  ? 'color-mix(in srgb, var(--color-dye) 6%, transparent)'
                   : 'transparent',
                 borderLeft: selected
                   ? '3px solid var(--color-dye)'
                   : i === activeIdx
-                  ? '3px solid rgba(181,23,92,0.4)'
+                  ? '3px solid color-mix(in srgb, var(--color-dye) 40%, transparent)'
                   : '3px solid transparent',
                 transition: 'background 0.08s',
               }}
@@ -266,15 +266,7 @@ function Listbox({
 
 // ── styles ────────────────────────────────────────────────────────────────────
 
-const stepLabelStyle: CSSProperties = {
-  fontFamily: 'var(--font-sans)',
-  fontSize: '11px',
-  fontWeight: 700,
-  letterSpacing: '0.07em',
-  textTransform: 'uppercase',
-  color: 'var(--color-thread)',
-  marginBottom: '6px',
-};
+const stepLabelStyle: CSSProperties = { marginBottom: '6px' };
 
 const hintStyle: CSSProperties = {
   fontFamily: 'var(--font-sans)',
@@ -282,25 +274,24 @@ const hintStyle: CSSProperties = {
   color: 'var(--color-thread)',
 };
 
-// 11px uppercase thread-colored micro-label above cart-line inputs.
-const microLabelStyle: CSSProperties = {
-  fontFamily: 'var(--font-sans)',
-  fontSize: '11px',
-  fontWeight: 700,
-  letterSpacing: '0.06em',
-  textTransform: 'uppercase',
-  color: 'var(--color-thread)',
-  marginBottom: '3px',
-};
+// Micro-label above cart-line inputs.
+const microLabelStyle: CSSProperties = { marginBottom: '3px' };
 
 function MicroField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      <span style={microLabelStyle}>{label}</span>
+      <span className="micro-label" style={microLabelStyle}>{label}</span>
       {children}
     </div>
   );
 }
+
+/** PAID/PARTIAL/PENDING as pastel-fill tag pills, per the design system. */
+const PAYMENT_TAG_CLASS: Record<PaymentStatus, string> = {
+  PAID: 'tag tag-sage',
+  PARTIAL: 'tag tag-lavender',
+  PENDING: 'tag tag-rose',
+};
 
 // The compañeros suggestion sits at the head of the cart column, marked with
 // the dye accent so it reads as an offer rather than as something already added.
@@ -311,12 +302,12 @@ const companionPanel: CSSProperties = {
   padding: '10px 12px',
   borderRadius: '8px',
   border: '1.5px solid var(--color-dye)',
-  backgroundColor: 'rgba(181,23,92,0.04)',
+  backgroundColor: 'color-mix(in srgb, var(--color-dye) 4%, transparent)',
 };
 
 const companionList: CSSProperties = {
-  border: '1px dashed var(--color-thread)',
-  borderRadius: '6px',
+  border: '1px solid var(--color-bone)',
+  borderRadius: '8px',
   maxHeight: '132px',
   overflowY: 'auto',
   backgroundColor: 'var(--color-cloth)',
@@ -1188,9 +1179,9 @@ export default function SaleTerminal() {
           </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
             <Money usd={saleTaxes(lastSale.sale).grandTotalUsd} rate={rate || undefined} />
-            <Badge tone={PAYMENT_TONE[lastSale.sale.paymentStatus]}>
+            <span className={PAYMENT_TAG_CLASS[lastSale.sale.paymentStatus]}>
               {PAYMENT_LABEL[lastSale.sale.paymentStatus]}
-            </Badge>
+            </span>
           </div>
           {/* Fresh checkout — no payment/refund docs exist yet, so [] [] is
               correct here (not a refund-blind read site). */}
@@ -1203,9 +1194,9 @@ export default function SaleTerminal() {
                 fontSize: '13px',
                 fontWeight: 600,
                 color: 'var(--color-warn)',
-                background: 'rgba(200,140,0,0.10)',
-                border: '1px solid rgba(200,140,0,0.30)',
-                borderRadius: '6px',
+                background: 'color-mix(in srgb, var(--color-warn) 10%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--color-warn) 30%, transparent)',
+                borderRadius: '8px',
                 padding: '8px 14px',
                 margin: 0,
               }}
@@ -1246,7 +1237,7 @@ export default function SaleTerminal() {
           <Button variant="ghost" onClick={() => setView('terminal')} style={{ padding: '0 12px', minHeight: '36px', fontSize: '13px' }}>
             ← Volver
           </Button>
-          <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '18px', fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
+          <h2 className="title-display" style={{ fontSize: '18px', margin: 0 }}>
             Cobrar
           </h2>
         </div>
@@ -1254,7 +1245,7 @@ export default function SaleTerminal() {
         {/* A sale that is not «en libros» carries no tax, so it gets the plain
             total it always had — a breakdown of one line repeated twice reads
             as though something were being added. */}
-        <div data-tax-panel style={{ padding: '16px', border: '1px dashed var(--color-thread)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div data-tax-panel style={{ padding: '16px', border: '1px solid var(--color-bone)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {ivaRate > 0 && (
             <>
               <TaxRow label="Base" usd={taxes.baseUsd} />
@@ -1318,31 +1309,31 @@ export default function SaleTerminal() {
         </div>
 
         {/* Remaining */}
-        <div style={{ padding: '14px 16px', borderRadius: '8px', background: remainingUsd > 0.009 ? 'rgba(185,119,24,0.08)' : 'rgba(62,107,58,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '14px 16px', borderRadius: '8px', background: remainingUsd > 0.009 ? 'color-mix(in srgb, var(--color-warn) 8%, transparent)' : 'color-mix(in srgb, var(--color-ok) 8%, transparent)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-thread)' }}>
             {remainingUsd > 0.009 ? 'Restante' : 'Cubierto'}
           </span>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             {remainingUsd > 0.009 && <Money usd={remainingUsd} rate={rate || undefined} />}
-            <Badge tone={PAYMENT_TONE[previewStatus]}>{PAYMENT_LABEL[previewStatus]}</Badge>
+            <span className={PAYMENT_TAG_CLASS[previewStatus]}>{PAYMENT_LABEL[previewStatus]}</span>
           </div>
         </div>
 
         {(previewStatus === 'PENDING' || previewStatus === 'PARTIAL') && !cart?.clientId && (
-          <div style={{ padding: '10px 14px', borderRadius: '6px', background: 'rgba(163,46,46,0.08)', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }}>
+          <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'color-mix(in srgb, var(--color-danger) 8%, transparent)', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }}>
             Las ventas pendientes o parciales requieren un cliente seleccionado (crédito necesita deudor).
           </div>
         )}
 
         {rate === 0 && (
-          <div style={{ padding: '10px 14px', borderRadius: '6px', background: 'rgba(163,46,46,0.08)', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }}>
+          <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'color-mix(in srgb, var(--color-danger) 8%, transparent)', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }}>
             No hay tasa del día.{' '}
             <a href="/configuracion" style={{ color: 'var(--color-dye)' }}>Configurar tasa</a>
           </div>
         )}
 
         {checkoutErr && (
-          <div style={{ padding: '10px 14px', borderRadius: '6px', background: 'rgba(163,46,46,0.08)', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }} role="alert">
+          <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'color-mix(in srgb, var(--color-danger) 8%, transparent)', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }} role="alert">
             {checkoutErr}
           </div>
         )}
@@ -1366,7 +1357,7 @@ export default function SaleTerminal() {
       <div className="venta-facets">
 
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
-          <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '18px', fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
+          <h1 className="title-display" style={{ fontSize: '18px', margin: 0 }}>
             Nueva venta
           </h1>
           <span className="kbd-hints"><Kbd>/</Kbd> <span style={hintStyle}>buscar</span></span>
@@ -1457,7 +1448,7 @@ export default function SaleTerminal() {
       <div className="venta-cart">
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-thread)', margin: 0 }}>
+          <h2 className="micro-label" style={{ margin: 0 }}>
             Carrito
           </h2>
           {(cart?.lines.length ?? 0) > 0 && (
@@ -1470,7 +1461,7 @@ export default function SaleTerminal() {
         {/* ── COMPAÑEROS ── a suggestion after a piqué line, never an auto-add */}
         {companion && (
           <div data-companion style={companionPanel} role="group" aria-label="Compañeros sugeridos">
-            <div style={{ ...stepLabelStyle, marginBottom: '2px', color: 'var(--color-dye)' }}>
+            <div className="micro-label" style={{ marginBottom: '2px', color: 'var(--color-dye)' }}>
               Compañeros
             </div>
             <div style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>
@@ -1538,7 +1529,7 @@ export default function SaleTerminal() {
                             gap: '8px',
                             fontFamily: 'var(--font-sans)',
                             fontSize: '12px',
-                            backgroundColor: active ? 'rgba(181,23,92,0.10)' : 'transparent',
+                            backgroundColor: active ? 'color-mix(in srgb, var(--color-dye) 10%, transparent)' : 'transparent',
                             borderLeft: active ? '3px solid var(--color-dye)' : '3px solid transparent',
                           }}
                         >
@@ -1612,7 +1603,7 @@ export default function SaleTerminal() {
 
         {/* Cart line update errors */}
         {lineUpdateErr && (
-          <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'rgba(163,46,46,0.08)', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }} role="alert">
+          <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'color-mix(in srgb, var(--color-danger) 8%, transparent)', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-danger)' }} role="alert">
             {lineUpdateErr}
           </div>
         )}
@@ -1639,10 +1630,10 @@ export default function SaleTerminal() {
 
         {/* Client picker */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={stepLabelStyle}>Cliente</div>
+          <div className="micro-label" style={stepLabelStyle}>Cliente</div>
           {selectedClient ? (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', border: '1.5px solid var(--color-dye)', borderRadius: '6px', backgroundColor: 'var(--color-cloth)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', border: '1.5px solid var(--color-dye)', borderRadius: '8px', backgroundColor: 'var(--color-cloth)' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 600, color: 'var(--color-ink)' }}>{selectedClient.name}</div>
                   <div style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--color-thread)' }}>{selectedClient.documentId}</div>
@@ -1658,10 +1649,10 @@ export default function SaleTerminal() {
               {missingFields.length > 0 && !dismissedIncomplete.has(selectedClient._id) && (
                 <div
                   data-client-incomplete
-                  style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 14px', border: '1px solid rgba(185,119,24,0.25)', borderRadius: '6px', backgroundColor: 'rgba(185,119,24,0.08)' }}
+                  style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 14px', border: '1px solid color-mix(in srgb, var(--color-warn) 25%, transparent)', borderRadius: '8px', backgroundColor: 'color-mix(in srgb, var(--color-warn) 8%, transparent)' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-                    <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: '#8a5a10' }}>
+                    <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-warn)' }}>
                       Datos incompletos: falta {joinSpanish(missingFields.map((f) => MISSING_LABEL[f]))}.
                     </span>
                     {!completingClient && (
@@ -1738,8 +1729,8 @@ export default function SaleTerminal() {
             </>
           ) : creatingClient ? (
             /* Inline creation form */
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '12px 14px', border: '1.5px dashed var(--color-dye)', borderRadius: '6px', backgroundColor: 'var(--color-cloth)' }}>
-              <div style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 700, color: 'var(--color-dye)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '12px 14px', border: '1.5px dashed var(--color-dye)', borderRadius: '8px', backgroundColor: 'var(--color-cloth)' }}>
+              <div style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 500, color: 'var(--color-dye)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 Nuevo cliente
               </div>
               <Field label="Nombre">
@@ -1848,11 +1839,11 @@ export default function SaleTerminal() {
                 }}
               />
               {clientOpen && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, border: '1.5px solid var(--color-dye)', borderRadius: '6px', backgroundColor: 'var(--color-cloth)', maxHeight: '180px', overflowY: 'auto', marginTop: '2px' }}>
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, border: '1.5px solid var(--color-dye)', borderRadius: '8px', backgroundColor: 'var(--color-cloth)', maxHeight: '180px', overflowY: 'auto', marginTop: '2px' }}>
                   {/* Sin cliente — index 0 */}
                   <div
                     onMouseDown={() => void handleSetClient(null)}
-                    style={{ padding: '9px 14px', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-thread)', borderBottom: '1px solid var(--color-thread)', backgroundColor: clientDropHighlight === 0 ? 'rgba(181,23,92,0.06)' : 'transparent' }}
+                    style={{ padding: '9px 14px', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-thread)', borderBottom: '1px solid var(--color-thread)', backgroundColor: clientDropHighlight === 0 ? 'color-mix(in srgb, var(--color-dye) 6%, transparent)' : 'transparent' }}
                   >
                     Sin cliente
                   </div>
@@ -1860,7 +1851,7 @@ export default function SaleTerminal() {
                     <div
                       key={c._id}
                       onMouseDown={() => void handleSetClient(c._id)}
-                      style={{ padding: '9px 14px', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ink)', backgroundColor: clientDropHighlight === ci + 1 ? 'rgba(181,23,92,0.06)' : 'transparent' }}
+                      style={{ padding: '9px 14px', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ink)', backgroundColor: clientDropHighlight === ci + 1 ? 'color-mix(in srgb, var(--color-dye) 6%, transparent)' : 'transparent' }}
                     >
                       {c.name}
                       <span style={{ fontSize: '11px', color: 'var(--color-thread)', marginLeft: '8px' }}>{c.documentId}</span>
@@ -1870,7 +1861,7 @@ export default function SaleTerminal() {
                   {clientSearch.trim() !== '' && filteredClients.length === 0 && (
                     <div
                       onMouseDown={startCreatingClient}
-                      style={{ padding: '9px 14px', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-dye)', fontWeight: 600, backgroundColor: clientDropHighlight === 1 ? 'rgba(181,23,92,0.06)' : 'transparent' }}
+                      style={{ padding: '9px 14px', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-dye)', fontWeight: 600, backgroundColor: clientDropHighlight === 1 ? 'color-mix(in srgb, var(--color-dye) 6%, transparent)' : 'transparent' }}
                     >
                       + Crear cliente «{clientSearch}»
                     </div>
@@ -2040,7 +2031,7 @@ function BatchProductZone({
 
       {isRoll ? (
         <>
-          <div style={stepLabelStyle}>Selecciona un rollo</div>
+          <div className="micro-label" style={stepLabelStyle}>Selecciona un rollo</div>
           <div
             ref={rollListRef}
             tabIndex={0}
@@ -2048,7 +2039,7 @@ function BatchProductZone({
             aria-label="Rollos disponibles"
             onKeyDown={handleRollKey}
             autoFocus={!selRoll}
-            style={{ outline: 'none', border: '1.5px solid var(--color-thread)', borderRadius: '6px', maxHeight: '200px', overflowY: 'auto', backgroundColor: 'var(--color-cloth)' }}
+            style={{ outline: 'none', border: '1.5px solid var(--color-thread)', borderRadius: '8px', maxHeight: '200px', overflowY: 'auto', backgroundColor: 'var(--color-cloth)' }}
           >
             {stockedRolls.map((roll, i) => {
               const inCart = inCartRollIds.has(roll._id);
@@ -2069,7 +2060,7 @@ function BatchProductZone({
                     gap: '10px',
                     fontFamily: 'var(--font-sans)',
                     fontSize: '13px',
-                    backgroundColor: i === rollActiveIdx ? 'rgba(181,23,92,0.08)' : 'transparent',
+                    backgroundColor: i === rollActiveIdx ? 'color-mix(in srgb, var(--color-dye) 8%, transparent)' : 'transparent',
                     borderLeft: i === rollActiveIdx ? '3px solid var(--color-dye)' : '3px solid transparent',
                   }}
                 >
@@ -2166,7 +2157,7 @@ function CartLine({ line, rate, onUpdate, onRemove }: CartLineProps) {
       data-cart-line
       style={{
         padding: '12px 14px',
-        border: '1px dashed var(--color-thread)',
+        border: '1px solid var(--color-bone)',
         borderRadius: '8px',
         backgroundColor: 'var(--color-cloth)',
         display: 'flex',
@@ -2246,7 +2237,7 @@ function CartLine({ line, rate, onUpdate, onRemove }: CartLineProps) {
 
         {/* Subtotal */}
         <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <span style={microLabelStyle}>Subtotal</span>
+          <span className="micro-label" style={microLabelStyle}>Subtotal</span>
           <Money usd={line.lineSubtotalUsd} rate={rate || undefined} />
         </div>
       </div>

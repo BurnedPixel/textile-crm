@@ -114,16 +114,18 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
 }
 
+// Pill buttons: ink-filled primary, hairline-outlined secondary — flat, no shadows.
+// The violet accent is for focus/links/active states, never a button fill.
 const btnBase: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   gap: '6px',
   fontFamily: 'var(--font-sans)',
-  fontWeight: 600,
-  letterSpacing: '0.02em',
-  border: '1.5px solid transparent',
-  borderRadius: '6px',
+  fontWeight: 500,
+  letterSpacing: '0.01em',
+  border: '1px solid transparent',
+  borderRadius: '999px',
   cursor: 'pointer',
   transition: 'background 0.12s, color 0.12s, opacity 0.12s',
   minHeight: '44px',
@@ -132,14 +134,14 @@ const btnBase: React.CSSProperties = {
 
 const btnVariant: Record<string, React.CSSProperties> = {
   primary: {
-    backgroundColor: 'var(--color-dye)',
+    backgroundColor: 'var(--color-ink)',
     color: 'var(--color-cloth)',
-    borderColor: 'var(--color-dye)',
+    borderColor: 'var(--color-ink)',
   },
   ghost: {
     backgroundColor: 'transparent',
     color: 'var(--color-ink)',
-    borderColor: 'var(--color-thread)',
+    borderColor: 'var(--color-ink)',
   },
   danger: {
     backgroundColor: 'transparent',
@@ -149,8 +151,8 @@ const btnVariant: Record<string, React.CSSProperties> = {
 };
 
 const btnSize: Record<string, React.CSSProperties> = {
-  md: { padding: '0 16px', fontSize: '14px', minHeight: '44px' },
-  lg: { padding: '0 24px', fontSize: '15px', minHeight: '52px' },
+  md: { padding: '0 18px', fontSize: '14px', minHeight: '44px' },
+  lg: { padding: '0 26px', fontSize: '15px', minHeight: '52px' },
 };
 
 export function Button({ variant = 'primary', size = 'md', style, disabled, children, ...rest }: ButtonProps) {
@@ -181,8 +183,8 @@ const inputBase: React.CSSProperties = {
   fontSize: '14px',
   color: 'var(--color-ink)',
   backgroundColor: 'var(--color-cloth)',
-  border: '1.5px solid var(--color-thread)',
-  borderRadius: '6px',
+  border: '1px solid var(--color-thread)',
+  borderRadius: '8px',
   padding: '0 12px',
   minHeight: '44px',
   outline: 'none',
@@ -232,7 +234,7 @@ export function Select({ style, children, ...rest }: SelectProps) {
       style={{
         ...inputBase,
         appearance: 'none',
-        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238A8371' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
+        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2383807A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
         backgroundRepeat: 'no-repeat',
         backgroundPosition: 'right 12px center',
         paddingRight: '32px',
@@ -269,8 +271,8 @@ export function Field({ label, hint, error, children }: FieldProps) {
         style={{
           fontFamily: 'var(--font-sans)',
           fontSize: '12px',
-          fontWeight: 600,
-          letterSpacing: '0.05em',
+          fontWeight: 500,
+          letterSpacing: '0.06em',
           textTransform: 'uppercase',
           color: error ? 'var(--color-danger)' : 'var(--color-thread)',
         }}
@@ -368,10 +370,10 @@ interface BadgeProps {
 }
 
 const badgeColors: Record<string, { bg: string; text: string }> = {
-  ok:      { bg: 'rgba(62,107,58,0.12)',   text: 'var(--color-ok)' },
-  warn:    { bg: 'rgba(185,119,24,0.12)',  text: 'var(--color-warn)' },
-  danger:  { bg: 'rgba(163,46,46,0.12)',   text: 'var(--color-danger)' },
-  neutral: { bg: 'rgba(138,131,113,0.12)', text: 'var(--color-thread)' },
+  ok:      { bg: 'color-mix(in srgb, var(--color-ok) 12%, transparent)',     text: 'var(--color-ok)' },
+  warn:    { bg: 'color-mix(in srgb, var(--color-warn) 12%, transparent)',   text: 'var(--color-warn)' },
+  danger:  { bg: 'color-mix(in srgb, var(--color-danger) 12%, transparent)', text: 'var(--color-danger)' },
+  neutral: { bg: 'color-mix(in srgb, var(--color-thread) 12%, transparent)', text: 'var(--color-thread)' },
 };
 
 export function Badge({ tone = 'neutral', children }: BadgeProps) {
@@ -581,8 +583,8 @@ export function Combobox({
             right: 0,
             zIndex: 20,
             backgroundColor: 'var(--color-cloth)',
-            border: '1.5px solid var(--color-dye)',
-            borderRadius: '6px',
+            border: '1px solid var(--color-dye)',
+            borderRadius: '8px',
             maxHeight: '220px',
             overflowY: 'auto',
           }}
@@ -607,7 +609,7 @@ export function Combobox({
                 fontFamily: 'var(--font-sans)',
                 fontSize: '13px',
                 color: 'var(--color-ink)',
-                backgroundColor: i === activeIdx ? 'rgba(181,23,92,0.08)' : 'transparent',
+                backgroundColor: i === activeIdx ? 'color-mix(in srgb, var(--color-dye) 8%, transparent)' : 'transparent',
                 borderLeft: i === activeIdx ? '3px solid var(--color-dye)' : '3px solid transparent',
                 transition: 'background 0.08s',
               }}

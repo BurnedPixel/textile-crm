@@ -158,7 +158,7 @@ function PayDialog({
       onClose={onClose}
       aria-label="Registrar pago"
       style={{
-        border: '1px solid var(--color-thread)',
+        border: '1px solid var(--color-bone)',
         borderRadius: '8px',
         background: 'var(--color-cloth)',
         padding: '20px 24px',
@@ -168,7 +168,7 @@ function PayDialog({
     >
       <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         <div>
-          <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--color-thread)', margin: '0 0 6px' }}>
+          <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-thread)', margin: '0 0 6px' }}>
             Registrar pago
           </h2>
           <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', margin: 0 }}>
@@ -239,7 +239,7 @@ function PayDialog({
 // ─── PAGOS PENDIENTES ─────────────────────────────────────────────────────
 
 const dueThStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em',
+  fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 500, letterSpacing: '0.06em',
   textTransform: 'uppercase', color: 'var(--color-thread)', padding: '10px 12px', textAlign: 'left',
 };
 const dueTdStyle: React.CSSProperties = { padding: '10px 12px', verticalAlign: 'top' };
@@ -263,7 +263,7 @@ function DueSection({ dues, rate, onPay }: { dues: WorkerDue[]; rate: number; on
   const totalGeneralUsd = round2(dues.reduce((sum, wd) => sum + wd.totalUsd, 0));
 
   return (
-    <div style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', overflowX: 'auto' }}>
+    <div style={{ background: 'var(--color-cloth)', border: '1px solid var(--color-bone)', borderRadius: '10px', overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '480px' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--color-thread)' }}>
@@ -283,7 +283,7 @@ function DueSection({ dues, rate, onPay }: { dues: WorkerDue[]; rate: number; on
                   key={wd.worker._id}
                   onClick={() => toggle(wd.worker._id)}
                   style={{
-                    borderBottom: isOpen ? 'none' : (i < dues.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none'),
+                    borderBottom: isOpen ? 'none' : (i < dues.length - 1 ? '1px solid color-mix(in srgb, var(--color-thread) 15%, transparent)' : 'none'),
                     cursor: 'pointer',
                   }}
                 >
@@ -326,11 +326,11 @@ function DueSection({ dues, rate, onPay }: { dues: WorkerDue[]; rate: number; on
                   </td>
                 </tr>
                 {isOpen && (
-                  <tr style={{ borderBottom: i < dues.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none' }}>
-                    <td colSpan={4} style={{ padding: '0 12px 12px', background: 'rgba(138,131,113,0.05)' }}>
+                  <tr style={{ borderBottom: i < dues.length - 1 ? '1px solid color-mix(in srgb, var(--color-thread) 15%, transparent)' : 'none' }}>
+                    <td colSpan={4} style={{ padding: '0 12px 12px', background: 'color-mix(in srgb, var(--color-thread) 5%, transparent)' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         {wd.due.map((d) => (
-                          <div key={`${d.label}-${d.periodKey}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '4px 0', borderBottom: '1px solid rgba(138,131,113,0.12)' }}>
+                          <div key={`${d.label}-${d.periodKey}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '4px 0', borderBottom: '1px solid color-mix(in srgb, var(--color-thread) 12%, transparent)' }}>
                             <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ink)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                               {d.label} · {periodLabel(d.periodKey)}
                               {d.overdue && <Badge tone="danger">Atrasado</Badge>}
@@ -348,7 +348,7 @@ function DueSection({ dues, rate, onPay }: { dues: WorkerDue[]; rate: number; on
         </tbody>
         <tfoot>
           <tr style={{ borderTop: '1px solid var(--color-thread)' }}>
-            <td colSpan={2} style={{ ...dueTdStyle, fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-thread)' }}>
+            <td colSpan={2} style={{ ...dueTdStyle, fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-thread)' }}>
               Total general
             </td>
             <td style={{ ...dueTdStyle, textAlign: 'right' }}>
@@ -486,7 +486,7 @@ function WorkerForm({
             autoFocus
           />
         ) : (
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', color: 'var(--color-ink)', padding: '10px 12px', background: 'rgba(138,131,113,0.08)', borderRadius: '6px', border: '1.5px solid var(--color-thread)' }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', color: 'var(--color-ink)', padding: '10px 12px', background: 'color-mix(in srgb, var(--color-thread) 8%, transparent)', borderRadius: '8px', border: '1px solid var(--color-bone)' }}>
             {form.documentId}
           </div>
         )}
@@ -514,7 +514,7 @@ function WorkerForm({
       </label>
 
       <div>
-        <div style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-thread)', marginBottom: '8px' }}>
+        <div className="micro-label" style={{ marginBottom: '8px' }}>
           Conceptos
         </div>
         <ConceptsEditor concepts={form.concepts} onChange={(c) => setForm((p) => ({ ...p, concepts: c }))} />
@@ -597,7 +597,7 @@ function WorkersSection({ workers, reload }: { workers: WorkerDoc[]; reload: () 
                 style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px',
                   padding: '12px 14px', borderRadius: '8px', cursor: 'pointer',
-                  background: w._id === selectedId ? 'rgba(181,23,92,0.08)' : 'var(--color-cloth)',
+                  background: w._id === selectedId ? 'color-mix(in srgb, var(--color-dye) 8%, transparent)' : 'var(--color-cloth)',
                   border: `1.5px solid ${w._id === selectedId ? 'var(--color-dye)' : 'var(--color-thread)'}`,
                 }}
               >
@@ -666,12 +666,12 @@ function HistorySection({ pays, workers }: { pays: PayrollPayDoc[]; workers: Wor
   }
   const nameFor = (workerId: string) => workers.find((w) => w._id === workerId)?.name ?? workerId;
   return (
-    <div style={{ background: 'var(--color-cloth)', border: '1px dashed var(--color-thread)', borderRadius: '10px', overflow: 'hidden' }}>
+    <div style={{ background: 'var(--color-cloth)', border: '1px solid var(--color-bone)', borderRadius: '10px', overflow: 'hidden' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--color-thread)' }}>
             {['Fecha', 'Trabajador', 'Conceptos', 'Método', 'Total'].map((h) => (
-              <th key={h} style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--color-thread)', padding: '10px 14px', textAlign: h === 'Total' ? 'right' : 'left' }}>
+              <th key={h} style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-thread)', padding: '10px 14px', textAlign: h === 'Total' ? 'right' : 'left' }}>
                 {h}
               </th>
             ))}
@@ -679,7 +679,7 @@ function HistorySection({ pays, workers }: { pays: PayrollPayDoc[]; workers: Wor
         </thead>
         <tbody>
           {pays.map((p, i) => (
-            <tr key={p._id} style={{ borderBottom: i < pays.length - 1 ? '1px solid rgba(138,131,113,0.15)' : 'none' }}>
+            <tr key={p._id} style={{ borderBottom: i < pays.length - 1 ? '1px solid color-mix(in srgb, var(--color-thread) 15%, transparent)' : 'none' }}>
               <td style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-ink)', padding: '10px 14px' }}>
                 {fmtDateTime(p.date)}
               </td>
@@ -756,8 +756,8 @@ function NominaAdmin() {
 const sectionTitleStyle: React.CSSProperties = {
   fontFamily: 'var(--font-sans)',
   fontSize: '14px',
-  fontWeight: 700,
-  letterSpacing: '0.04em',
+  fontWeight: 500,
+  letterSpacing: '0.06em',
   textTransform: 'uppercase',
   color: 'var(--color-thread)',
   margin: '0 0 12px',
@@ -789,7 +789,7 @@ export default function NominaIsland() {
 function PageHeader() {
   return (
     <div style={{ marginBottom: '1.75rem' }}>
-      <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '22px', fontWeight: 800, fontStretch: '125%', textTransform: 'uppercase', letterSpacing: '-0.02em', color: 'var(--color-ink)', margin: 0 }}>
+      <h1 className="title-display" style={{ margin: 0 }}>
         Nómina
       </h1>
       <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--color-thread)', marginTop: '4px' }}>
