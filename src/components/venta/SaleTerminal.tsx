@@ -623,9 +623,9 @@ export default function SaleTerminal() {
   const ivaRate = isOnTheBooks ? IVA_RATE : 0;
   const igtfRate = isOnTheBooks ? IGTF_RATE : 0;
 
-  const paidCash = parseFloat(payments.paidUsdCash) || 0;
-  const paidTransfer = parseFloat(payments.paidUsdTransfer) || 0;
-  const paidBsNum = parseFloat(payments.paidBs) || 0;
+  const paidCash = Number(payments.paidUsdCash) || 0;
+  const paidTransfer = Number(payments.paidUsdTransfer) || 0;
+  const paidBsNum = Number(payments.paidBs) || 0;
 
   // IGTF depends on how much of the bill is settled in divisas, so it only
   // exists once a split has been typed. Recomputed live as the seller types.
@@ -1543,8 +1543,8 @@ export default function SaleTerminal() {
                           }}
                         >
                           <SwatchChip color={o.color} size="sm" />
-                          <span style={{ color: 'var(--color-ink)' }}>{o.label}</span>
-                          <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', color: 'var(--color-thread)' }}>
+                          <span style={{ color: 'var(--color-ink)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+                          <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', color: 'var(--color-thread)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {o.right}
                           </span>
                         </div>
@@ -1553,10 +1553,10 @@ export default function SaleTerminal() {
                   </div>
                   )}
 
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
                     {options.length > 0 && (
                       <>
-                        <div style={{ width: '96px' }}>
+                        <div style={{ width: '96px', flexShrink: 0 }}>
                           <MicroField label={companion.rule.companion === 'ribb' ? 'Kg' : 'Combos'}>
                             <NumberInput
                               data-companion-qty
@@ -2199,8 +2199,8 @@ function CartLine({ line, rate, onUpdate, onRemove }: CartLineProps) {
               min={0.001}
               step={0.001}
               onChange={(e) => {
-                const q = parseFloat(e.target.value);
-                if (q > 0) onUpdate({ quantity: q, lineSubtotalUsd: round2(q * line.unitPriceAtSale) });
+                const q = Number(e.target.value);
+                if (Number.isFinite(q) && q > 0) onUpdate({ quantity: q, lineSubtotalUsd: round2(q * line.unitPriceAtSale) });
               }}
               style={{ width: '100px', fontFamily: 'var(--font-mono)', fontSize: '13px' }}
               aria-label="Cantidad en kg"
@@ -2236,8 +2236,8 @@ function CartLine({ line, rate, onUpdate, onRemove }: CartLineProps) {
             min={0.01}
             step={0.01}
             onChange={(e) => {
-              const p = parseFloat(e.target.value);
-              if (p > 0) onUpdate({ unitPriceAtSale: p, lineSubtotalUsd: round2(line.quantity * p) });
+              const p = Number(e.target.value);
+              if (Number.isFinite(p) && p > 0) onUpdate({ unitPriceAtSale: p, lineSubtotalUsd: round2(line.quantity * p) });
             }}
             style={{ width: '90px', fontFamily: 'var(--font-mono)', fontSize: '13px' }}
             aria-label="Precio unitario USD"
