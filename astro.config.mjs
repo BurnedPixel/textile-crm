@@ -31,8 +31,8 @@ export default defineConfig({
         description: 'CRM e inventario — fábrica textil',
         lang: 'es',
         display: 'standalone',
-        theme_color: '#221f1a',
-        background_color: '#e8e4dc',
+        theme_color: '#151515',
+        background_color: '#f5f4f0',
         icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
       },
       workbox: {
