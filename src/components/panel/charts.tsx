@@ -125,9 +125,10 @@ export function SalesLineChart({ series }: { series: DayPoint[] }) {
               </text>
             </g>
           ))}
-          {/* X labels — sparse */}
+          {/* X labels — sparse; a periodic label within 3 steps of the last
+              would collide with it, so the last one wins */}
           {series.map((p, i) =>
-            i % xLabelEvery === 0 || i === n - 1 ? (
+            (i % xLabelEvery === 0 && i < n - 3) || i === n - 1 ? (
               <text key={p.date} x={x(i)} y={H - 6} textAnchor="middle" fontSize={10} fill="var(--color-thread)" fontFamily="var(--font-sans)">
                 {fmtDay(p.date)}
               </text>
