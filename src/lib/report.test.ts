@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { makeTestDb } from './testdb';
 import {
-  weekPeriod, monthPeriod, fortnightPeriod, quarterPeriod, halfPeriod, yearPeriod, customPeriod,
+  dayPeriod, weekPeriod, monthPeriod, quarterPeriod, halfPeriod, yearPeriod, customPeriod,
   periodOf, shiftPeriod, periodScanOpts, buildReport, buildPayrollSummary, PERIOD_KIND_LABEL,
   type PeriodKind,
 } from './report';
@@ -43,6 +43,20 @@ describe('weekPeriod', () => {
   });
 });
 
+describe('dayPeriod', () => {
+  it('a single day, start === end, capitalized weekday + long date label', () => {
+    const p = dayPeriod(new Date(2026, 7, 19)); // Wednesday 19 Aug 2026
+    expect(p.start).toBe('2026-08-19');
+    expect(p.end).toBe('2026-08-19');
+    expect(p.label).toBe('Miércoles, 19 de agosto de 2026');
+  });
+
+  it('another weekday, to catch an off-by-one in DAY_NAMES', () => {
+    const p = dayPeriod(new Date(2026, 7, 17)); // Monday
+    expect(p.label).toBe('Lunes, 17 de agosto de 2026');
+  });
+});
+
 describe('monthPeriod', () => {
   it('full calendar month, label capitalized', () => {
     const p = monthPeriod(new Date(2026, 7, 13));
@@ -81,39 +95,6 @@ describe('shiftPeriod', () => {
   });
 });
 
-describe('fortnightPeriod', () => {
-  it('1st half of a 31-day month', () => {
-    const p = fortnightPeriod(new Date(2026, 7, 5)); // August
-    expect(p.start).toBe('2026-08-01');
-    expect(p.end).toBe('2026-08-15');
-    expect(p.label).toBe('1.ª quincena de agosto 2026');
-  });
-
-  it('2nd half of a 31-day month runs 16 days', () => {
-    const p = fortnightPeriod(new Date(2026, 7, 20));
-    expect(p.start).toBe('2026-08-16');
-    expect(p.end).toBe('2026-08-31');
-  });
-
-  it('2nd half of non-leap February runs 13 days', () => {
-    const p = fortnightPeriod(new Date(2027, 1, 20));
-    expect(p.start).toBe('2027-02-16');
-    expect(p.end).toBe('2027-02-28');
-  });
-
-  it('2nd half of leap February runs 14 days', () => {
-    const p = fortnightPeriod(new Date(2028, 1, 20));
-    expect(p.start).toBe('2028-02-16');
-    expect(p.end).toBe('2028-02-29');
-  });
-
-  it('2nd half of a 30-day month runs 15 days', () => {
-    const p = fortnightPeriod(new Date(2026, 8, 20)); // September
-    expect(p.start).toBe('2026-09-16');
-    expect(p.end).toBe('2026-09-30');
-  });
-});
-
 describe('quarterPeriod / halfPeriod / yearPeriod', () => {
   it('quarter bounds and labels', () => {
     expect(quarterPeriod(new Date(2026, 0, 15))).toMatchObject({ start: '2026-01-01', end: '2026-03-31', label: '1.er trimestre 2026' });
@@ -149,8 +130,8 @@ describe('customPeriod', () => {
 describe('periodOf', () => {
   it('returns the period of the given kind that contains the date, for every kind', () => {
     const d = new Date(2026, 7, 20); // 20 Aug 2026
+    expect(periodOf('DAY', d)).toEqual(dayPeriod(d));
     expect(periodOf('WEEK', d)).toEqual(weekPeriod(d));
-    expect(periodOf('FORTNIGHT', d)).toEqual(fortnightPeriod(d));
     expect(periodOf('MONTH', d)).toEqual(monthPeriod(d));
     expect(periodOf('QUARTER', d)).toEqual(quarterPeriod(d));
     expect(periodOf('HALF', d)).toEqual(halfPeriod(d));
@@ -159,25 +140,25 @@ describe('periodOf', () => {
   });
 
   it('PERIOD_KIND_LABEL covers every kind in Spanish', () => {
-    const kinds: PeriodKind[] = ['WEEK', 'FORTNIGHT', 'MONTH', 'QUARTER', 'HALF', 'YEAR', 'CUSTOM'];
+    const kinds: PeriodKind[] = ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'HALF', 'YEAR', 'CUSTOM'];
     for (const k of kinds) expect(typeof PERIOD_KIND_LABEL[k]).toBe('string');
     expect(PERIOD_KIND_LABEL.MONTH).toBe('Mes');
   });
 });
 
 describe('shiftPeriod — new kinds', () => {
-  it('fortnight: 1-15 Aug -1 lands on 16-31 Jul (previous month, second half)', () => {
-    const p = fortnightPeriod(new Date(2026, 7, 5));
-    const prev = shiftPeriod(p, -1);
-    expect(prev.start).toBe('2026-07-16');
-    expect(prev.end).toBe('2026-07-31');
+  it('day: +1 crosses a month boundary', () => {
+    const p = dayPeriod(new Date(2026, 7, 31)); // 31 Aug 2026
+    const next = shiftPeriod(p, 1);
+    expect(next.start).toBe('2026-09-01');
+    expect(next.end).toBe('2026-09-01');
   });
 
-  it('fortnight: 16-31 Aug -1 lands on 1-15 Aug', () => {
-    const p = fortnightPeriod(new Date(2026, 7, 20));
+  it('day: -1 crosses a year boundary', () => {
+    const p = dayPeriod(new Date(2027, 0, 1)); // 1 Jan 2027
     const prev = shiftPeriod(p, -1);
-    expect(prev.start).toBe('2026-08-01');
-    expect(prev.end).toBe('2026-08-15');
+    expect(prev.start).toBe('2026-12-31');
+    expect(prev.end).toBe('2026-12-31');
   });
 
   it('quarter/half/year shift by their own unit, across a year boundary', () => {
@@ -510,6 +491,32 @@ describe('buildReport — series granularity', () => {
 
     // bestDay is a real day, not a month bucket.
     expect(report.bestDay).toEqual({ date: '2026-08-20', totalUsd: 60 });
+  });
+
+  it('uses HOUR (24 points) for a single-day period, summing to the same total as the sales', async () => {
+    const db = makeTestDb();
+    const d1 = new Date(2026, 7, 19, 9, 0).toISOString();
+    const d2 = new Date(2026, 7, 19, 17, 30).toISOString();
+    await db.put(sale(saleIdOf(d1, 'A'), d1, { totalUsd: 40 }));
+    await db.put(sale(saleIdOf(d2, 'B'), d2, { totalUsd: 60 }));
+
+    const report = await buildReport(db, dayPeriod(new Date(2026, 7, 19)));
+    expect(report.seriesGranularity).toBe('HOUR');
+    expect(report.daily).toHaveLength(24);
+    expect(report.daily.map((d) => d.label)).toEqual(
+      Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`),
+    );
+
+    const totalFromSeries = round2(report.daily.reduce((s, d) => s + d.facturadoUsd, 0));
+    expect(totalFromSeries).toBe(report.sales.grandTotalUsd);
+    expect(report.bestDay).toEqual({ date: '2026-08-19', totalUsd: 100 });
+  });
+
+  it('HOUR series bestDay is null when the day had no sales', async () => {
+    const db = makeTestDb();
+    const report = await buildReport(db, dayPeriod(new Date(2026, 7, 19)));
+    expect(report.seriesGranularity).toBe('HOUR');
+    expect(report.bestDay).toBeNull();
   });
 });
 

@@ -38,6 +38,12 @@ const fmtDay = (iso: string): string =>
   new Intl.DateTimeFormat('es-VE', { day: 'numeric', month: 'short', timeZone: 'UTC' })
     .format(new Date(`${iso}T00:00:00Z`));
 
+/** A point's axis/tooltip/table text — an explicit `label` (e.g. an hourly "14:00") wins over the date format. */
+const pointLabel = (p: DayPoint): string => p.label ?? fmtDay(p.date);
+/** A labelled series isn't day-keyed (report.ts feeds hourly buckets for a
+ *  one-day period); the Panel never sets labels, so it keeps saying «Día». */
+const headerFor = (series: DayPoint[]): string => (series.some((p) => p.label) ? 'Hora' : 'Día');
+
 // ─── CHART CARD ──────────────────────────────────────────────────────────────
 
 export function ChartCard({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
@@ -81,6 +87,7 @@ export function SalesLineChart({ series }: { series: DayPoint[] }) {
   const plotW = Math.max(0, width - M.left - M.right);
   const plotH = H - M.top - M.bottom;
   const n = series.length;
+  const bucketHeader = headerFor(series);
   const max = niceCeil(Math.max(1, ...series.map((p) => Math.max(p.facturadoUsd, p.cobradoUsd))));
   const x = (i: number) => M.left + (n > 1 ? (i * plotW) / (n - 1) : plotW / 2);
   const y = (v: number) => M.top + plotH - (Math.max(0, v) / max) * plotH;
@@ -103,7 +110,7 @@ export function SalesLineChart({ series }: { series: DayPoint[] }) {
           width={width}
           height={H}
           role="img"
-          aria-label={n > 0 ? `Facturado y cobrado, del ${fmtDay(series[0].date)} al ${fmtDay(series[n - 1].date)}` : 'Facturado y cobrado'}
+          aria-label={n > 0 ? `Facturado y cobrado, del ${pointLabel(series[0])} al ${pointLabel(series[n - 1])}` : 'Facturado y cobrado'}
           tabIndex={0}
           style={{ display: 'block', outlineOffset: '4px' }}
           onPointerMove={(e) => setHover(nearest(e.clientX, e.currentTarget.getBoundingClientRect()))}
@@ -130,7 +137,7 @@ export function SalesLineChart({ series }: { series: DayPoint[] }) {
           {series.map((p, i) =>
             (i % xLabelEvery === 0 && i < n - 3) || i === n - 1 ? (
               <text key={p.date} x={x(i)} y={H - 6} textAnchor="middle" fontSize={10} fill="var(--color-thread)" fontFamily="var(--font-sans)">
-                {fmtDay(p.date)}
+                {pointLabel(p)}
               </text>
             ) : null,
           )}
@@ -171,7 +178,7 @@ export function SalesLineChart({ series }: { series: DayPoint[] }) {
             zIndex: 5,
           }}
         >
-          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '10px', color: 'var(--color-thread)' }}>{fmtDay(hovered.date)}</span>
+          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '10px', color: 'var(--color-thread)' }}>{pointLabel(hovered)}</span>
           {SERIES.map((s) => (
             <span key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span aria-hidden="true" style={{ width: '10px', height: '2px', background: s.color }} />
@@ -191,15 +198,15 @@ export function SalesLineChart({ series }: { series: DayPoint[] }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--font-mono)', fontSize: '11px', fontFeatureSettings: '"tnum" 1' }}>
             <thead>
               <tr>
-                {['Día', 'Facturado', 'Cobrado'].map((h) => (
-                  <th key={h} style={{ textAlign: h === 'Día' ? 'left' : 'right', padding: '3px 6px', color: 'var(--color-thread)', fontWeight: 500 }}>{h}</th>
+                {[bucketHeader, 'Facturado', 'Cobrado'].map((h) => (
+                  <th key={h} style={{ textAlign: h === bucketHeader ? 'left' : 'right', padding: '3px 6px', color: 'var(--color-thread)', fontWeight: 500 }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {series.map((p) => (
                 <tr key={p.date}>
-                  <td style={{ padding: '2px 6px', color: 'var(--color-thread)' }}>{fmtDay(p.date)}</td>
+                  <td style={{ padding: '2px 6px', color: 'var(--color-thread)' }}>{pointLabel(p)}</td>
                   <td style={{ padding: '2px 6px', textAlign: 'right', color: 'var(--color-ink)' }}>{fmtUsd(p.facturadoUsd)}</td>
                   <td style={{ padding: '2px 6px', textAlign: 'right', color: 'var(--color-ink)' }}>{fmtUsd(p.cobradoUsd)}</td>
                 </tr>

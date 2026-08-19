@@ -5,7 +5,7 @@
 // than breaking the page. UI: SPANISH. Code/fields: ENGLISH.
 // Export is .xlsx (buildInformeSheets + buildXlsx) — no PDF, no print.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { db } from '../../lib/db';
 import { nominaDb } from '../../lib/nominadb';
 import { isAdmin } from '../../lib/auth';
@@ -28,9 +28,6 @@ const normText = (v: unknown): string =>
 const ROW_CAP = 200;
 
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-const MONTH_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-const QUARTER_LABEL = ['1.er trimestre', '2.º trimestre', '3.er trimestre', '4.º trimestre'];
-const HALF_LABEL = ['1.er semestre', '2.º semestre'];
 const PERIOD_KINDS = Object.keys(PERIOD_KIND_LABEL) as PeriodKind[];
 const jumpInput: React.CSSProperties = { padding: '3px 8px', fontSize: '12px', width: 'auto' };
 
@@ -138,6 +135,38 @@ export default function InformesIsland() {
     }
   }
 
+  // Jump straight to a period with the platform's own picker. It replaced a
+  // modal with month/quarter/half/year grids: one native control does the
+  // same job for every kind, and on a phone it opens the OS date wheel.
+  const jumpControl = kind === 'CUSTOM' ? (
+    <>
+      {/* The bound you type STAYS where you typed it: pushing the other one
+          instead of letting customPeriod swap them, which made your date
+          jump to the opposite box. */}
+      <Input
+        type="date" aria-label="Desde" value={period.start} max={period.end} style={jumpInput}
+        onChange={(e) => { const v = e.target.value;
+          if (v) setPeriod(customPeriod(v, v > period.end ? v : period.end)); }}
+      />
+      <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>a</span>
+      <Input
+        type="date" aria-label="Hasta" value={period.end} min={period.start} style={jumpInput}
+        onChange={(e) => { const v = e.target.value;
+          if (v) setPeriod(customPeriod(v < period.start ? v : period.start, v)); }}
+      />
+    </>
+  ) : kind === 'MONTH' ? (
+    <Input
+      type="month" aria-label="Ir al mes" value={period.start.slice(0, 7)} style={jumpInput}
+      onChange={(e) => e.target.value && setPeriod(monthPeriod(fromIsoDate(`${e.target.value}-01`)))}
+    />
+  ) : (
+    <Input
+      type="date" aria-label="Ir a la fecha" value={period.start} style={jumpInput}
+      onChange={(e) => e.target.value && setPeriod(periodOf(kind, fromIsoDate(e.target.value)))}
+    />
+  );
+
   const selectedSheet = sheets?.find((s) => s.name === sheetName) ?? null;
   const filteredRows = useMemo(() => {
     if (!selectedSheet) return [];
@@ -186,31 +215,26 @@ export default function InformesIsland() {
           <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--color-thread)' }}>vs. periodo anterior</span>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '4px', marginTop: '8px' }}>
-          <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, -1))} aria-label="Periodo anterior">‹</Button>
-          <span
-            data-period-label
-            style={{
-              padding: '4px 8px',
-              fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 700, color: 'var(--color-ink)',
-              // A long CUSTOM label is wider than the box at 360px and used to
-              // spill over the › arrow.
-              whiteSpace: 'normal', lineHeight: 1.3,
-            }}
-          >
-            {report.period.label}
-          </span>
-          <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, 1))} aria-label="Periodo siguiente">›</Button>
-          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)', marginLeft: '2px' }}>
-            · {report.sales.count} ventas · ticket promedio {fmtUsd(report.avgTicketUsd)} · cobrado {fmtUsd(report.collections.collectedUsd)}
-          </span>
-        </div>
+        <p data-period-label style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)', marginTop: '6px' }}>
+          {report.period.label}
+        </p>
       </div>
 
       <ChartCard
-        title={report.seriesGranularity === 'MONTH' ? 'Ventas y cobros por mes' : 'Ventas y cobros por día del periodo'}
-        aside={<SalesLegend />}
+        title={
+          report.seriesGranularity === 'HOUR' ? 'Ventas y cobros por hora'
+            : report.seriesGranularity === 'MONTH' ? 'Ventas y cobros por mes'
+            : 'Ventas y cobros por día del periodo'
+        }
+        aside={
+          <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
+            <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, -1))} aria-label="Periodo anterior">‹</Button>
+            <Button variant="ghost" size="md" onClick={() => setPeriod(shiftPeriod(period, 1))} aria-label="Periodo siguiente">›</Button>
+            {jumpControl}
+          </span>
+        }
       >
+        <div style={{ marginBottom: '4px' }}><SalesLegend /></div>
         <SalesLineChart series={report.daily} />
         {/* Range chips, ticker-style, pinned to the chart's foot. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', borderTop: '1px dashed var(--color-bone)', paddingTop: '10px' }}>
@@ -224,49 +248,19 @@ export default function InformesIsland() {
               {PERIOD_KIND_LABEL[k]}
             </button>
           ))}
-          {/* Jump straight to a period with the platform's own picker, at the
-              right end of the row. It replaced a modal with month/quarter/half/
-              year grids: one native control does the same job for every kind,
-              and on a phone it opens the OS date wheel. */}
-          <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
-            {kind === 'CUSTOM' ? (
-              <>
-                {/* The bound you type STAYS where you typed it: pushing the
-                    other one instead of letting customPeriod swap them, which
-                    made your date jump to the opposite box. */}
-                <Input
-                  type="date" aria-label="Desde" value={period.start} max={period.end} style={jumpInput}
-                  onChange={(e) => { const v = e.target.value;
-                    if (v) setPeriod(customPeriod(v, v > period.end ? v : period.end)); }}
-                />
-                <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>a</span>
-                <Input
-                  type="date" aria-label="Hasta" value={period.end} min={period.start} style={jumpInput}
-                  onChange={(e) => { const v = e.target.value;
-                    if (v) setPeriod(customPeriod(v < period.start ? v : period.start, v)); }}
-                />
-              </>
-            ) : kind === 'MONTH' ? (
-              <Input
-                type="month" aria-label="Ir al mes" value={period.start.slice(0, 7)} style={jumpInput}
-                onChange={(e) => e.target.value && setPeriod(monthPeriod(fromIsoDate(`${e.target.value}-01`)))}
-              />
-            ) : (
-              <Input
-                type="date" aria-label="Ir a la fecha" value={period.start} style={jumpInput}
-                onChange={(e) => e.target.value && setPeriod(periodOf(kind, fromIsoDate(e.target.value)))}
-              />
-            )}
-          </span>
         </div>
       </ChartCard>
 
-      {/* Figures that used to live in the KPI grid and aren't in the quote line above. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', margin: '1rem 0 1.5rem' }}>
-        <Kpi label="Gastos" value={fmtUsd(report.expenses.totalUsd)} delta={expensesVar} invert />
-        <Kpi label="Utilidad bruta estimada" value={fmtUsd(report.cogs.grossMarginUsd)} />
-        <Kpi label="Cobros posteriores" value={fmtUsd(report.collections.collectedUsd)} delta={collectedVar} />
-        <Kpi label="Nº de ventas" value={String(report.sales.count)} delta={countVar} />
+      {/* Information grid — every figure the quote block/KPI cards used to show. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', columnGap: '32px', margin: '1.5rem 0' }}>
+        <InfoRow label="Nº de ventas" value={String(report.sales.count)} delta={countVar} />
+        <InfoRow label="Ticket promedio" value={fmtUsd(report.avgTicketUsd)} />
+        <InfoRow label="Cobros posteriores" value={fmtUsd(report.collections.collectedUsd)} delta={collectedVar} />
+        <InfoRow label="Vueltos entregados" value={fmtUsd(report.collections.refundedUsd)} />
+        <InfoRow label="Gastos" value={fmtUsd(report.expenses.totalUsd)} delta={expensesVar} invert />
+        <InfoRow label="Utilidad bruta estimada" value={fmtUsd(report.cogs.grossMarginUsd)} />
+        <InfoRow label="Margen" value={`${Math.round(report.cogs.marginPct * 100)}%`} />
+        <InfoRow label="Valor de stock (hoy)" value={fmtUsd(report.stockNow.valueUsd)} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', margin: '1.5rem 0' }}>
@@ -452,22 +446,24 @@ function Empty() {
   return <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--color-thread)' }}>Sin datos en este periodo.</p>;
 }
 
-function Kpi({ label, value, delta, invert }: { label: string; value: string; delta?: { text: string; positive: boolean } | null; invert?: boolean }) {
+// Two-column label/value grid (Yahoo Finance "Summary" panel style): rows
+// hairline-separated, label small and gray, value mono tabular. Variance
+// (when passed) rides beside the value as the same .tag pill used elsewhere.
+function InfoRow({ label, value, delta, invert }: { label: string; value: string; delta?: { text: string; positive: boolean } | null; invert?: boolean }) {
   const good = delta ? (invert ? !delta.positive : delta.positive) : true;
   return (
-    <div className="card" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', padding: '9px 0', borderBottom: '1px solid var(--color-bone)' }}>
       <span className="micro-label">{label}</span>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-ink)' }}>{value}</span>
-      {delta !== undefined && (
-        <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
-          {delta ? (
-            <span className={`tag ${good ? 'tag-sage' : 'tag-rose'}`} style={{ fontSize: '11px', padding: '2px 8px' }}>{delta.text}</span>
+      <span style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-ink)' }}>{value}</span>
+        {delta !== undefined && (
+          delta ? (
+            <span className={`tag ${good ? 'tag-sage' : 'tag-rose'}`} style={{ fontSize: '10px', padding: '1px 6px' }}>{delta.text}</span>
           ) : (
             <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--color-thread)' }}>—</span>
-          )}
-          <span style={{ fontFamily: 'var(--font-sans)', fontSize: '10px', color: 'var(--color-thread)' }}>vs anterior</span>
-        </span>
-      )}
+          )
+        )}
+      </span>
     </div>
   );
 }
