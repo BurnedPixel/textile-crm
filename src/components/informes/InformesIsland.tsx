@@ -250,7 +250,7 @@ export default function InformesIsland() {
         }
       >
         <div style={{ marginBottom: '4px' }}><SalesLegend /></div>
-        <SalesLineChart series={report.daily} />
+        <SalesLineChart series={report.daily} bands={report.bands} />
         {/* Range chips, ticker-style, pinned to the chart's foot. */}
         <div style={{ borderTop: '1px dashed var(--color-bone)', paddingTop: '10px' }}>
           <span className="range-track">
