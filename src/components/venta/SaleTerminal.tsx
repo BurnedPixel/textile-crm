@@ -97,6 +97,20 @@ interface ListboxProps {
   'data-hotkey-search'?: string;
 }
 
+/**
+ * `scrollIntoView({block:'nearest'})` confined to one box: it keeps the cursor
+ * visible inside a scrolling list WITHOUT scrolling the list's ancestors — the
+ * page included. No-op when the option already fits.
+ */
+function scrollWithin(box: HTMLElement | null, selector: string): void {
+  const el = box?.querySelector(selector) as HTMLElement | null;
+  if (!box || !el) return;
+  const er = el.getBoundingClientRect();
+  const br = box.getBoundingClientRect();
+  if (er.top < br.top) box.scrollTop -= br.top - er.top;
+  else if (er.bottom > br.bottom) box.scrollTop += er.bottom - br.bottom;
+}
+
 function Listbox({
   id,
   label,
@@ -130,10 +144,13 @@ function Listbox({
     setActiveIdx((i) => Math.min(i, Math.max(options.length - 1, 0)));
   }, [options]);
 
-  // Auto-scroll active option into view.
+  // Auto-scroll active option into view — INSIDE this list only. A bare
+  // scrollIntoView({block:'nearest'}) walks EVERY scrollable ancestor, so moving
+  // the cursor here scrolled the whole window: on a phone, clearing the facets
+  // after an add yanked the page back to the selectors, out-scrolling anything
+  // else trying to show itself.
   useEffect(() => {
-    const el = containerRef.current?.querySelector(`[data-opt="${activeIdx}"]`) as HTMLElement | null;
-    el?.scrollIntoView({ block: 'nearest' });
+    scrollWithin(containerRef.current, `[data-opt="${activeIdx}"]`);
   }, [activeIdx]);
 
   // Move the cursor to the next available option in `dir`, skipping unavailable.
@@ -303,6 +320,10 @@ const companionPanel: CSSProperties = {
   borderRadius: '8px',
   border: '1.5px solid var(--color-dye)',
   backgroundColor: 'color-mix(in srgb, var(--color-dye) 4%, transparent)',
+  // Clears the fixed 56px rail when the phone scroll below brings the panel to
+  // the top of the viewport; inert everywhere else (the rail is a side column
+  // on desktop, where nothing auto-scrolls).
+  scrollMarginTop: '68px',
 };
 
 const companionList: CSSProperties = {
@@ -380,6 +401,23 @@ export default function SaleTerminal() {
     { rule: CompanionRule; color: string; nm: string; lotNumber?: string; kg: number; qty: string; pick: string | null } | null
   >(null);
   const [companionErr, setCompanionErr] = useState<string | null>(null);
+  // Bumped once per NEW suggestion. The qty/pick edits inside the panel rewrite
+  // `companion` too, so keying the scroll below on that state would re-scroll on
+  // every keystroke.
+  const [companionSeq, setCompanionSeq] = useState(0);
+  const companionRef = useRef<HTMLDivElement>(null);
+
+  // On the stacked phone layout (the same <=767px breakpoint .venta-split uses)
+  // the cart column sits BELOW the facets zone, so a suggestion is born off
+  // screen: the seller taps «Agregar» at the top and never learns the ribb was
+  // offered. Desktop keeps the panel in the right column, already in view, so
+  // it is left alone. Runs in an effect, not in the add handler, because the
+  // panel only exists after React commits.
+  useEffect(() => {
+    if (companionSeq === 0) return;
+    if (!window.matchMedia('(max-width: 767px)').matches) return;
+    companionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [companionSeq]);
 
   // Load cart once dbReady
   useEffect(() => {
@@ -843,6 +881,7 @@ export default function SaleTerminal() {
           pick: null,
         });
         setCompanionErr(null); // a stale error from the previous suggestion must not survive under the new one
+        setCompanionSeq((n) => n + 1); // brings the panel into view on phones
       }
       resetSelection();
     } catch (err) {
@@ -1460,7 +1499,7 @@ export default function SaleTerminal() {
 
         {/* ── COMPAÑEROS ── a suggestion after a piqué line, never an auto-add */}
         {companion && (
-          <div data-companion style={companionPanel} role="group" aria-label="Compañeros sugeridos">
+          <div ref={companionRef} data-companion style={companionPanel} role="group" aria-label="Compañeros sugeridos">
             <div className="micro-label" style={{ marginBottom: '2px', color: 'var(--color-dye)' }}>
               Compañeros
             </div>
@@ -1991,10 +2030,10 @@ function BatchProductZone({
     }
   }
 
-  // Auto-scroll active roll
+  // Auto-scroll active roll — inside the roll list only, same reason as the
+  // Listbox cursor above.
   useEffect(() => {
-    const el = rollListRef.current?.querySelector(`[data-ridx="${rollActiveIdx}"]`) as HTMLElement | null;
-    el?.scrollIntoView({ block: 'nearest' });
+    scrollWithin(rollListRef.current, `[data-ridx="${rollActiveIdx}"]`);
   }, [rollActiveIdx]);
 
   // autoFocus is a no-op on divs in React — focus the roll list imperatively
