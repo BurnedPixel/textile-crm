@@ -361,6 +361,54 @@ export function periodScanOpts(period: ReportPeriod): { startDate: string; endDa
   return { startDate: fromIsoDate(period.start).toISOString(), endDate: new Date(next.getTime() - 1).toISOString() };
 }
 
+/** A stretch of consecutive points that share a calendar unit (a month, a week,
+ *  a quarter). The chart draws them as a band under the axis so a range covering
+ *  several months reads at a glance instead of as one undifferentiated line. */
+export interface SeriesBand { label: string; span: number }
+
+const monthAbbr = (m: number): string => `${MONTH_NAMES[m].slice(0, 3)}.`;
+
+/**
+ * Bands for the series, chosen so the label is always the unit ABOVE the point:
+ * daily points band by month (or by week when they all sit inside one month),
+ * monthly points band by month up to a half-year and by quarter beyond it.
+ * Fewer than two bands means the range has nothing to divide — return none.
+ */
+function computeBands(series: DayPoint[], granularity: 'HOUR' | 'DAY' | 'MONTH'): SeriesBand[] {
+  if (granularity === 'HOUR' || series.length < 2) return [];
+  const first = fromIsoDate(series[0].date);
+  const last = fromIsoDate(series[series.length - 1].date);
+  const sameMonth = first.getMonth() === last.getMonth() && first.getFullYear() === last.getFullYear();
+
+  // Key each point by its band, then collapse runs of equal keys.
+  const keyed = series.map((p) => {
+    const d = fromIsoDate(p.date);
+    if (granularity === 'MONTH') {
+      return series.length > 6
+        ? `q${d.getFullYear()}-${Math.floor(d.getMonth() / 3)}`
+        : `m${d.getFullYear()}-${d.getMonth()}`;
+    }
+    if (!sameMonth) return `m${d.getFullYear()}-${d.getMonth()}`;
+    return `w${weekPeriod(d).start}`; // Monday-aligned, same weeks the WEEK period uses
+  });
+
+  const runs: { key: string; from: number; to: number }[] = [];
+  keyed.forEach((key, i) => {
+    const open = runs[runs.length - 1];
+    if (open && open.key === key) open.to = i;
+    else runs.push({ key, from: i, to: i });
+  });
+  if (runs.length < 2) return [];
+
+  return runs.map((r) => {
+    const d = fromIsoDate(series[r.from].date);
+    if (r.key[0] === 'q') return { label: `${QUARTER_ORDINAL[Math.floor(d.getMonth() / 3)]} trim.`, span: r.to - r.from + 1 };
+    if (r.key[0] === 'm') return { label: monthAbbr(d.getMonth()), span: r.to - r.from + 1 };
+    const end = fromIsoDate(series[r.to].date);
+    return { label: `${d.getDate()}–${end.getDate()}`, span: r.to - r.from + 1 };
+  });
+}
+
 /** Daily points folded into one point per calendar month (first-of-month date), summed. */
 function monthlySeries(daily: DayPoint[]): DayPoint[] {
   const byMonth = new Map<string, DayPoint>();
@@ -567,6 +615,7 @@ export async function buildReport(db: DB, period: ReportPeriod): Promise<ReportD
     expenses: summarizeExpenses(expenses),
     movements: summarizeMovements(movements),
     daily,
+    bands: computeBands(daily, seriesGranularity),
     seriesGranularity,
     avgTicketUsd,
     bestDay,

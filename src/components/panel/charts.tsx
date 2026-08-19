@@ -6,6 +6,7 @@
 
 import { useRef, useState, useEffect, type ReactNode } from 'react';
 import type { DayPoint, RankedRow } from '../../lib/panel-charts';
+import type { SeriesBand } from '../../lib/report';
 import { fmtUsd } from '../../lib/format';
 
 const VIOLET = 'var(--color-chart-violet)';
@@ -78,12 +79,16 @@ export function SalesLegend() {
   );
 }
 
-export function SalesLineChart({ series }: { series: DayPoint[] }) {
+export function SalesLineChart({ series, bands = [] }: { series: DayPoint[]; bands?: SeriesBand[] }) {
   const [boxRef, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
 
-  const H = 190;
-  const M = { top: 10, right: 14, bottom: 24, left: 42 };
+  // The band strip (months/weeks under the axis) is opt-in: the Panel passes no
+  // bands and keeps its exact geometry.
+  const showBands = bands.length > 1;
+  const bandH = showBands ? 18 : 0;
+  const H = 190 + bandH;
+  const M = { top: 10, right: 14, bottom: 24 + bandH, left: 42 };
   const plotW = Math.max(0, width - M.left - M.right);
   const plotH = H - M.top - M.bottom;
   const n = series.length;
@@ -136,11 +141,38 @@ export function SalesLineChart({ series }: { series: DayPoint[] }) {
               would collide with it, so the last one wins */}
           {series.map((p, i) =>
             (i % xLabelEvery === 0 && i < n - 3) || i === n - 1 ? (
-              <text key={p.date} x={x(i)} y={H - 6} textAnchor="middle" fontSize={10} fill="var(--color-thread)" fontFamily="var(--font-sans)">
+              <text key={p.date} x={x(i)} y={H - 6 - bandH} textAnchor="middle" fontSize={10} fill="var(--color-thread)" fontFamily="var(--font-sans)">
                 {pointLabel(p)}
               </text>
             ) : null,
           )}
+          {/* Calendar bands — a boundary rule inside the plot plus a labelled
+              strip under the axis, so «tres meses» reads as three months. */}
+          {showBands && (() => {
+            const step = n > 1 ? plotW / (n - 1) : plotW;
+            const top = H - bandH + 2;
+            const out: ReactNode[] = [];
+            let idx = 0;
+            bands.forEach((b, bi) => {
+              const from = idx, to = idx + b.span - 1;
+              idx += b.span;
+              const left = bi === 0 ? M.left : x(from) - step / 2;
+              const right = bi === bands.length - 1 ? M.left + plotW : x(to) + step / 2;
+              if (bi > 0) {
+                out.push(<line key={`r${bi}`} x1={left} x2={left} y1={M.top} y2={M.top + plotH}
+                  stroke="var(--color-bone)" strokeWidth={1} strokeDasharray="2 3" />);
+              }
+              // bone is invisible on a white card — the bar has to read as a bar.
+              out.push(<line key={`b${bi}`} x1={left + 1} x2={right - 1} y1={top} y2={top}
+                stroke="color-mix(in srgb, var(--color-thread) 45%, transparent)"
+                strokeWidth={2.5} strokeLinecap="round" />);
+              if (right - left > 26) {
+                out.push(<text key={`t${bi}`} x={(left + right) / 2} y={H - 3} textAnchor="middle"
+                  fontSize={9} fill="var(--color-thread)" fontFamily="var(--font-sans)">{b.label}</text>);
+              }
+            });
+            return <g>{out}</g>;
+          })()}
           {/* Crosshair */}
           {hover !== null && (
             <line x1={x(hover)} x2={x(hover)} y1={M.top} y2={M.top + plotH} stroke="var(--color-thread)" strokeWidth={1} />
