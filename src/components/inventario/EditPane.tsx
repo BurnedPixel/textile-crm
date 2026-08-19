@@ -153,8 +153,8 @@ export default function EditPane({ onDone }: EditPaneProps) {
         lotNumber: form.lotNumber,
         pantone: form.pantone,
         fiberComposition: form.fiberComposition,
-        purchaseValueUsd: parseFloat(form.purchaseValueUsd),
-        salePriceUsd: parseFloat(form.salePriceUsd),
+        purchaseValueUsd: Number(form.purchaseValueUsd),
+        salePriceUsd: Number(form.salePriceUsd),
         conditionTag: form.conditionTag,
       });
       setSuccess(`Datos actualizados — ${fmtPiece(selected.product.pieceId)} · ${fmtLot(form.lotNumber)}.`);

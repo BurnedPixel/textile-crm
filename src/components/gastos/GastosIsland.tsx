@@ -106,7 +106,7 @@ export default function GastosIsland() {
       return;
     }
 
-    const usd = parseFloat(amountUsd);
+    const usd = Number(amountUsd);
     if (!(usd > 0)) {
       setFormError('El monto debe ser mayor que cero.');
       return;
@@ -139,7 +139,7 @@ export default function GastosIsland() {
     }
   }
 
-  const usdPreview = parseFloat(amountUsd);
+  const usdPreview = Number(amountUsd);
 
   return (
     <div style={{ maxWidth: '860px' }}>

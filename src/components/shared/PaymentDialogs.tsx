@@ -45,7 +45,7 @@ export function CollectDialog({
     ref.current?.showModal();
   }, []);
 
-  const num = (s: string) => parseFloat(s) || 0;
+  const num = (s: string) => Number(s) || 0;
   const enteredUsd = rate ? usdPaid(num(cash), num(transfer), num(bs), rate) : 0;
   const overpaid = enteredUsd > owedUsd + SETTLED_EPSILON;
 
@@ -199,7 +199,7 @@ export function RefundDialog({
     ref.current?.showModal();
   }, []);
 
-  const num = (s: string) => parseFloat(s) || 0;
+  const num = (s: string) => Number(s) || 0;
   const enteredUsd = rate ? usdPaid(num(cash), num(transfer), num(bs), rate) : 0;
 
   async function handleSubmit(e: React.FormEvent) {
