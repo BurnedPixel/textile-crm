@@ -36,13 +36,15 @@ async function loadModules() {
   _startNominaSync = nominaMod.startNominaSync;
 }
 
+// Rendered on the DARK rail (#151515): these are light, desaturated variants of
+// the palette's status hues — the light-surface tokens would vanish here.
 const stateConfig: Record<SyncState, { dot: string; label: string; color: string }> = {
-  idle:         { dot: '#3E6B3A', label: 'Sincronizado',    color: '#3E6B3A' },
-  active:       { dot: '#3A4A6B', label: 'Sincronizando…',  color: '#3A4A6B' },
-  error:        { dot: '#B97718', label: 'Sin conexión',    color: '#B97718' },
-  offline:      { dot: '#B97718', label: 'Trabajo local',   color: '#B97718' },
-  unauthorized: { dot: '#A32E2E', label: 'Sesión expirada', color: '#A32E2E' },
-  denied:       { dot: '#7A2E8C', label: 'Cambios rechazados por el servidor', color: '#7A2E8C' },
+  idle:         { dot: '#9DB89A', label: 'Sincronizado',    color: '#9DB89A' },
+  active:       { dot: '#9FB0CC', label: 'Sincronizando…',  color: '#9FB0CC' },
+  error:        { dot: '#D4AC6A', label: 'Sin conexión',    color: '#D4AC6A' },
+  offline:      { dot: '#D4AC6A', label: 'Trabajo local',   color: '#D4AC6A' },
+  unauthorized: { dot: '#CC8F8F', label: 'Sesión expirada', color: '#CC8F8F' },
+  denied:       { dot: '#B49BC9', label: 'Cambios rechazados por el servidor', color: '#B49BC9' },
 };
 
 export default function SyncStatus() {
@@ -144,15 +146,15 @@ export default function SyncStatus() {
             width: '28px',
             height: '28px',
             borderRadius: '50%',
-            backgroundColor: 'rgba(181,23,92,0.20)',
-            border: '1.5px solid rgba(181,23,92,0.50)',
+            backgroundColor: 'color-mix(in srgb, var(--color-lavender) 18%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--color-lavender) 55%, transparent)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontFamily: 'var(--font-sans)',
-            fontWeight: 700,
+            fontWeight: 600,
             fontSize: '12px',
-            color: '#B5175C',
+            color: 'var(--color-lavender)',
             userSelect: 'none',
           }}
         >

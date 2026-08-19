@@ -4,7 +4,7 @@
 
 export const sectionStyle: React.CSSProperties = {
   backgroundColor: 'var(--color-cloth)',
-  border: '1px dashed var(--color-thread)',
+  border: '1px solid var(--color-bone)',
   borderRadius: 8,
   padding: '20px 24px',
   marginBottom: 16,
@@ -13,8 +13,8 @@ export const sectionStyle: React.CSSProperties = {
 export const sectionTitle: React.CSSProperties = {
   fontFamily: 'var(--font-sans)',
   fontSize: 12,
-  fontWeight: 700,
-  letterSpacing: '0.07em',
+  fontWeight: 500,
+  letterSpacing: '0.06em',
   textTransform: 'uppercase',
   color: 'var(--color-thread)',
   marginBottom: 16,
@@ -40,9 +40,9 @@ export const deemphasizedInput: React.CSSProperties = {
 export const bannerExisting: React.CSSProperties = {
   marginTop: 14,
   padding: '10px 14px',
-  borderRadius: 6,
-  backgroundColor: 'rgba(62,107,58,0.08)',
-  border: '1px solid rgba(62,107,58,0.25)',
+  borderRadius: 8,
+  backgroundColor: 'color-mix(in srgb, var(--color-ok) 8%, transparent)',
+  border: '1px solid color-mix(in srgb, var(--color-ok) 25%, transparent)',
   fontFamily: 'var(--font-sans)',
   fontSize: 13,
   color: 'var(--color-ok)',
@@ -54,9 +54,9 @@ export const bannerExisting: React.CSSProperties = {
 export const bannerNew: React.CSSProperties = {
   marginTop: 14,
   padding: '10px 14px',
-  borderRadius: 6,
-  backgroundColor: 'rgba(185,119,24,0.08)',
-  border: '1px solid rgba(185,119,24,0.25)',
+  borderRadius: 8,
+  backgroundColor: 'color-mix(in srgb, var(--color-warn) 8%, transparent)',
+  border: '1px solid color-mix(in srgb, var(--color-warn) 25%, transparent)',
   fontFamily: 'var(--font-sans)',
   fontSize: 13,
   color: 'var(--color-warn)',
@@ -65,9 +65,9 @@ export const bannerNew: React.CSSProperties = {
 export const alertOk: React.CSSProperties = {
   margin: '0 0 16px',
   padding: '12px 16px',
-  borderRadius: 6,
-  backgroundColor: 'rgba(62,107,58,0.08)',
-  border: '1px solid rgba(62,107,58,0.25)',
+  borderRadius: 8,
+  backgroundColor: 'color-mix(in srgb, var(--color-ok) 8%, transparent)',
+  border: '1px solid color-mix(in srgb, var(--color-ok) 25%, transparent)',
   fontFamily: 'var(--font-sans)',
   fontSize: 14,
   color: 'var(--color-ok)',
@@ -77,9 +77,9 @@ export const alertOk: React.CSSProperties = {
 export const alertErr: React.CSSProperties = {
   margin: '0 0 16px',
   padding: '12px 16px',
-  borderRadius: 6,
-  backgroundColor: 'rgba(163,46,46,0.08)',
-  border: '1px solid rgba(163,46,46,0.25)',
+  borderRadius: 8,
+  backgroundColor: 'color-mix(in srgb, var(--color-danger) 8%, transparent)',
+  border: '1px solid color-mix(in srgb, var(--color-danger) 25%, transparent)',
   fontFamily: 'var(--font-sans)',
   fontSize: 14,
   color: 'var(--color-danger)',
@@ -97,16 +97,16 @@ export const stitchDivider: React.CSSProperties = {
 /** Grid shape lives in .movement-row (global.css) so phones can reflow it. */
 export const movementRow: React.CSSProperties = {
   padding: '10px 14px',
-  borderRadius: 6,
+  borderRadius: 8,
   backgroundColor: 'var(--color-cloth)',
-  border: '1px dashed var(--color-thread)',
+  border: '1px solid var(--color-bone)',
   marginBottom: 4,
 };
 
 /** The roll picker — same visual language as the /venta roll list. */
 export const rollListBox: React.CSSProperties = {
   outline: 'none',
-  border: '1.5px solid var(--color-thread)',
+  border: '1px solid var(--color-thread)',
   borderRadius: 6,
   maxHeight: 220,
   overflowY: 'auto',
@@ -125,6 +125,6 @@ export const rollRowStyle = (active: boolean): React.CSSProperties => ({
   gap: 10,
   fontFamily: 'var(--font-sans)',
   fontSize: 13,
-  backgroundColor: active ? 'rgba(181,23,92,0.08)' : 'transparent',
+  backgroundColor: active ? 'color-mix(in srgb, var(--color-dye) 8%, transparent)' : 'transparent',
   borderLeft: active ? '3px solid var(--color-dye)' : '3px solid transparent',
 });
